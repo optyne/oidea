@@ -1,0 +1,496 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 使用者與認證
+// ============================================================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  displayName   String
+  passwordHash  String
+  avatarUrl     String?
+  status        String    @default("offline") // online, away, dnd, offline
+  statusMessage String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  // Relations
+  accounts           Account[]
+  workspaceMembers   WorkspaceMember[]
+  channelMembers     ChannelMember[]
+  sentMessages       Message[]            @relation("MessageSender")
+  ownedWorkspaces    Workspace[]          @relation("WorkspaceOwner")
+  assignedTasks      Task[]               @relation("TaskAssignee")
+  taskComments       TaskComment[]
+  meetingOrganizer   Meeting[]            @relation("MeetingOrganizer")
+  meetingParticipant MeetingParticipant[]
+  reactions          MessageReaction[]
+  mentions           Mention[]
+  readStatuses       MessageReadStatus[]
+  typingIndicators   TypingIndicator[]
+  notifications      Notification[]
+  sharedFiles        File[]
+  activities         TaskActivity[]
+
+  @@map("users")
+}
+
+model Account {
+  id           String   @id @default(uuid())
+  userId       String
+  provider     String // local, google, github
+  providerId   String?
+  accessToken  String?
+  refreshToken String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@map("accounts")
+}
+
+// ============================================================
+// 工作空間
+// ============================================================
+
+model Workspace {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  iconUrl     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  ownerId String @map("ownerId")
+  owner   User   @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+
+  members  WorkspaceMember[]
+  channels Channel[]
+  projects Project[]
+  meetings Meeting[]
+  boards   Whiteboard[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        String   @default("member") // owner, admin, member
+  joinedAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// ============================================================
+// 頻道與訊息
+// ============================================================
+
+model Channel {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  type        String    @default("public") // public, private, dm
+  description String?
+  topic       String?
+  icon        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  members        ChannelMember[]
+  messages       Message[]
+  pinnedMessages PinnedMessage[]
+
+  @@unique([workspaceId, name])
+  @@map("channels")
+}
+
+model ChannelMember {
+  id         String   @id @default(uuid())
+  channelId  String
+  userId     String
+  role       String   @default("member") // admin, member
+  joinedAt   DateTime @default(now())
+  lastReadAt DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id        String    @id @default(uuid())
+  channelId String
+  senderId  String
+  parentId  String? // for thread replies
+  type      String    @default("text") // text, image, file, system
+  content   String?
+  metadata  Json? // extra data like file info
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender  User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  parent  Message?  @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Message[] @relation("MessageThread")
+
+  reactions    MessageReaction[]
+  readStatuses MessageReadStatus[]
+  mentions     Mention[]
+  pinnedIn     PinnedMessage[]
+  files        File[]
+
+  @@index([channelId, createdAt])
+  @@index([parentId])
+  @@map("messages")
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@map("message_reactions")
+}
+
+model MessageReadStatus {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@map("message_read_statuses")
+}
+
+model Mention {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mentions")
+}
+
+model PinnedMessage {
+  id        String   @id @default(uuid())
+  channelId String
+  messageId String
+  pinnedBy  String
+  pinnedAt  DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, messageId])
+  @@map("pinned_messages")
+}
+
+model TypingIndicator {
+  id        String   @id @default(uuid())
+  channelId String
+  userId    String
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("typing_indicators")
+}
+
+// ============================================================
+// 專案與任務
+// ============================================================
+
+model Project {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  icon        String?
+  color       String?
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  columns ProjectColumn[]
+  tasks   Task[]
+  boards  Whiteboard[]
+
+  @@map("projects")
+}
+
+model ProjectColumn {
+  id        String  @id @default(uuid())
+  projectId String
+  name      String
+  color     String?
+  position  Int
+  wipLimit  Int?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@map("project_columns")
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  projectId   String
+  columnId    String
+  title       String
+  description String?
+  priority    String    @default("medium") // urgent, high, medium, low
+  position    Int       @default(0)
+  dueDate     DateTime?
+  startDate   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column     ProjectColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  assignee   User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId String?
+
+  tags       TaskTag[]
+  comments   TaskComment[]
+  subtasks   Subtask[]
+  activities TaskActivity[]
+  files      File[]
+
+  @@index([projectId, columnId, position])
+  @@map("tasks")
+}
+
+model TaskTag {
+  id     String @id @default(uuid())
+  taskId String
+  name   String
+  color  String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_tags")
+}
+
+model TaskComment {
+  id        String    @id @default(uuid())
+  taskId    String
+  userId    String
+  content   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("task_comments")
+}
+
+model Subtask {
+  id        String  @id @default(uuid())
+  taskId    String
+  title     String
+  completed Boolean @default(false)
+  position  Int     @default(0)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("subtasks")
+}
+
+model TaskActivity {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  action    String // created, moved, updated, assigned, commented
+  details   Json?
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("task_activities")
+}
+
+// ============================================================
+// 會議系統
+// ============================================================
+
+model Meeting {
+  id          String    @id @default(uuid())
+  workspaceId String
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  meetingUrl  String?
+  status      String    @default("scheduled") // scheduled, ongoing, completed, cancelled
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organizer   User      @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  organizerId String
+
+  participants MeetingParticipant[]
+  notes        MeetingNote[]
+
+  @@map("meetings")
+}
+
+model MeetingParticipant {
+  id        String    @id @default(uuid())
+  meetingId String
+  userId    String
+  role      String    @default("participant") // organizer, participant
+  status    String    @default("invited") // invited, accepted, declined, tentative
+  joinedAt  DateTime?
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
+}
+
+model MeetingNote {
+  id        String   @id @default(uuid())
+  meetingId String
+  content   Json // Yjs doc state for collaborative editing
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@map("meeting_notes")
+}
+
+// ============================================================
+// 白板系統
+// ============================================================
+
+model Whiteboard {
+  id          String    @id @default(uuid())
+  workspaceId String
+  projectId   String?
+  title       String
+  description String?
+  thumbnail   String?
+  data        Json? // Yjs document state
+  isTemplate  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  sessions WhiteboardSession[]
+
+  @@map("whiteboards")
+}
+
+model WhiteboardSession {
+  id           String    @id @default(uuid())
+  whiteboardId String
+  userId       String
+  joinedAt     DateTime  @default(now())
+  leftAt       DateTime?
+
+  whiteboard Whiteboard @relation(fields: [whiteboardId], references: [id], onDelete: Cascade)
+
+  @@map("whiteboard_sessions")
+}
+
+// ============================================================
+// 檔案管理
+// ============================================================
+
+model File {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  uploaderId   String
+  messageId    String?
+  taskId       String?
+  fileName     String
+  fileType     String
+  fileSize     Int
+  url          String
+  thumbnailUrl String?
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  uploader User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  message  Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  task     Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@map("files")
+}
+
+// ============================================================
+// 通知系統
+// ============================================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String // message, mention, task_assigned, meeting_invite, etc.
+  title     String
+  content   String?
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+  @@map("notifications")
+}

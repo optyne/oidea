@@ -1,0 +1,306 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'dev_backend_urls.dart';
+
+/// NestJS 使用 `setGlobalPrefix('api')`。若 `API_URL` 只寫到埠號（例如 `http://localhost:3001`），
+/// Dio 會請求 `/auth/login` 而得到 404；應為 `/api/auth/login`。
+///
+/// **尾隨 `/` 必填**：Dio 用 `Uri.resolve` 合併路徑；若 base 為 `.../api` 而無 `/`，
+/// 相對路徑 `auth/login` 會變成 `.../apiauth/login`（錯誤）。
+String nestApiBaseUrl(String raw) {
+  final trimmed = raw.trim();
+  late final String resolved;
+  if (trimmed.isEmpty) {
+    resolved = defaultDevRestBaseUrl();
+  } else {
+    final uri = trimmed.contains('://') ? Uri.parse(trimmed) : Uri.parse('http://$trimmed');
+    var path = uri.path;
+    while (path.endsWith('/') && path.isNotEmpty) {
+      path = path.substring(0, path.length - 1);
+    }
+    if (path.isEmpty || path == '/') {
+      resolved = uri.replace(path: '/api').toString();
+    } else if (path == '/api') {
+      resolved = uri.replace(path: '/api').toString();
+    } else {
+      resolved = uri.toString();
+    }
+  }
+  if (resolved.endsWith('/')) {
+    return resolved;
+  }
+  return '$resolved/';
+}
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  const apiUrlEnv = String.fromEnvironment('API_URL', defaultValue: '');
+  final rawBase = apiUrlEnv.isNotEmpty ? apiUrlEnv : (devBackendRestBaseFromHostDefine() ?? '');
+  final dio = Dio(
+    BaseOptions(
+      baseUrl: nestApiBaseUrl(rawBase),
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+    ),
+  );
+  dio.interceptors.add(AuthInterceptor());
+  return ApiClient(dio);
+});
+
+class AuthInterceptor extends Interceptor {
+  static const _storage = FlutterSecureStorage();
+  static const _tokenKey = 'access_token';
+  static const _refreshKey = 'refresh_token';
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    final token = await _storage.read(key: _tokenKey);
+    if (token != null) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+    handler.next(options);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response?.statusCode == 401) {
+      final refreshToken = await _storage.read(key: _refreshKey);
+      if (refreshToken != null) {
+        try {
+          final refreshDio = Dio(
+            BaseOptions(
+              baseUrl: err.requestOptions.baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+            ),
+          );
+          final response = await refreshDio.post<Map<String, dynamic>>(
+            'auth/refresh',
+            options: Options(headers: {'Authorization': 'Bearer $refreshToken'}),
+          );
+          final newToken = response.data?['accessToken'] as String?;
+          final newRefresh = response.data?['refreshToken'] as String?;
+          if (newToken != null) {
+            await _storage.write(key: _tokenKey, value: newToken);
+            if (newRefresh != null) {
+              await _storage.write(key: _refreshKey, value: newRefresh);
+            }
+            final retry = Dio(
+              BaseOptions(
+                baseUrl: err.requestOptions.baseUrl,
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 15),
+              ),
+            );
+            err.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+            final retryResponse = await retry.fetch(err.requestOptions);
+            return handler.resolve(retryResponse);
+          }
+        } catch (_) {
+          await _storage.deleteAll();
+        }
+      }
+    }
+    handler.next(err);
+  }
+}
+
+class ApiClient {
+  ApiClient(this._dio);
+
+  final Dio _dio;
+
+  Future<Map<String, dynamic>> register(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('auth/register', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    final res = await _dio.post<Map<String, dynamic>>('auth/login', data: {'email': email, 'password': password});
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> getMe() async {
+    final res = await _dio.get<Map<String, dynamic>>('users/me');
+    return res.data!;
+  }
+
+  Future<List<dynamic>> getChannels(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('channels', queryParameters: {'workspaceId': workspaceId});
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getChannel(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('channels/$id');
+    return res.data!;
+  }
+
+  Future<List<dynamic>> getMessages(String channelId) async {
+    final res = await _dio.get<List<dynamic>>('messages/channel/$channelId');
+    return res.data ?? [];
+  }
+
+  Future<List<dynamic>> getThread(String parentId) async {
+    final res = await _dio.get<List<dynamic>>('messages/thread/$parentId');
+    return res.data ?? [];
+  }
+
+  Future<List<dynamic>> getProjects(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('projects/workspace/$workspaceId');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getProject(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('projects/$id');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> getTask(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('tasks/$id');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> getUnreadCount() async {
+    final res = await _dio.get<Map<String, dynamic>>('notifications/unread-count');
+    return res.data ?? {};
+  }
+
+  Future<List<dynamic>> getWhiteboards(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('whiteboard/workspace/$workspaceId');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getWhiteboard(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('whiteboard/$id');
+    return res.data!;
+  }
+
+  Future<void> addComment(String taskId, String content) async {
+    await _dio.post('tasks/$taskId/comments', data: {'content': content});
+  }
+
+  Future<void> addSubtask(String taskId, String title) async {
+    await _dio.post('tasks/$taskId/subtasks', data: {'title': title});
+  }
+
+  Future<List<dynamic>> getMeetings(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('meetings/workspace/$workspaceId');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getMeeting(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('meetings/$id');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createProject(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('projects', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createMeeting(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('meetings', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createWhiteboard(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('whiteboard', data: body);
+    return res.data!;
+  }
+
+  Future<void> deleteWhiteboard(String id) async {
+    await _dio.delete('whiteboard/$id');
+  }
+
+  Future<List<dynamic>> getWorkspaces() async {
+    final res = await _dio.get<List<dynamic>>('workspaces');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> createWorkspace(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('workspaces', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createChannel(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('channels', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createMessage(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('messages', data: body);
+    return res.data!;
+  }
+
+  Future<List<dynamic>> searchMessages(String channelId, String query) async {
+    final res = await _dio.get<List<dynamic>>(
+      'messages/search/$channelId',
+      queryParameters: {'q': query},
+    );
+    return res.data ?? [];
+  }
+
+  Future<void> addMessageReaction(String messageId, String emoji) async {
+    await _dio.post('messages/$messageId/reactions', data: {'emoji': emoji});
+  }
+
+  Future<void> removeMessageReaction(String messageId, String emoji) async {
+    final enc = Uri.encodeComponent(emoji);
+    await _dio.delete('messages/$messageId/reactions/$enc');
+  }
+
+  Future<Map<String, dynamic>> updateMessage(String id, String content) async {
+    final res = await _dio.put<Map<String, dynamic>>('messages/$id', data: {'content': content});
+    return res.data!;
+  }
+
+  Future<void> deleteMessage(String id) async {
+    await _dio.delete('messages/$id');
+  }
+
+  Future<Map<String, dynamic>> createTask(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('tasks', data: body);
+    return res.data!;
+  }
+
+  Future<void> moveTask(String taskId, {required String columnId, required int position}) async {
+    await _dio.put('tasks/$taskId/move', data: {'columnId': columnId, 'position': position});
+  }
+
+  Future<Map<String, dynamic>> addProjectColumn(String projectId, Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('projects/$projectId/columns', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> updateTask(String taskId, Map<String, dynamic> body) async {
+    final res = await _dio.put<Map<String, dynamic>>('tasks/$taskId', data: body);
+    return res.data!;
+  }
+
+  Future<void> deleteTask(String taskId) async {
+    await _dio.delete('tasks/$taskId');
+  }
+
+  Future<Map<String, dynamic>> toggleSubtask(String subtaskId) async {
+    final res = await _dio.put<Map<String, dynamic>>('tasks/subtasks/$subtaskId/toggle');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> addSubtaskItem(String taskId, String title) async {
+    final res = await _dio.post<Map<String, dynamic>>('tasks/$taskId/subtasks', data: {'title': title});
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> updateUserProfile(Map<String, dynamic> body) async {
+    final res = await _dio.put<Map<String, dynamic>>('users/me', data: body);
+    return res.data!;
+  }
+
+  Future<List<dynamic>> searchUsers(String query, {String? workspaceId}) async {
+    final res = await _dio.get<List<dynamic>>(
+      'users/search',
+      queryParameters: {'q': query, if (workspaceId != null) 'workspaceId': workspaceId},
+    );
+    return res.data ?? [];
+  }
+}

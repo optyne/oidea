@@ -1,0 +1,6 @@
+# Oidea
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
