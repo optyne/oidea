@@ -59,4 +59,21 @@ export class WorkspacesController {
   async removeMember(@Req() req: any, @Param('id') id: string, @Param('userId') userId: string) {
     return this.workspacesService.removeMember(req.user.userId, id, userId);
   }
+
+  @Get(':id/members')
+  @ApiOperation({ summary: '列出成員與角色' })
+  async listMembers(@Req() req: any, @Param('id') id: string) {
+    return this.workspacesService.listMembers(req.user.userId, id);
+  }
+
+  @Put(':id/members/:userId/role')
+  @ApiOperation({ summary: '更新成員角色（admin / hr / finance / member）' })
+  async updateMemberRole(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: { role: string },
+  ) {
+    return this.workspacesService.updateMemberRole(req.user.userId, id, userId, body.role);
+  }
 }

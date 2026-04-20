@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
 import '../../../../shared/widgets/common_widgets.dart';
+import '../../../../shared/widgets/message_body.dart';
 import '../../providers/message_provider.dart';
 
 /// 討論串：根訊息 [parentSummary] 可由上一頁 [extra] 傳入以便顯示頂部摘要。
@@ -147,9 +148,9 @@ class _ThreadPageState extends ConsumerState<ThreadPage> {
                                   sender?['displayName'] as String? ?? '?',
                                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                 ),
-                                SelectableText(
-                                  msg['content'] as String? ?? '',
-                                  style: const TextStyle(fontSize: 14),
+                                MessageBody(
+                                  content: msg['content'] as String? ?? '',
+                                  baseStyle: const TextStyle(fontSize: 14),
                                 ),
                               ],
                             ),
@@ -219,9 +220,9 @@ class _ParentHeader extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
             const SizedBox(height: 2),
-            Text(
-              parent['content'] as String? ?? '',
-              style: const TextStyle(fontSize: 14),
+            MessageBody(
+              content: parent['content'] as String? ?? '',
+              baseStyle: const TextStyle(fontSize: 14),
             ),
           ],
         ),

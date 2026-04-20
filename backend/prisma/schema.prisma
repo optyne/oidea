@@ -41,6 +41,14 @@ model User {
   notifications      Notification[]
   sharedFiles        File[]
   activities         TaskActivity[]
+  expenses           Expense[]            @relation("ExpenseSubmitter")
+  approvals          ExpenseApproval[]    @relation("ExpenseApprover")
+  attendances        Attendance[]
+  leaveRequests      LeaveRequest[]       @relation("LeaveRequester")
+  leaveApprovals     LeaveRequest[]       @relation("LeaveApprover")
+  createdPages       KnowledgePage[]      @relation("PageCreatedBy")
+  editedBlocks       KnowledgeBlock[]     @relation("BlockLastEditedBy")
+  createdRows        DbRow[]              @relation("RowCreatedBy")
 
   @@map("users")
 }
@@ -79,11 +87,15 @@ model Workspace {
   ownerId String @map("ownerId")
   owner   User   @relation("WorkspaceOwner", fields: [ownerId], references: [id])
 
-  members  WorkspaceMember[]
-  channels Channel[]
-  projects Project[]
-  meetings Meeting[]
-  boards   Whiteboard[]
+  members        WorkspaceMember[]
+  channels       Channel[]
+  projects       Project[]
+  meetings       Meeting[]
+  boards         Whiteboard[]
+  expenses       Expense[]
+  attendances    Attendance[]
+  leaveRequests  LeaveRequest[]
+  knowledgePages KnowledgePage[]
 
   @@map("workspaces")
 }
@@ -92,7 +104,7 @@ model WorkspaceMember {
   id          String   @id @default(uuid())
   workspaceId String
   userId      String
-  role        String   @default("member") // owner, admin, member
+  role        String   @default("member") // owner, admin, hr, finance, member
   joinedAt    DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -482,7 +494,7 @@ model File {
 model Notification {
   id        String   @id @default(uuid())
   userId    String
-  type      String // message, mention, task_assigned, meeting_invite, etc.
+  type      String // message, mention, task_assigned, meeting_invite, expense_submitted, expense_approved, leave_approved, etc.
   title     String
   content   String?
   link      String?
@@ -493,4 +505,224 @@ model Notification {
 
   @@index([userId, read, createdAt])
   @@map("notifications")
+}
+
+// ============================================================
+// ERP：費用報銷
+// ============================================================
+
+model Expense {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  submitterId  String
+  title        String
+  amount       Decimal   @db.Decimal(12, 2)
+  currency     String    @default("TWD")
+  category     String    @default("other") // travel, meal, transport, office, other
+  description  String?
+  incurredAt   DateTime  @default(now())
+  status       String    @default("pending") // pending, approved, rejected, paid
+  rejectReason String?
+  paidAt       DateTime?
+  paidBy       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  submitter User              @relation("ExpenseSubmitter", fields: [submitterId], references: [id], onDelete: Cascade)
+  approvals ExpenseApproval[]
+  receipts  ExpenseReceipt[]
+
+  @@index([workspaceId, status, createdAt])
+  @@index([submitterId, createdAt])
+  @@map("expenses")
+}
+
+model ExpenseApproval {
+  id         String   @id @default(uuid())
+  expenseId  String
+  approverId String
+  decision   String // approved, rejected
+  comment    String?
+  decidedAt  DateTime @default(now())
+
+  expense  Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  approver User    @relation("ExpenseApprover", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId, decidedAt])
+  @@map("expense_approvals")
+}
+
+model ExpenseReceipt {
+  id         String   @id @default(uuid())
+  expenseId  String
+  fileName   String
+  fileType   String
+  fileSize   Int
+  url        String
+  uploadedAt DateTime @default(now())
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@map("expense_receipts")
+}
+
+// ============================================================
+// ERP：考勤打卡
+// ============================================================
+
+model Attendance {
+  id               String    @id @default(uuid())
+  workspaceId      String
+  userId           String
+  date             DateTime  @db.Date
+  checkInAt        DateTime?
+  checkOutAt       DateTime?
+  workMinutes      Int       @default(0)
+  checkInLocation  String?
+  checkOutLocation String?
+  note             String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, date])
+  @@index([workspaceId, date])
+  @@map("attendances")
+}
+
+model LeaveRequest {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  requesterId  String
+  type         String // sick, annual, personal, unpaid, other
+  startDate    DateTime  @db.Date
+  endDate      DateTime  @db.Date
+  reason       String?
+  status       String    @default("pending") // pending, approved, rejected, cancelled
+  approverId   String?
+  decidedAt    DateTime?
+  rejectReason String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requester User      @relation("LeaveRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  approver  User?     @relation("LeaveApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, startDate])
+  @@index([requesterId, startDate])
+  @@map("leave_requests")
+}
+
+// ============================================================
+// 知識管理：Notion 風 Page + Block + Database
+// ============================================================
+
+/// 一個 Page 即為一份文件。可巢狀，亦可作為 [KnowledgeDatabase] 的容器。
+model KnowledgePage {
+  id          String    @id @default(uuid())
+  workspaceId String
+  parentId    String?
+  createdById String
+  title       String    @default("Untitled")
+  icon        String? // emoji
+  coverUrl    String?
+  kind        String    @default("page") // page, database
+  archived    Boolean   @default(false)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent    KnowledgePage?     @relation("PageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  KnowledgePage[]    @relation("PageTree")
+  createdBy User               @relation("PageCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  blocks    KnowledgeBlock[]
+  database  KnowledgeDatabase?
+
+  @@index([workspaceId, parentId, position])
+  @@map("knowledge_pages")
+}
+
+/// Block 儲存於 Page 下。支援 text / h1 / h2 / h3 / todo / bullet / numbered / quote / code / divider / image 等類型。
+model KnowledgeBlock {
+  id             String   @id @default(uuid())
+  pageId         String
+  parentBlockId  String?
+  type           String   @default("text")
+  /// 統一以 JSON 儲存內容；例如 text: { text: "..." }、todo: { text, checked }、image: { url, caption }、code: { language, text }
+  content        Json     @default("{}")
+  position       Int      @default(0)
+  lastEditedById String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  page         KnowledgePage    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  parentBlock  KnowledgeBlock?  @relation("BlockTree", fields: [parentBlockId], references: [id], onDelete: Cascade)
+  childBlocks  KnowledgeBlock[] @relation("BlockTree")
+  lastEditedBy User?            @relation("BlockLastEditedBy", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  @@index([pageId, parentBlockId, position])
+  @@map("knowledge_blocks")
+}
+
+/// 掛在某個 Page 之下的資料庫。一個 Page 最多一個 Database。
+model KnowledgeDatabase {
+  id          String   @id @default(uuid())
+  pageId      String   @unique
+  description String?
+  /// 預設 view：table | list | board | calendar
+  defaultView String   @default("table")
+  /// 預留用於 finance 等範本識別
+  template    String? // null = 一般, "finance_log" = 記帳
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  page       KnowledgePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  properties DbProperty[]
+  rows       DbRow[]
+
+  @@map("knowledge_databases")
+}
+
+model DbProperty {
+  id         String   @id @default(uuid())
+  databaseId String
+  /// 對應 DbRow.values 的 key（建立後不應修改）
+  key        String
+  name       String
+  /// text | number | select | multi_select | date | checkbox | url | person | currency
+  type       String
+  /// 型別相關設定，例如 select.options = [{ id, label, color }]、currency.code = "TWD"
+  config     Json     @default("{}")
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  database KnowledgeDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  @@unique([databaseId, key])
+  @@map("db_properties")
+}
+
+model DbRow {
+  id          String   @id @default(uuid())
+  databaseId  String
+  /// 以 property key → 值 的 JSON 物件保存
+  values      Json     @default("{}")
+  position    Int      @default(0)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  database  KnowledgeDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("RowCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([databaseId, position])
+  @@map("db_rows")
 }

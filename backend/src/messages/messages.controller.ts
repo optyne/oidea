@@ -71,4 +71,22 @@ export class MessagesController {
   async search(@Req() req: any, @Param('channelId') channelId: string, @Query('q') query: string) {
     return this.messagesService.search(req.user.userId, channelId, query);
   }
+
+  @Put(':id/pin')
+  @ApiOperation({ summary: '置頂訊息' })
+  async pin(@Req() req: any, @Param('id') id: string) {
+    return this.messagesService.pin(req.user.userId, id);
+  }
+
+  @Put(':id/unpin')
+  @ApiOperation({ summary: '取消置頂' })
+  async unpin(@Req() req: any, @Param('id') id: string) {
+    return this.messagesService.unpin(req.user.userId, id);
+  }
+
+  @Get('channel/:channelId/pinned')
+  @ApiOperation({ summary: '取得頻道置頂訊息' })
+  async findPinned(@Req() req: any, @Param('channelId') channelId: string) {
+    return this.messagesService.findPinned(req.user.userId, channelId);
+  }
 }

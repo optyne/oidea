@@ -19,6 +19,21 @@ class BoardPage extends ConsumerStatefulWidget {
 }
 
 class _BoardPageState extends ConsumerState<BoardPage> {
+  final Set<String> _filterAssigneeIds = {};
+  final Set<String> _filterPriorities = {};
+
+  bool _passesFilter(Map<String, dynamic> task) {
+    if (_filterAssigneeIds.isNotEmpty) {
+      final aid = (task['assignee'] as Map<String, dynamic>?)?['id'] as String?;
+      if (aid == null || !_filterAssigneeIds.contains(aid)) return false;
+    }
+    if (_filterPriorities.isNotEmpty) {
+      final p = task['priority'] as String? ?? 'medium';
+      if (!_filterPriorities.contains(p)) return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final boardAsync = ref.watch(boardProvider(widget.projectId));
@@ -31,7 +46,19 @@ class _BoardPageState extends ConsumerState<BoardPage> {
           error: (_, __) => const Text('看板'),
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
+          IconButton(
+            icon: Icon(
+              Icons.filter_list,
+              color: (_filterAssigneeIds.isNotEmpty || _filterPriorities.isNotEmpty)
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            onPressed: () async {
+              final board = await ref.read(boardProvider(widget.projectId).future);
+              if (!context.mounted) return;
+              _openFilterSheet(context, board);
+            },
+          ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'column') {
@@ -70,7 +97,10 @@ class _BoardPageState extends ConsumerState<BoardPage> {
             itemCount: columns.length,
             itemBuilder: (context, index) {
               final column = columns[index] as Map<String, dynamic>;
-              final tasks = (column['tasks'] as List<dynamic>?) ?? [];
+              final allTasks = (column['tasks'] as List<dynamic>?) ?? [];
+              final tasks = allTasks
+                  .where((t) => _passesFilter(t as Map<String, dynamic>))
+                  .toList();
               return SizedBox(
                 width: 300,
                 child: Card(
@@ -162,6 +192,110 @@ class _BoardPageState extends ConsumerState<BoardPage> {
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddTask(context),
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _openFilterSheet(BuildContext context, Map<String, dynamic> board) {
+    final columns = (board['columns'] as List<dynamic>?) ?? [];
+    final assigneeMap = <String, Map<String, dynamic>>{};
+    for (final c in columns) {
+      final tasks = ((c as Map<String, dynamic>)['tasks'] as List<dynamic>?) ?? [];
+      for (final t in tasks) {
+        final a = (t as Map<String, dynamic>)['assignee'] as Map<String, dynamic>?;
+        if (a != null && a['id'] is String) {
+          assigneeMap[a['id'] as String] = a;
+        }
+      }
+    }
+    final assignees = assigneeMap.values.toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('篩選', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () {
+                      setSt(() {
+                        _filterAssigneeIds.clear();
+                        _filterPriorities.clear();
+                      });
+                      setState(() {});
+                    },
+                    child: const Text('清除'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text('優先級', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                children: const ['urgent', 'high', 'medium', 'low'].map((p) {
+                  final selected = _filterPriorities.contains(p);
+                  return FilterChip(
+                    label: Text(_TaskCard._priorityLabel(p)),
+                    selected: selected,
+                    onSelected: (v) {
+                      setSt(() {
+                        if (v) {
+                          _filterPriorities.add(p);
+                        } else {
+                          _filterPriorities.remove(p);
+                        }
+                      });
+                      setState(() {});
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+              const Text('負責人', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              if (assignees.isEmpty)
+                const Text('看板尚無指派', style: TextStyle(color: Colors.grey))
+              else
+                Wrap(
+                  spacing: 6,
+                  children: assignees.map((a) {
+                    final id = a['id'] as String;
+                    final name = a['displayName'] as String? ?? '';
+                    final selected = _filterAssigneeIds.contains(id);
+                    return FilterChip(
+                      label: Text(name),
+                      selected: selected,
+                      onSelected: (v) {
+                        setSt(() {
+                          if (v) {
+                            _filterAssigneeIds.add(id);
+                          } else {
+                            _filterAssigneeIds.remove(id);
+                          }
+                        });
+                        setState(() {});
+                      },
+                    );
+                  }).toList(),
+                ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -258,6 +392,22 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 
     final titleController = TextEditingController();
     var columnId = (cols.first as Map<String, dynamic>)['id'] as String?;
+    String priority = 'medium';
+    String? assigneeId;
+    DateTime? dueDate;
+
+    // 列出工作空間成員作為可指派對象（來自現存任務的 assignee 集合）。
+    final memberMap = <String, Map<String, dynamic>>{};
+    for (final c in cols) {
+      final tasks = ((c as Map<String, dynamic>)['tasks'] as List<dynamic>?) ?? [];
+      for (final t in tasks) {
+        final a = (t as Map<String, dynamic>)['assignee'] as Map<String, dynamic>?;
+        if (a != null && a['id'] is String) {
+          memberMap[a['id'] as String] = a;
+        }
+      }
+    }
+    final members = memberMap.values.toList();
 
     if (!context.mounted) return;
     await showDialog<void>(
@@ -275,7 +425,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   decoration: const InputDecoration(labelText: '標題'),
                   autofocus: true,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: columnId,
                   decoration: const InputDecoration(labelText: '欄位'),
@@ -287,6 +437,49 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     );
                   }).toList(),
                   onChanged: (v) => setSt(() => columnId = v),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: priority,
+                  decoration: const InputDecoration(labelText: '優先級'),
+                  items: const [
+                    DropdownMenuItem(value: 'urgent', child: Text('🔴 緊急')),
+                    DropdownMenuItem(value: 'high', child: Text('🟠 高')),
+                    DropdownMenuItem(value: 'medium', child: Text('🟡 中')),
+                    DropdownMenuItem(value: 'low', child: Text('🟢 低')),
+                  ],
+                  onChanged: (v) => setSt(() => priority = v ?? 'medium'),
+                ),
+                if (members.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    value: assigneeId,
+                    decoration: const InputDecoration(labelText: '負責人（選填）'),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('未指派')),
+                      ...members.map((m) => DropdownMenuItem<String?>(
+                            value: m['id'] as String,
+                            child: Text(m['displayName'] as String? ?? ''),
+                          )),
+                    ],
+                    onChanged: (v) => setSt(() => assigneeId = v),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 18),
+                  label: Text(dueDate != null
+                      ? '截止日：${dueDate!.year}/${dueDate!.month.toString().padLeft(2, '0')}/${dueDate!.day.toString().padLeft(2, '0')}'
+                      : '設定截止日（選填）'),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: dueDate ?? DateTime.now().add(const Duration(days: 7)),
+                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                    );
+                    if (picked != null) setSt(() => dueDate = picked);
+                  },
                 ),
               ],
             ),
@@ -303,6 +496,9 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     'projectId': widget.projectId,
                     'columnId': columnId,
                     'title': title,
+                    'priority': priority,
+                    if (assigneeId != null) 'assigneeId': assigneeId,
+                    if (dueDate != null) 'dueDate': dueDate!.toIso8601String(),
                   });
                   ref.invalidate(boardProvider(widget.projectId));
                 } catch (e) {
@@ -327,21 +523,163 @@ class _TaskCard extends StatelessWidget {
 
   const _TaskCard({required this.task, required this.onTap});
 
+  static Color priorityColor(String? p) {
+    switch (p) {
+      case 'urgent':
+        return const Color(0xFFE53935);
+      case 'high':
+        return const Color(0xFFFB8C00);
+      case 'low':
+        return const Color(0xFF9E9E9E);
+      case 'medium':
+      default:
+        return const Color(0xFFFDD835);
+    }
+  }
+
+  static String _priorityLabel(String? p) {
+    return const {
+          'urgent': '緊急',
+          'high': '高',
+          'medium': '中',
+          'low': '低',
+        }[p] ??
+        '中';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final priority = task['priority'] as String?;
+    final assignee = task['assignee'] as Map<String, dynamic>?;
+    final tags = (task['tags'] as List<dynamic>?) ?? [];
+    final dueDate = task['dueDate'] != null
+        ? DateTime.tryParse(task['dueDate'].toString())
+        : null;
+    final title = task['title'] as String? ?? '';
+    final desc = task['description'] as String?;
+    final overdue =
+        dueDate != null && dueDate.isBefore(DateTime.now()) && task['completedAt'] == null;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        title: Text(task['title'] as String? ?? ''),
-        subtitle: task['description'] != null
-            ? Text(
-                task['description'].toString(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              )
-            : null,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: priorityColor(priority)),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      if (desc != null && desc.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          desc,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        ),
+                      ],
+                      if (tags.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: tags.take(4).map<Widget>((t) {
+                            final tm = t as Map<String, dynamic>;
+                            final color = _parseColor(tm['color'] as String?) ??
+                                Colors.blueGrey.shade100;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                tm['name'] as String? ?? '',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: priorityColor(priority).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _priorityLabel(priority),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: priorityColor(priority),
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          if (dueDate != null) ...[
+                            Icon(
+                              Icons.event,
+                              size: 12,
+                              color: overdue ? Colors.red : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${dueDate.month}/${dueDate.day}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: overdue ? Colors.red : Colors.grey.shade600,
+                                fontWeight: overdue ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          if (assignee != null)
+                            CircleAvatar(
+                              radius: 10,
+                              backgroundImage: (assignee['avatarUrl'] as String?) != null
+                                  ? NetworkImage(assignee['avatarUrl'] as String)
+                                  : null,
+                              child: (assignee['avatarUrl'] as String?) == null
+                                  ? Text(
+                                      (assignee['displayName'] as String? ?? '?').characters.first,
+                                      style: const TextStyle(fontSize: 10),
+                                    )
+                                  : null,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  static Color? _parseColor(String? hex) {
+    if (hex == null) return null;
+    var s = hex.replaceAll('#', '');
+    if (s.length == 6) s = 'FF$s';
+    final v = int.tryParse(s, radix: 16);
+    return v == null ? null : Color(v);
   }
 }

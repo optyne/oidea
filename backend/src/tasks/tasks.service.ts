@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../common/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(userId: string, dto: CreateTaskDto) {
     const project = await this.prisma.project.findUnique({
@@ -24,7 +28,7 @@ export class TasksService {
       where: { columnId: dto.columnId },
     });
 
-    return this.prisma.task.create({
+    const task = await this.prisma.task.create({
       data: {
         projectId: dto.projectId,
         columnId: dto.columnId,
@@ -41,6 +45,12 @@ export class TasksService {
         tags: true,
       },
     });
+
+    if (task.assigneeId && task.assigneeId !== userId) {
+      await this.notifyAssigned(task.assigneeId, task.id, task.title, project.name);
+    }
+
+    return task;
   }
 
   async findByProject(userId: string, projectId: string) {
@@ -84,7 +94,10 @@ export class TasksService {
   }
 
   async update(userId: string, id: string, dto: UpdateTaskDto) {
-    const task = await this.prisma.task.findUnique({ where: { id } });
+    const task = await this.prisma.task.findUnique({
+      where: { id },
+      include: { project: { select: { name: true } } },
+    });
     if (!task) throw new NotFoundException('任務不存在');
 
     const updateData: any = {
@@ -111,7 +124,22 @@ export class TasksService {
 
     await this.logActivity(id, userId, 'updated', dto);
 
+    const newAssignee = updated.assigneeId;
+    if (newAssignee && newAssignee !== task.assigneeId && newAssignee !== userId) {
+      await this.notifyAssigned(newAssignee, id, updated.title, task.project?.name ?? '');
+    }
+
     return updated;
+  }
+
+  private async notifyAssigned(assigneeId: string, taskId: string, title: string, projectName: string) {
+    await this.notifications.create({
+      userId: assigneeId,
+      type: 'task_assigned',
+      title: `你被指派了新任務：${title}`,
+      content: projectName ? `專案：${projectName}` : undefined,
+      link: `/project/task/${taskId}`,
+    });
   }
 
   async move(userId: string, id: string, columnId: string, position: number) {
@@ -129,7 +157,7 @@ export class TasksService {
         where: { id },
         data: { columnId, position },
       }),
-      ...tasksInColumn.map((t, i) =>
+      ...tasksInColumn.map((t: { id: string }, i: number) =>
         this.prisma.task.update({
           where: { id: t.id },
           data: { position: i >= position ? i + 1 : i },

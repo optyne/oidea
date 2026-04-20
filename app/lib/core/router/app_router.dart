@@ -13,6 +13,12 @@ import '../../features/meeting/presentation/pages/meeting_home_page.dart';
 import '../../features/meeting/presentation/pages/meeting_room_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_home_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_canvas_page.dart';
+import '../../features/erp/presentation/pages/erp_home_page.dart';
+import '../../features/erp/presentation/pages/attendance_page.dart';
+import '../../features/erp/presentation/pages/expenses_page.dart';
+import '../../features/erp/presentation/pages/leaves_page.dart';
+import '../../features/erp/presentation/pages/members_page.dart';
+import '../../features/notes/presentation/pages/notes_home_page.dart';
 import '../../shared/pages/main_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -105,6 +111,32 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => WhiteboardCanvasPage(
                   boardId: state.pathParameters['boardId']!,
                 ),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/notes',
+            builder: (context, state) => const NotesHomePage(),
+          ),
+          GoRoute(
+            path: '/erp',
+            builder: (context, state) => const ErpHomePage(),
+            routes: [
+              GoRoute(
+                path: 'attendance',
+                builder: (context, state) => const AttendancePage(),
+              ),
+              GoRoute(
+                path: 'expenses',
+                builder: (context, state) => const ExpensesPage(),
+              ),
+              GoRoute(
+                path: 'leaves',
+                builder: (context, state) => const LeavesPage(),
+              ),
+              GoRoute(
+                path: 'members',
+                builder: (context, state) => const MembersPage(),
               ),
             ],
           ),

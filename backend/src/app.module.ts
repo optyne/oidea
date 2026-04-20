@@ -13,6 +13,9 @@ import { MeetingsModule } from './meetings/meetings.module';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { FilesModule } from './files/files.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { AttendanceModule } from './attendance/attendance.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { NotificationsModule } from './notifications/notifications.module';
     WhiteboardModule,
     FilesModule,
     NotificationsModule,
+    ExpensesModule,
+    AttendanceModule,
+    KnowledgeModule,
   ],
 })
 export class AppModule {}
