@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { BroadcastMessageDto } from './dto/broadcast-message.dto';
+import { ConvertMessageToTaskDto } from './dto/convert-to-task.dto';
 import { MessagesGateway } from './messages.gateway';
 
 @Injectable()
@@ -201,6 +202,83 @@ export class MessagesService {
   async removeReaction(userId: string, messageId: string, emoji: string) {
     return this.prisma.messageReaction.delete({
       where: { messageId_userId_emoji: { messageId, userId, emoji } },
+    });
+  }
+
+  /**
+   * C-18：把一則訊息轉成 Task。
+   *
+   * 權限：訊息的頻道成員才可轉；目標 project 必須同 workspace；
+   * 如指定 assignee，對方需為同 workspace 成員。
+   *
+   * 預設：
+   *   - title = message.content 前 100 字 (無內容 → '（空訊息）')
+   *   - description = 完整 content
+   *   - priority = 'medium'
+   * 全部可被 dto 覆蓋。建立的 Task.sourceMessageId 指向原訊息。
+   */
+  async convertToTask(
+    userId: string,
+    messageId: string,
+    dto: ConvertMessageToTaskDto,
+  ) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { channel: { select: { workspaceId: true } } },
+    });
+    if (!message || message.deletedAt) {
+      throw new NotFoundException('訊息不存在');
+    }
+
+    const channelMember = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId: message.channelId, userId } },
+    });
+    if (!channelMember) throw new ForbiddenException('非此頻道成員');
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: dto.projectId },
+    });
+    if (!project || project.deletedAt) {
+      throw new NotFoundException('專案不存在');
+    }
+    if (project.workspaceId !== message.channel.workspaceId) {
+      throw new BadRequestException('專案必須與訊息在同一工作空間');
+    }
+
+    const column = await this.prisma.projectColumn.findUnique({
+      where: { id: dto.columnId },
+    });
+    if (!column) throw new NotFoundException('看板欄位不存在');
+    if (column.projectId !== dto.projectId) {
+      throw new BadRequestException('看板欄位不屬於指定專案');
+    }
+
+    if (dto.assigneeId) {
+      const assignee = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId: project.workspaceId,
+            userId: dto.assigneeId,
+          },
+        },
+      });
+      if (!assignee) throw new BadRequestException('指派對象非此工作空間成員');
+    }
+
+    const raw = message.content ?? '';
+    const defaultTitle = raw.trim().slice(0, 100) || '（空訊息）';
+
+    return this.prisma.task.create({
+      data: {
+        projectId: dto.projectId,
+        columnId: dto.columnId,
+        title: dto.title ?? defaultTitle,
+        description: dto.description ?? (raw || undefined),
+        priority: dto.priority ?? 'medium',
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        assigneeId: dto.assigneeId,
+        sourceMessageId: messageId,
+      },
     });
   }
 
