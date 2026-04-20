@@ -18,6 +18,7 @@ import { DatabasesModule } from './databases/databases.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { SnippetsModule } from './snippets/snippets.module';
 import { ScheduledMessagesModule } from './scheduled-messages/scheduled-messages.module';
+import { AutomationModule } from './automation/automation.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ScheduledMessagesModule } from './scheduled-messages/scheduled-messages
     RemindersModule,
     SnippetsModule,
     ScheduledMessagesModule,
+    AutomationModule,
   ],
 })
 export class AppModule {}

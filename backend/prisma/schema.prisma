@@ -45,6 +45,7 @@ model User {
   reminders          Reminder[]           @relation("ReminderCreator")
   messageSnippets    MessageSnippet[]     @relation("SnippetCreator")
   scheduledMessages  ScheduledMessage[]   @relation("ScheduledMessageCreator")
+  automationRules    AutomationRule[]     @relation("AutomationRuleCreator")
 
   @@map("users")
 }
@@ -92,6 +93,7 @@ model Workspace {
   reminders         Reminder[]
   snippets          MessageSnippet[]
   scheduledMessages ScheduledMessage[]
+  automationRules   AutomationRule[]
 
   @@map("workspaces")
 }
@@ -618,6 +620,38 @@ model MessageSnippet {
   @@index([workspaceId, deletedAt, visibility])
   @@index([createdBy, deletedAt])
   @@map("message_snippets")
+}
+
+// ============================================================
+// 自動化規則 (P-15)
+//   事件觸發：task_completed (本刀暫時支援此單一 trigger)
+//   scope: project — scopeId 指向 Project.id，執行時匹配 task.projectId
+//   action: notify_user | post_to_channel
+// ============================================================
+
+model AutomationRule {
+  id            String    @id @default(uuid())
+  workspaceId   String
+  createdBy     String
+  name          String
+  description   String?
+  scope         String // project | database
+  scopeId       String
+  trigger       String // task_completed | task_moved_to_column | ...
+  triggerConfig Json?
+  action        String // notify_user | post_to_channel
+  actionConfig  Json // 依 action 不同結構
+  enabled       Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("AutomationRuleCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([scope, scopeId, trigger, enabled, deletedAt])
+  @@index([workspaceId, deletedAt])
+  @@map("automation_rules")
 }
 
 // ============================================================

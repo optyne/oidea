@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { PrismaService } from '../common/prisma.service';
+import { AutomationEngine } from '../automation/automation.engine';
 
 type PrismaMock = {
   project: { findUnique: jest.Mock };
@@ -32,16 +33,19 @@ const buildMock = (): PrismaMock => ({
 describe('TasksService — P-14 循環任務', () => {
   let service: TasksService;
   let prisma: PrismaMock;
+  let automation: { onTaskCompleted: jest.Mock };
 
   const USER_ID = 'u-1';
   const TASK_ID = 't-1';
 
   beforeEach(async () => {
     prisma = buildMock();
+    automation = { onTaskCompleted: jest.fn().mockResolvedValue(0) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TasksService,
         { provide: PrismaService, useValue: prisma },
+        { provide: AutomationEngine, useValue: automation },
       ],
     }).compile();
     service = module.get(TasksService);
@@ -196,6 +200,39 @@ describe('TasksService — P-14 循環任務', () => {
       const data = prisma.task.create.mock.calls[0][0].data;
       expect((data.startDate as Date).toISOString()).toBe('2028-04-17T00:00:00.000Z');
       expect((data.dueDate as Date).toISOString()).toBe('2028-04-20T00:00:00.000Z');
+    });
+  });
+
+  // ---------- P-15 hook into automation ----------
+  describe('automation hook', () => {
+    const primeUpdate = (task: any) => {
+      prisma.task.findUnique.mockResolvedValue(task);
+      prisma.task.update.mockResolvedValue({
+        ...task,
+        completedAt: new Date(),
+      });
+    };
+
+    it('TC-P15-H01: 首次完成任務會呼叫 AutomationEngine.onTaskCompleted', async () => {
+      primeUpdate(baseTask({ recurrence: 'none' })); // 不要觸發 spawn
+      await service.update(USER_ID, TASK_ID, { completed: true });
+      expect(automation.onTaskCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ id: TASK_ID, projectId: 'p-1' }),
+      );
+    });
+
+    it('TC-P15-H02: 非完成的 update 不呼叫 automation', async () => {
+      primeUpdate(baseTask({ recurrence: 'none' }));
+      await service.update(USER_ID, TASK_ID, { title: 'rename only' });
+      expect(automation.onTaskCompleted).not.toHaveBeenCalled();
+    });
+
+    it('TC-P15-H03: 已 completed 再送 completed=true → 不重呼 automation', async () => {
+      primeUpdate(
+        baseTask({ recurrence: 'none', completedAt: new Date() }),
+      );
+      await service.update(USER_ID, TASK_ID, { completed: true });
+      expect(automation.onTaskCompleted).not.toHaveBeenCalled();
     });
   });
 });

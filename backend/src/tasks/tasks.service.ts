@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { addRecurrence, RecurrenceRule } from '../common/recurrence';
+import { AutomationEngine } from '../automation/automation.engine';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private automation: AutomationEngine,
+  ) {}
 
   async create(userId: string, dto: CreateTaskDto) {
     const project = await this.prisma.project.findUnique({
@@ -122,6 +126,17 @@ export class TasksService {
     // P-14: 完成一張循環任務 → 自動生成下一張
     if (transitioningToComplete) {
       await this.spawnRecurringInstance(task);
+    }
+
+    // P-15: 派發自動化規則（task_completed 觸發）
+    if (transitioningToComplete) {
+      await this.automation.onTaskCompleted({
+        id: task.id,
+        projectId: task.projectId,
+        title: updated.title,
+        assigneeId: updated.assigneeId,
+        dueDate: updated.dueDate,
+      });
     }
 
     return updated;
