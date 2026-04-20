@@ -43,6 +43,7 @@ model User {
   activities         TaskActivity[]
   createdDatabases   Database[]           @relation("DatabaseCreator")
   reminders          Reminder[]           @relation("ReminderCreator")
+  messageSnippets    MessageSnippet[]     @relation("SnippetCreator")
 
   @@map("users")
 }
@@ -88,6 +89,7 @@ model Workspace {
   boards    Whiteboard[]
   databases Database[]
   reminders Reminder[]
+  snippets  MessageSnippet[]
 
   @@map("workspaces")
 }
@@ -579,6 +581,32 @@ model DatabaseCell {
 //   支援單次 / daily / weekly / monthly / yearly + interval
 //   targetType/targetId 可指向 database_row 或 task；null = 純提醒
 // ============================================================
+
+// ============================================================
+// 訊息範本 / 片段庫 (C-15)
+//   visibility: personal (僅作者) | workspace (同工作空間成員皆可使用)
+//   只有作者可以編輯 / 軟刪
+// ============================================================
+
+model MessageSnippet {
+  id          String    @id @default(uuid())
+  workspaceId String
+  createdBy   String
+  name        String
+  content     String
+  shortcut    String? // 例：/billing-notice
+  visibility  String    @default("personal") // personal | workspace
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("SnippetCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, deletedAt, visibility])
+  @@index([createdBy, deletedAt])
+  @@map("message_snippets")
+}
 
 model Reminder {
   id                 String    @id @default(uuid())
