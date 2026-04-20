@@ -44,6 +44,7 @@ model User {
   createdDatabases   Database[]           @relation("DatabaseCreator")
   reminders          Reminder[]           @relation("ReminderCreator")
   messageSnippets    MessageSnippet[]     @relation("SnippetCreator")
+  scheduledMessages  ScheduledMessage[]   @relation("ScheduledMessageCreator")
 
   @@map("users")
 }
@@ -87,9 +88,10 @@ model Workspace {
   projects  Project[]
   meetings  Meeting[]
   boards    Whiteboard[]
-  databases Database[]
-  reminders Reminder[]
-  snippets  MessageSnippet[]
+  databases         Database[]
+  reminders         Reminder[]
+  snippets          MessageSnippet[]
+  scheduledMessages ScheduledMessage[]
 
   @@map("workspaces")
 }
@@ -610,6 +612,37 @@ model MessageSnippet {
   @@index([workspaceId, deletedAt, visibility])
   @@index([createdBy, deletedAt])
   @@map("message_snippets")
+}
+
+// ============================================================
+// 排程訊息 (C-17)
+//   指定時間把訊息透過 C-16 broadcast 路徑送到 1+ 個頻道。
+//   內容於 schedule 當下 snapshot；之後改 snippet 不影響排定內容。
+// ============================================================
+
+model ScheduledMessage {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  createdBy       String
+  channelIds      String[]
+  content         String?
+  type            String    @default("text") // text | image | file | system
+  metadata        Json?
+  sendAt          DateTime
+  status          String    @default("pending") // pending | sent | canceled | failed
+  sentAt          DateTime?
+  sentBroadcastId String?
+  failedReason    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("ScheduledMessageCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([sendAt, status, deletedAt])
+  @@index([workspaceId, deletedAt])
+  @@map("scheduled_messages")
 }
 
 model Reminder {
