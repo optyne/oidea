@@ -41,6 +41,7 @@ model User {
   notifications      Notification[]
   sharedFiles        File[]
   activities         TaskActivity[]
+  createdDatabases   Database[]           @relation("DatabaseCreator")
 
   @@map("users")
 }
@@ -79,11 +80,12 @@ model Workspace {
   ownerId String @map("ownerId")
   owner   User   @relation("WorkspaceOwner", fields: [ownerId], references: [id])
 
-  members  WorkspaceMember[]
-  channels Channel[]
-  projects Project[]
-  meetings Meeting[]
-  boards   Whiteboard[]
+  members   WorkspaceMember[]
+  channels  Channel[]
+  projects  Project[]
+  meetings  Meeting[]
+  boards    Whiteboard[]
+  databases Database[]
 
   @@map("workspaces")
 }
@@ -493,4 +495,77 @@ model Notification {
 
   @@index([userId, read, createdAt])
   @@map("notifications")
+}
+
+// ============================================================
+// 文件與資料庫 (P5 Docs & Database)
+//   D-02 結構化資料庫：支援自訂欄位 (text / number / date / select)
+// ============================================================
+
+model Database {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  icon        String?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("DatabaseCreator", fields: [createdBy], references: [id])
+
+  columns DatabaseColumn[]
+  rows    DatabaseRow[]
+
+  @@index([workspaceId, deletedAt])
+  @@map("databases")
+}
+
+model DatabaseColumn {
+  id         String   @id @default(uuid())
+  databaseId String
+  name       String
+  type       String // text, number, date, select
+  options    Json? // select 型別選項：{ choices: [{id, label, color}] }
+  position   Int      @default(0)
+  required   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  database Database       @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  cells    DatabaseCell[]
+
+  @@unique([databaseId, name])
+  @@map("database_columns")
+}
+
+model DatabaseRow {
+  id         String    @id @default(uuid())
+  databaseId String
+  position   Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  database Database       @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  cells    DatabaseCell[]
+
+  @@index([databaseId, deletedAt, position])
+  @@map("database_rows")
+}
+
+model DatabaseCell {
+  id        String   @id @default(uuid())
+  rowId     String
+  columnId  String
+  value     Json? // 依欄位型別：string / number / ISO date / select choice id
+  updatedAt DateTime @updatedAt
+
+  row    DatabaseRow    @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  column DatabaseColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  @@unique([rowId, columnId])
+  @@map("database_cells")
 }
