@@ -139,7 +139,7 @@ export class DatabasesService {
     const columns = await this.prisma.databaseColumn.findMany({
       where: { databaseId },
     });
-    this.validateRowValues(columns, dto.values);
+    await this.validateRowValues(columns, dto.values, db.workspaceId);
 
     return this.prisma.databaseRow.create({
       data: {
@@ -168,7 +168,11 @@ export class DatabasesService {
     const columns = await this.prisma.databaseColumn.findMany({
       where: { databaseId: row.databaseId },
     });
-    this.validateRowValues(columns, dto.values);
+    await this.validateRowValues(
+      columns,
+      dto.values,
+      row.database.workspaceId,
+    );
 
     await this.prisma.$transaction([
       ...Object.entries(dto.values).map(([columnId, value]) =>
@@ -231,11 +235,23 @@ export class DatabasesService {
         throw new BadRequestException('select 欄位需提供 options.choices');
       }
     }
+    if (type === 'file') {
+      if (options !== undefined && options !== null) {
+        const opts = options as { multiple?: unknown; accept?: unknown };
+        if (opts.multiple !== undefined && typeof opts.multiple !== 'boolean') {
+          throw new BadRequestException('file.options.multiple 需為 boolean');
+        }
+        if (opts.accept !== undefined && !Array.isArray(opts.accept)) {
+          throw new BadRequestException('file.options.accept 需為字串陣列');
+        }
+      }
+    }
   }
 
-  private validateRowValues(
+  private async validateRowValues(
     columns: { id: string; type: string; required: boolean; options: unknown }[],
     values: Record<string, unknown>,
+    workspaceId: string,
   ) {
     const columnById = new Map(columns.map((c) => [c.id, c]));
     for (const [columnId, value] of Object.entries(values)) {
@@ -244,7 +260,11 @@ export class DatabasesService {
         throw new BadRequestException(`欄位不存在：${columnId}`);
       }
       if (value === null || value === undefined) continue;
-      this.assertValueMatchesType(col.type as ColumnType, value, col.options);
+      if (col.type === 'file') {
+        await this.assertFileCellValid(value, col.options, workspaceId);
+      } else {
+        this.assertValueMatchesType(col.type as ColumnType, value, col.options);
+      }
     }
     for (const col of columns) {
       if (col.required && !(col.id in values)) {
@@ -277,6 +297,42 @@ export class DatabasesService {
           throw new BadRequestException('select 欄位值不在 choices 中');
         return;
       }
+      case 'file':
+        throw new BadRequestException(
+          'file 欄位應透過 assertFileCellValid 驗證',
+        );
+    }
+  }
+
+  private async assertFileCellValid(
+    value: unknown,
+    options: unknown,
+    workspaceId: string,
+  ) {
+    const fileIds = (value as { fileIds?: unknown })?.fileIds;
+    if (!Array.isArray(fileIds)) {
+      throw new BadRequestException(
+        'file 欄位值需為 { fileIds: string[] }',
+      );
+    }
+    if (!fileIds.every((id) => typeof id === 'string')) {
+      throw new BadRequestException('fileIds 元素需為字串');
+    }
+    const multiple = (options as { multiple?: boolean })?.multiple ?? false;
+    if (!multiple && fileIds.length > 1) {
+      throw new BadRequestException('此欄位僅允許單一檔案');
+    }
+    if (fileIds.length === 0) return;
+
+    const files = await this.prisma.file.findMany({
+      where: { id: { in: fileIds as string[] }, deletedAt: null },
+      select: { id: true, workspaceId: true },
+    });
+    if (files.length !== fileIds.length) {
+      throw new BadRequestException('部分檔案不存在或已刪除');
+    }
+    if (files.some((f) => f.workspaceId !== workspaceId)) {
+      throw new BadRequestException('檔案須與資料庫屬於同一工作空間');
     }
   }
 }

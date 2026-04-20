@@ -28,6 +28,7 @@ type PrismaMock = {
     update: jest.Mock;
   };
   databaseCell: { upsert: jest.Mock };
+  file: { findMany: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -52,6 +53,7 @@ const buildPrismaMock = (): PrismaMock => ({
     update: jest.fn(),
   },
   databaseCell: { upsert: jest.fn() },
+  file: { findMany: jest.fn() },
   $transaction: jest.fn((ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
 });
 
@@ -209,7 +211,7 @@ describe('DatabasesService', () => {
       await expect(
         service.addColumn(USER_ID, DB_ID, {
           name: 'X',
-          type: 'file' as any,
+          type: 'blob' as any,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -354,6 +356,159 @@ describe('DatabasesService', () => {
       expect(prisma.databaseRow.update).toHaveBeenCalledWith({
         where: { id: 'r-1' },
         data: { deletedAt: expect.any(Date) },
+      });
+    });
+  });
+
+  // ==========================================================
+  //  D-04 檔案附件欄位
+  // ==========================================================
+  describe('D-04 file column', () => {
+    beforeEach(() => {
+      prisma.database.findUnique.mockResolvedValue({
+        id: DB_ID,
+        workspaceId: WS_ID,
+        deletedAt: null,
+      });
+      asMember();
+    });
+
+    describe('addColumn(file)', () => {
+      it('TC-D04-001: file 欄位無 options 可建立 (預設單檔)', async () => {
+        prisma.databaseColumn.create.mockResolvedValue({ id: 'c-f' });
+        await service.addColumn(USER_ID, DB_ID, {
+          name: '合約',
+          type: 'file',
+        });
+        expect(prisma.databaseColumn.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ type: 'file', name: '合約' }),
+        });
+      });
+
+      it('TC-D04-002: file 欄位允許 multiple=true', async () => {
+        prisma.databaseColumn.create.mockResolvedValue({ id: 'c-f' });
+        await service.addColumn(USER_ID, DB_ID, {
+          name: '附件',
+          type: 'file',
+          options: { multiple: true } as any,
+        });
+        expect(prisma.databaseColumn.create).toHaveBeenCalled();
+      });
+
+      it('TC-D04-003: multiple 非 boolean → BadRequest', async () => {
+        await expect(
+          service.addColumn(USER_ID, DB_ID, {
+            name: '附件',
+            type: 'file',
+            options: { multiple: 'yes' as any } as any,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('TC-D04-004: accept 非陣列 → BadRequest', async () => {
+        await expect(
+          service.addColumn(USER_ID, DB_ID, {
+            name: '附件',
+            type: 'file',
+            options: { accept: 'pdf' as any } as any,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    describe('addRow with file cell', () => {
+      const fileColumn = (overrides: Record<string, unknown> = {}) => ({
+        id: 'c-f',
+        type: 'file',
+        required: false,
+        options: null,
+        ...overrides,
+      });
+
+      it('TC-D04-010: 檔案同 workspace → 接受', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        prisma.file.findMany.mockResolvedValue([
+          { id: 'f-1', workspaceId: WS_ID },
+        ]);
+        prisma.databaseRow.create.mockResolvedValue({ id: 'r-1', cells: [] });
+        await service.addRow(USER_ID, DB_ID, {
+          values: { 'c-f': { fileIds: ['f-1'] } },
+        });
+        expect(prisma.databaseRow.create).toHaveBeenCalled();
+      });
+
+      it('TC-D04-011: value 非 { fileIds: [] } 結構 → BadRequest', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        await expect(
+          service.addRow(USER_ID, DB_ID, {
+            values: { 'c-f': 'f-1' as any },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('TC-D04-012: fileIds 元素非字串 → BadRequest', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        await expect(
+          service.addRow(USER_ID, DB_ID, {
+            values: { 'c-f': { fileIds: [123] } as any },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('TC-D04-013: 單檔欄位塞 2 個 file → BadRequest', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        await expect(
+          service.addRow(USER_ID, DB_ID, {
+            values: { 'c-f': { fileIds: ['f-1', 'f-2'] } },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('TC-D04-014: multiple=true 可塞多個 file', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([
+          fileColumn({ options: { multiple: true } }),
+        ]);
+        prisma.file.findMany.mockResolvedValue([
+          { id: 'f-1', workspaceId: WS_ID },
+          { id: 'f-2', workspaceId: WS_ID },
+        ]);
+        prisma.databaseRow.create.mockResolvedValue({ id: 'r-1', cells: [] });
+        await service.addRow(USER_ID, DB_ID, {
+          values: { 'c-f': { fileIds: ['f-1', 'f-2'] } },
+        });
+        expect(prisma.databaseRow.create).toHaveBeenCalled();
+      });
+
+      it('TC-D04-015: 檔案不存在 / 軟刪 → BadRequest', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        prisma.file.findMany.mockResolvedValue([]); // 什麼都撈不到
+        await expect(
+          service.addRow(USER_ID, DB_ID, {
+            values: { 'c-f': { fileIds: ['ghost'] } },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('TC-D04-016: 檔案屬他 workspace → BadRequest', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        prisma.file.findMany.mockResolvedValue([
+          { id: 'f-1', workspaceId: 'other-ws' },
+        ]);
+        await expect(
+          service.addRow(USER_ID, DB_ID, {
+            values: { 'c-f': { fileIds: ['f-1'] } },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('TC-D04-017: 空陣列 (清空附件) 可接受', async () => {
+        prisma.databaseColumn.findMany.mockResolvedValue([fileColumn()]);
+        prisma.databaseRow.create.mockResolvedValue({ id: 'r-1', cells: [] });
+        await service.addRow(USER_ID, DB_ID, {
+          values: { 'c-f': { fileIds: [] } },
+        });
+        expect(prisma.databaseRow.create).toHaveBeenCalled();
+        expect(prisma.file.findMany).not.toHaveBeenCalled();
       });
     });
   });

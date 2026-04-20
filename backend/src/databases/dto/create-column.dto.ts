@@ -9,7 +9,13 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export const COLUMN_TYPES = ['text', 'number', 'date', 'select'] as const;
+export const COLUMN_TYPES = [
+  'text',
+  'number',
+  'date',
+  'select',
+  'file', // D-04 檔案附件：cell.value = { fileIds: string[] }
+] as const;
 export type ColumnType = (typeof COLUMN_TYPES)[number];
 
 export class CreateColumnDto {
@@ -24,11 +30,14 @@ export class CreateColumnDto {
 
   @ApiProperty({
     required: false,
-    description: 'select 型別必填：{ choices: [{ id, label, color }] }',
+    description:
+      'select：{ choices: [{ id, label, color }] }; file：{ multiple?: boolean, accept?: string[] }',
   })
   @IsOptional()
   @IsObject()
-  options?: { choices: { id: string; label: string; color?: string }[] };
+  options?:
+    | { choices: { id: string; label: string; color?: string }[] }
+    | { multiple?: boolean; accept?: string[] };
 
   @ApiProperty({ required: false, default: 0 })
   @IsOptional()
