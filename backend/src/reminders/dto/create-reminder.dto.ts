@@ -8,15 +8,9 @@ import {
   IsDateString,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { RECURRENCE_RULES, RecurrenceRule } from '../../common/recurrence';
 
-export const RECURRENCE_RULES = [
-  'none',
-  'daily',
-  'weekly',
-  'monthly',
-  'yearly',
-] as const;
-export type RecurrenceRule = (typeof RECURRENCE_RULES)[number];
+export { RECURRENCE_RULES, RecurrenceRule };
 
 export const REMINDER_TARGET_TYPES = ['database_row', 'task'] as const;
 export type ReminderTargetType = (typeof REMINDER_TARGET_TYPES)[number];

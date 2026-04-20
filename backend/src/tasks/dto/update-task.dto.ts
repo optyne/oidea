@@ -1,5 +1,14 @@
-import { IsString, IsOptional, IsIn, IsDateString, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsIn,
+  IsDateString,
+  IsBoolean,
+  IsInt,
+  Min,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { RECURRENCE_RULES } from '../../common/recurrence';
 
 export class UpdateTaskDto {
   @ApiProperty({ required: false })
@@ -36,4 +45,15 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsBoolean()
   completed?: boolean;
+
+  @ApiProperty({ required: false, enum: RECURRENCE_RULES })
+  @IsOptional()
+  @IsIn(RECURRENCE_RULES as unknown as string[])
+  recurrence?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  recurrenceInterval?: number;
 }

@@ -7,12 +7,14 @@ import {
 import { PrismaService } from '../common/prisma.service';
 import {
   CreateReminderDto,
-  RECURRENCE_RULES,
   REMINDER_TARGET_TYPES,
-  RecurrenceRule,
 } from './dto/create-reminder.dto';
 import { UpdateReminderDto } from './dto/update-reminder.dto';
-import { addRecurrence } from './recurrence';
+import {
+  addRecurrence,
+  RECURRENCE_RULES,
+  RecurrenceRule,
+} from '../common/recurrence';
 
 @Injectable()
 export class RemindersService {

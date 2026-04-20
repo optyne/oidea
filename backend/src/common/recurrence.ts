@@ -1,4 +1,11 @@
-import { RecurrenceRule } from './dto/create-reminder.dto';
+export const RECURRENCE_RULES = [
+  'none',
+  'daily',
+  'weekly',
+  'monthly',
+  'yearly',
+] as const;
+export type RecurrenceRule = (typeof RECURRENCE_RULES)[number];
 
 /**
  * 將 `from` 依 rule + interval 推進一次。
