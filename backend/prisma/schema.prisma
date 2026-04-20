@@ -42,6 +42,7 @@ model User {
   sharedFiles        File[]
   activities         TaskActivity[]
   createdDatabases   Database[]           @relation("DatabaseCreator")
+  reminders          Reminder[]           @relation("ReminderCreator")
 
   @@map("users")
 }
@@ -86,6 +87,7 @@ model Workspace {
   meetings  Meeting[]
   boards    Whiteboard[]
   databases Database[]
+  reminders Reminder[]
 
   @@map("workspaces")
 }
@@ -568,4 +570,36 @@ model DatabaseCell {
 
   @@unique([rowId, columnId])
   @@map("database_cells")
+}
+
+// ============================================================
+// 到期與重複提醒 (D-07)
+//   支援單次 / daily / weekly / monthly / yearly + interval
+//   targetType/targetId 可指向 database_row 或 task；null = 純提醒
+// ============================================================
+
+model Reminder {
+  id                 String    @id @default(uuid())
+  workspaceId        String
+  userId             String // 建立者
+  title              String
+  notes              String?
+  targetType         String? // database_row | task
+  targetId           String?
+  triggerAt          DateTime // 第一次觸發時間
+  recurrence         String    @default("none") // none | daily | weekly | monthly | yearly
+  recurrenceInterval Int       @default(1)
+  nextFireAt         DateTime // scheduler 輪詢用；與 triggerAt 同步 (第一次) 或 advance 後更新
+  lastFiredAt        DateTime?
+  status             String    @default("active") // active | paused | completed
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("ReminderCreator", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([nextFireAt, status, deletedAt])
+  @@index([workspaceId, deletedAt])
+  @@map("reminders")
 }

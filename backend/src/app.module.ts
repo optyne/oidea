@@ -14,6 +14,7 @@ import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { FilesModule } from './files/files.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DatabasesModule } from './databases/databases.module';
+import { RemindersModule } from './reminders/reminders.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { DatabasesModule } from './databases/databases.module';
     FilesModule,
     NotificationsModule,
     DatabasesModule,
+    RemindersModule,
   ],
 })
 export class AppModule {}
