@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>報價系統 – 工作表預覽</title>
+<style>
+  :root {
+    --primary: #4472C4;
+    --primary-dark: #1F3864;
+    --hilite: #FFF2CC;
+    --total-bg: #FCE4D6;
+    --total-fg: #C00000;
+    --alt: #F2F2F2;
+    --border: #BFBFBF;
+    --bg: #F5F6FA;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans CJK TC", sans-serif;
+    background: var(--bg);
+    color: #222;
+  }
+  .tabs {
+    position: sticky;
+    top: 0;
+    background: white;
+    border-bottom: 2px solid var(--primary);
+    padding: 0 20px;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .tabs a {
+    padding: 12px 18px;
+    text-decoration: none;
+    color: #555;
+    font-weight: 600;
+    border-radius: 8px 8px 0 0;
+    white-space: nowrap;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .tabs a:hover { background: var(--alt); color: var(--primary-dark); }
+  .sheet {
+    max-width: 1400px;
+    margin: 28px auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    padding: 28px;
+  }
+  h2 {
+    color: var(--primary-dark);
+    margin: 0 0 6px 0;
+    font-size: 26px;
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 10px;
+  }
+  .subtitle {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  thead th {
+    background: var(--primary);
+    color: white;
+    padding: 10px 8px;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid var(--primary);
+  }
+  tbody td {
+    padding: 9px 8px;
+    border: 1px solid var(--border);
+  }
+  tbody tr:nth-child(even) { background: var(--alt); }
+  tbody tr.hilite td { background: var(--hilite) !important; }
+  tr.total td {
+    background: var(--total-bg);
+    color: var(--total-fg);
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .placeholder { color: #aaa; font-style: italic; }
+  .flow {
+    background: #F8F9FC;
+    border-left: 4px solid var(--primary);
+    padding: 14px 18px;
+    margin-top: 20px;
+    border-radius: 6px;
+  }
+  .flow h4 { margin: 0 0 10px 0; color: var(--primary-dark); }
+  .flow ol { margin: 0; padding-left: 22px; line-height: 1.9; }
+  .quote-box {
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 22px;
+    background: #FBFCFE;
+  }
+  .quote-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+  .quote-title { font-size: 30px; font-weight: 700; color: var(--primary-dark); }
+  .quote-meta { font-size: 14px; line-height: 1.8; }
+  .quote-meta b { display: inline-block; width: 68px; color: #555; }
+  .customer-info {
+    background: #F1F4FB;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+  }
+  .customer-info h4 { margin: 0 0 8px 0; color: var(--primary-dark); }
+  .customer-info .row { display: flex; padding: 4px 0; font-size: 14px; }
+  .customer-info .row b { width: 90px; color: #555; }
+  .notes {
+    margin-top: 20px;
+    font-size: 13.5px;
+    line-height: 2;
+  }
+  .notes h4 { margin: 0 0 6px 0; color: var(--primary-dark); }
+  .legend {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .legend-hilite { background: var(--hilite); color: #8B6914; }
+  .legend-total { background: var(--total-bg); color: var(--total-fg); }
+  .summary-bar {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    padding: 20px 28px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .summary-bar small { display: block; font-size: 13px; font-weight: 400; opacity: 0.85; margin-top: 4px; }
+  @media print {
+    .tabs { display: none; }
+    .sheet { box-shadow: none; page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+
+<div class="summary-bar">
+  📊 報價系統 · 工作表預覽
+  <small>共 6 張工作表 · 點擊上方分頁跳轉 · 列印或另存成 PDF 皆可</small>
+</div>
+
+<nav class="tabs">
+  <a href="#s1">📘 使用說明</a>
+  <a href="#s2">💎 產品價目表</a>
+  <a href="#s3">📋 客戶主檔</a>
+  <a href="#s4">📦 服務項目</a>
+  <a href="#s5">💵 收款紀錄 2026</a>
+  <a href="#s6">🧮 報價單範例</a>
+</nav>
+
+<!-- 1. 使用說明 -->
+<section class="sheet" id="s1">
+  <h2>📘 使用說明</h2>
+  <div class="subtitle">工作表導覽與典型流程</div>
+  <table>
+    <thead>
+      <tr><th style="width:80px">順序</th><th style="width:220px">工作表</th><th>何時使用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>📘 使用說明</td><td>首次使用時閱讀（本頁）</td></tr>
+      <tr><td>2</td><td>💎 產品價目表</td><td>新客戶報價前查方案與單價</td></tr>
+      <tr><td>3</td><td>📋 客戶主檔</td><td>成交後登錄客戶基本資料</td></tr>
+      <tr><td>4</td><td>📦 服務項目</td><td>記錄客戶已購買的服務明細</td></tr>
+      <tr><td>5</td><td>💵 收款紀錄 2026</td><td>每次收到款項即登錄</td></tr>
+      <tr><td>6</td><td>🧮 報價單範例</td><td>新客戶報價時複製本表改名使用</td></tr>
+    </tbody>
+  </table>
+  <div class="flow">
+    <h4>📋 典型流程</h4>
+    <ol>
+      <li>客戶詢問 → 打開「💎 產品價目表」確認方案</li>
+      <li>複製「🧮 報價單範例」→ 改為客戶名稱</li>
+      <li>成交 → 「📋 客戶主檔」加一列</li>
+      <li>每方案 → 「📦 服務項目」加一列</li>
+      <li>收款 → 「💵 收款紀錄」加一列</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 2. 產品價目表 -->
+<section class="sheet" id="s2">
+  <h2>💎 產品價目表</h2>
+  <div class="subtitle">
+    所有服務的統一價目；新增客戶方案時引用「產品代碼」
+    &nbsp;&nbsp;<span class="legend legend-hilite">黃底</span>＝主打方案
+  </div>
+  <table>
+    <thead>
+      <tr><th>類別</th><th>方案名稱</th><th>產品代碼</th><th>規格說明</th><th>單位</th><th>單價(NTD)</th><th>主打</th><th>備註</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>網站</td><td>官網維護</td><td><code>WEB-01</code></td><td>月度維護、內容更新、備份</td><td>月</td><td class="placeholder">[待填]</td><td></td><td>不含大改版</td></tr>
+      <tr><td>Email</td><td>輕量版</td><td><code>MAIL-LITE</code></td><td>5GB × 3 組</td><td>月</td><td class="placeholder">[待填]</td><td></td><td>個人工作室</td></tr>
+      <tr class="hilite"><td>Email</td><td><b>標準版</b></td><td><code>MAIL-STD</code></td><td>20GB × 10 組、垃圾過濾</td><td>月</td><td class="placeholder">[待填]</td><td>⭐</td><td>最常成交</td></tr>
+      <tr><td>Email</td><td>專業版</td><td><code>MAIL-PRO</code></td><td>50GB × 30 組、獨立 SMTP</td><td>月</td><td class="placeholder">[待填]</td><td></td><td>中型公司</td></tr>
+      <tr><td>容量加購</td><td>小量</td><td><code>CAP-S</code></td><td>額外 10GB</td><td>月</td><td class="placeholder">[待填]</td><td></td><td></td></tr>
+      <tr><td>容量加購</td><td>中量</td><td><code>CAP-M</code></td><td>額外 50GB</td><td>月</td><td class="placeholder">[待填]</td><td></td><td></td></tr>
+      <tr><td>容量加購</td><td>海量</td><td><code>CAP-L</code></td><td>額外 200GB</td><td>月</td><td class="placeholder">[待填]</td><td></td><td></td></tr>
+      <tr><td>別名</td><td>單個別名</td><td><code>ALIAS-01</code></td><td>一個永久別名</td><td>月</td><td class="placeholder">[待填]</td><td></td><td></td></tr>
+      <tr><td>別名</td><td>組合包</td><td><code>ALIAS-03</code></td><td>三個永久別名</td><td>月</td><td class="placeholder">[待填]</td><td></td><td>比單買省</td></tr>
+      <tr><td>別名</td><td>時效性</td><td><code>ALIAS-T</code></td><td>指定期間、到期停用</td><td>次</td><td class="placeholder">[待填]</td><td></td><td>活動短期用</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 3. 客戶主檔 -->
+<section class="sheet" id="s3">
+  <h2>📋 客戶主檔</h2>
+  <div class="subtitle">客戶編號規則：<code>C</code> + 年份後 2 碼 + 流水號（例如 C26001）</div>
+  <table>
+    <thead>
+      <tr><th>客戶編號</th><th>客戶名稱</th><th>統編</th><th>聯絡人</th><th>職稱</th><th>電話</th><th>Email</th><th>開始合作</th><th>來源</th><th>狀態</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>C26001</code></td><td>範例科技有限公司</td><td>12345678</td><td>王大明</td><td>資訊主管</td><td>02-1234-5678</td><td>contact@example-tech.com.tw</td><td>2026-01-15</td><td>朋友介紹</td><td>活躍</td></tr>
+      <tr><td><code>C26002</code></td><td>範例設計工作室</td><td>—</td><td>李小美</td><td>負責人</td><td>0933-987-654</td><td>hello@example-design.tw</td><td>2026-03-01</td><td>Google 搜尋</td><td>活躍</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 4. 服務項目 -->
+<section class="sheet" id="s4">
+  <h2>📦 服務項目</h2>
+  <div class="subtitle">
+    公式：<b>小計 = 數量 × 單價 × (1 − 折扣%/100)</b>
+    &nbsp;&nbsp;<span class="legend legend-hilite">黃底</span>＝套用折扣
+  </div>
+  <table>
+    <thead>
+      <tr><th>項目編號</th><th>客戶</th><th>產品代碼</th><th>方案</th><th>數量</th><th>單價</th><th>折扣%</th><th>小計</th><th>起始日</th><th>到期日</th><th>續約</th><th>狀態</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>S26001</code></td><td>C26001</td><td><code>WEB-01</code></td><td>官網維護</td><td>1</td><td>8,000</td><td>0</td><td>8,000</td><td>2026-01-15</td><td>2027-01-14</td><td>是</td><td>生效中</td></tr>
+      <tr><td><code>S26002</code></td><td>C26001</td><td><code>MAIL-STD</code></td><td>Email 標準版</td><td>1</td><td>3,500</td><td>0</td><td>3,500</td><td>2026-01-15</td><td>2027-01-14</td><td>是</td><td>生效中</td></tr>
+      <tr class="hilite"><td><code>S26003</code></td><td>C26001</td><td><code>CAP-M</code></td><td>容量加購中量</td><td>1</td><td>1,200</td><td><b>10</b></td><td><b>1,080</b></td><td>2026-02-01</td><td>2027-01-31</td><td>是</td><td>生效中</td></tr>
+      <tr><td><code>S26004</code></td><td>C26002</td><td><code>MAIL-LITE</code></td><td>Email 輕量版</td><td>1</td><td>1,500</td><td>0</td><td>1,500</td><td>2026-03-01</td><td>2027-02-28</td><td>是</td><td>生效中</td></tr>
+      <tr><td><code>S26005</code></td><td>C26002</td><td><code>ALIAS-03</code></td><td>別名組合包</td><td>1</td><td>500</td><td>0</td><td>500</td><td>2026-03-01</td><td>2027-02-28</td><td>是</td><td>生效中</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 5. 收款紀錄 -->
+<section class="sheet" id="s5">
+  <h2>💵 收款紀錄 2026</h2>
+  <div class="subtitle">
+    年度合計使用 <code>=SUM()</code> 公式自動計算
+    &nbsp;&nbsp;<span class="legend legend-total">粉底紅字</span>＝合計
+  </div>
+  <table>
+    <thead>
+      <tr><th>收款日期</th><th>客戶編號</th><th>客戶名稱</th><th>項目編號</th><th>內容摘要</th><th>金額(NTD)</th><th>付款方式</th><th>發票號碼</th><th>對帳</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>2026-01-20</td><td><code>C26001</code></td><td>範例科技</td><td><code>S26001</code></td><td>2026 Q1 官網維護</td><td>24,000</td><td>銀行轉帳</td><td>AB-12345678</td><td>✅ 已對帳</td></tr>
+      <tr><td>2026-01-20</td><td><code>C26001</code></td><td>範例科技</td><td><code>S26002</code></td><td>2026 Q1 Email 標準版</td><td>10,500</td><td>銀行轉帳</td><td>AB-12345679</td><td>✅ 已對帳</td></tr>
+      <tr><td>2026-03-05</td><td><code>C26002</code></td><td>範例設計</td><td><code>S26004</code></td><td>2026 Q1 Email 輕量版</td><td>4,500</td><td>LINE Pay</td><td>AB-12345680</td><td>✅ 已對帳</td></tr>
+      <tr><td>2026-03-05</td><td><code>C26002</code></td><td>範例設計</td><td><code>S26005</code></td><td>2026 Q1 別名組合包</td><td>1,500</td><td>LINE Pay</td><td>AB-12345681</td><td>✅ 已對帳</td></tr>
+      <tr class="total"><td colspan="4"></td><td>🔴 年度合計</td><td>40,500</td><td colspan="3"></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 6. 報價單範例 -->
+<section class="sheet" id="s6">
+  <h2>🧮 報價單範例</h2>
+  <div class="subtitle">新客戶報價時複製本張改名使用</div>
+  <div class="quote-box">
+    <div class="quote-head">
+      <div class="quote-title">📝 報 價 單</div>
+      <div class="quote-meta">
+        <div><b>報價編號</b> Q26-0001</div>
+        <div><b>日　　期</b> 2026-04-20</div>
+        <div><b>有 效 期</b> 30 天</div>
+      </div>
+    </div>
+    <div class="customer-info">
+      <h4>客戶資訊</h4>
+      <div class="row"><b>客戶名稱</b><span class="placeholder">[填入]</span></div>
+      <div class="row"><b>聯 絡 人</b><span class="placeholder">[填入]</span></div>
+      <div class="row"><b>電　　話</b><span class="placeholder">[填入]</span></div>
+      <div class="row"><b>Email　 </b><span class="placeholder">[填入]</span></div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>產品代碼</th><th>方案名稱</th><th style="width:60px">數量</th><th style="width:110px">單價(NTD)</th><th style="width:110px">小計(NTD)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>MAIL-STD</code></td><td>Email 標準版 × 3 個月</td><td>3</td><td>3,500</td><td>10,500</td></tr>
+        <tr><td><code>WEB-01</code></td><td>官網維護 × 3 個月</td><td>3</td><td>8,000</td><td>24,000</td></tr>
+        <tr><td><code>ALIAS-03</code></td><td>別名組合包 × 3 個月</td><td>3</td><td>500</td><td>1,500</td></tr>
+        <tr><td colspan="3" style="border:none"></td><td style="text-align:right"><b>未稅小計</b></td><td>36,000</td></tr>
+        <tr><td colspan="3" style="border:none"></td><td style="text-align:right"><b>營業稅 5%</b></td><td>1,800</td></tr>
+        <tr class="total"><td colspan="3" style="border:none"></td><td style="text-align:right">🔴 合計（含稅）</td><td>37,800</td></tr>
+      </tbody>
+    </table>
+    <div class="notes">
+      <h4>備註</h4>
+      1. 本報價含稅<br>
+      2. 付款方式：銀行轉帳／LINE Pay／現金<br>
+      3. 報價有效期內有效，逾期請重新確認<br>
+      4. 服務正式啟用日以收到款項後起算<br>
+      5. 續約請於到期前 30 日告知<br>
+    </div>
+  </div>
+</section>
+
+<div style="text-align:center; padding: 30px 0; color: #888; font-size: 13px;">
+  <b>報價系統 v1.0</b> · 所有數字為範例，單價請依實際報價填入
+</div>
+
+</body>
+</html>
