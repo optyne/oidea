@@ -1,6 +1,15 @@
-import { Inject, Injectable, NotFoundException, ForbiddenException, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  forwardRef,
+} from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { BroadcastMessageDto } from './dto/broadcast-message.dto';
 import { MessagesGateway } from './messages.gateway';
 
 @Injectable()
@@ -37,6 +46,69 @@ export class MessagesService {
 
     this.messagesGateway.emitNewMessage(dto.channelId, message);
     return message;
+  }
+
+  /**
+   * C-16：一次把同樣內容發到多個頻道。
+   *
+   * 全有全無：任一頻道不存在 / 使用者非成員 / 跨 workspace → 整批拒絕。
+   * 寫入用 $transaction 保原子性；成功後對每個頻道 emit WS 事件。
+   *
+   * 回傳 { broadcastId, messages }，前端可用 broadcastId 做聚合檢視。
+   */
+  async broadcast(userId: string, dto: BroadcastMessageDto) {
+    const channelIds = Array.from(new Set(dto.channelIds));
+    if (channelIds.length === 0) {
+      throw new BadRequestException('channelIds 不可為空');
+    }
+
+    const channels = await this.prisma.channel.findMany({
+      where: { id: { in: channelIds }, deletedAt: null },
+      select: { id: true, workspaceId: true, members: { where: { userId }, select: { userId: true } } },
+    });
+
+    if (channels.length !== channelIds.length) {
+      throw new NotFoundException('部分頻道不存在或已刪除');
+    }
+
+    const workspaceIds = new Set(channels.map((c) => c.workspaceId));
+    if (workspaceIds.size > 1) {
+      throw new BadRequestException('廣播範圍需在同一工作空間內');
+    }
+
+    const nonMember = channels.find((c) => c.members.length === 0);
+    if (nonMember) {
+      throw new ForbiddenException(`非頻道成員：${nonMember.id}`);
+    }
+
+    const broadcastId = randomUUID();
+    const messages = await this.prisma.$transaction(
+      channelIds.map((channelId) =>
+        this.prisma.message.create({
+          data: {
+            channelId,
+            senderId: userId,
+            broadcastId,
+            type: dto.type || 'text',
+            content: dto.content,
+            metadata: dto.metadata,
+          },
+          include: {
+            sender: {
+              select: { id: true, username: true, displayName: true, avatarUrl: true },
+            },
+            reactions: true,
+            _count: { select: { replies: true } },
+          },
+        }),
+      ),
+    );
+
+    for (const message of messages) {
+      this.messagesGateway.emitNewMessage(message.channelId, message);
+    }
+
+    return { broadcastId, messages };
   }
 
   async findByChannel(userId: string, channelId: string, cursor?: string, limit: number = 50) {

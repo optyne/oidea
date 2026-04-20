@@ -4,6 +4,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { BroadcastMessageDto } from './dto/broadcast-message.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('訊息')
@@ -17,6 +18,12 @@ export class MessagesController {
   @ApiOperation({ summary: '發送訊息' })
   async create(@Req() req: any, @Body() dto: CreateMessageDto) {
     return this.messagesService.create(req.user.userId, dto);
+  }
+
+  @Post('broadcast')
+  @ApiOperation({ summary: 'C-16 跨頻道廣播 (一次發到多個頻道)' })
+  async broadcast(@Req() req: any, @Body() dto: BroadcastMessageDto) {
+    return this.messagesService.broadcast(req.user.userId, dto);
   }
 
   @Get('channel/:channelId')

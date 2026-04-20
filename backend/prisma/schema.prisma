@@ -148,16 +148,17 @@ model ChannelMember {
 }
 
 model Message {
-  id        String    @id @default(uuid())
-  channelId String
-  senderId  String
-  parentId  String? // for thread replies
-  type      String    @default("text") // text, image, file, system
-  content   String?
-  metadata  Json? // extra data like file info
-  editedAt  DateTime?
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
+  id          String    @id @default(uuid())
+  channelId   String
+  senderId    String
+  parentId    String? // for thread replies
+  broadcastId String? // C-16 跨頻道廣播：同一批廣播出去的訊息共用此 id
+  type        String    @default("text") // text, image, file, system
+  content     String?
+  metadata    Json? // extra data like file info
+  editedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
 
   channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sender  User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
@@ -172,6 +173,7 @@ model Message {
 
   @@index([channelId, createdAt])
   @@index([parentId])
+  @@index([broadcastId])
   @@map("messages")
 }
 
