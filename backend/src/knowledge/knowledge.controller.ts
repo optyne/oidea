@@ -17,6 +17,8 @@ import { UpdatePageDto } from './dto/update-page.dto';
 import { SharePageDto, UpdateVisibilityDto } from './dto/share-page.dto';
 import { KnowledgeService } from './knowledge.service';
 import { PageAccessService } from './page-access.service';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../common/prisma.service';
 
 @ApiTags('知識庫')
 @Controller('knowledge')
@@ -26,6 +28,8 @@ export class KnowledgeController {
   constructor(
     private readonly knowledge: KnowledgeService,
     private readonly access: PageAccessService,
+    private readonly audit: AuditService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ─────────── Pages ───────────
@@ -56,8 +60,24 @@ export class KnowledgeController {
 
   @Delete('pages/:id')
   @ApiOperation({ summary: '刪除 Page（軟刪除）' })
-  deletePage(@Req() req: any, @Param('id') id: string) {
-    return this.knowledge.deletePage(req.user.userId, id);
+  async deletePage(@Req() req: any, @Param('id') id: string) {
+    const page = await this.prisma.knowledgePage.findUnique({
+      where: { id },
+      select: { workspaceId: true, title: true },
+    });
+    const result = await this.knowledge.deletePage(req.user.userId, id);
+    if (page) {
+      await this.audit.record({
+        actorId: req.user.userId,
+        workspaceId: page.workspaceId,
+        action: 'knowledge.delete',
+        targetType: 'page',
+        targetId: id,
+        metadata: { title: page.title },
+        req: { ip: req.ip, headers: req.headers },
+      });
+    }
+    return result;
   }
 
   // ─────────── Blocks ───────────
@@ -173,27 +193,81 @@ export class KnowledgeController {
 
   @Post('pages/:id/permissions')
   @ApiOperation({ summary: '分享此頁面給某使用者或角色（需 full）' })
-  sharePage(@Req() req: any, @Param('id') id: string, @Body() dto: SharePageDto) {
-    return this.access.upsert(req.user.userId, id, dto);
+  async sharePage(@Req() req: any, @Param('id') id: string, @Body() dto: SharePageDto) {
+    const result = await this.access.upsert(req.user.userId, id, dto);
+    const page = await this.prisma.knowledgePage.findUnique({
+      where: { id },
+      select: { workspaceId: true },
+    });
+    await this.audit.record({
+      actorId: req.user.userId,
+      workspaceId: page?.workspaceId,
+      action: 'knowledge.share',
+      targetType: 'page',
+      targetId: id,
+      metadata: { userId: dto.userId, role: dto.role, access: dto.access },
+      req: { ip: req.ip, headers: req.headers },
+    });
+    return result;
   }
 
   @Delete('pages/:id/permissions/:permId')
   @ApiOperation({ summary: '移除某一條分享（需 full）' })
-  removePermission(
+  async removePermission(
     @Req() req: any,
     @Param('id') id: string,
     @Param('permId') permId: string,
   ) {
-    return this.access.remove(req.user.userId, id, permId);
+    const perm = await this.prisma.pagePermission.findUnique({
+      where: { id: permId },
+      select: { userId: true, role: true, access: true },
+    });
+    const result = await this.access.remove(req.user.userId, id, permId);
+    const page = await this.prisma.knowledgePage.findUnique({
+      where: { id },
+      select: { workspaceId: true },
+    });
+    await this.audit.record({
+      actorId: req.user.userId,
+      workspaceId: page?.workspaceId,
+      action: 'knowledge.unshare',
+      targetType: 'page',
+      targetId: id,
+      metadata: { removedPermissionId: permId, userId: perm?.userId, role: perm?.role, access: perm?.access },
+      req: { ip: req.ip, headers: req.headers },
+    });
+    return result;
   }
 
   @Put('pages/:id/visibility')
   @ApiOperation({ summary: '變更頁面可見性（workspace/private/restricted，需 full）' })
-  setVisibility(
+  async setVisibility(
     @Req() req: any,
     @Param('id') id: string,
     @Body() dto: UpdateVisibilityDto,
   ) {
-    return this.access.setVisibility(req.user.userId, id, dto.visibility, dto.inheritParentAcl);
+    const before = await this.prisma.knowledgePage.findUnique({
+      where: { id },
+      select: { workspaceId: true, visibility: true, inheritParentAcl: true },
+    });
+    const result = await this.access.setVisibility(
+      req.user.userId,
+      id,
+      dto.visibility,
+      dto.inheritParentAcl,
+    );
+    await this.audit.record({
+      actorId: req.user.userId,
+      workspaceId: before?.workspaceId,
+      action: 'knowledge.visibility_change',
+      targetType: 'page',
+      targetId: id,
+      metadata: {
+        before: before ? { visibility: before.visibility, inheritParentAcl: before.inheritParentAcl } : null,
+        after: { visibility: dto.visibility, inheritParentAcl: dto.inheritParentAcl ?? before?.inheritParentAcl },
+      },
+      req: { ip: req.ip, headers: req.headers },
+    });
+    return result;
   }
 }

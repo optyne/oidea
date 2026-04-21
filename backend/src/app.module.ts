@@ -16,12 +16,14 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     RedisModule,
+    AuditModule,
     AuthModule,
     UsersModule,
     WorkspacesModule,

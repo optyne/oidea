@@ -6,13 +6,19 @@ import { WorkspacesService } from './workspaces.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../common/prisma.service';
 
 @ApiTags('工作空間')
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class WorkspacesController {
-  constructor(private workspacesService: WorkspacesService) {}
+  constructor(
+    private workspacesService: WorkspacesService,
+    private audit: AuditService,
+    private prisma: PrismaService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '建立工作空間' })
@@ -57,7 +63,21 @@ export class WorkspacesController {
   @Delete(':id/members/:userId')
   @ApiOperation({ summary: '移除成員' })
   async removeMember(@Req() req: any, @Param('id') id: string, @Param('userId') userId: string) {
-    return this.workspacesService.removeMember(req.user.userId, id, userId);
+    const before = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: id, userId } },
+      select: { role: true },
+    });
+    const result = await this.workspacesService.removeMember(req.user.userId, id, userId);
+    await this.audit.record({
+      actorId: req.user.userId,
+      workspaceId: id,
+      action: 'workspace.member_remove',
+      targetType: 'workspace_member',
+      targetId: userId,
+      metadata: { removedRole: before?.role },
+      req: { ip: req.ip, headers: req.headers },
+    });
+    return result;
   }
 
   @Get(':id/members')
@@ -74,6 +94,20 @@ export class WorkspacesController {
     @Param('userId') userId: string,
     @Body() body: { role: string },
   ) {
-    return this.workspacesService.updateMemberRole(req.user.userId, id, userId, body.role);
+    const before = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: id, userId } },
+      select: { role: true },
+    });
+    const result = await this.workspacesService.updateMemberRole(req.user.userId, id, userId, body.role);
+    await this.audit.record({
+      actorId: req.user.userId,
+      workspaceId: id,
+      action: 'workspace.role_change',
+      targetType: 'workspace_member',
+      targetId: userId,
+      metadata: { from: before?.role, to: body.role },
+      req: { ip: req.ip, headers: req.headers },
+    });
+    return result;
   }
 }

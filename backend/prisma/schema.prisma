@@ -50,6 +50,7 @@ model User {
   editedBlocks       KnowledgeBlock[]     @relation("BlockLastEditedBy")
   createdRows        DbRow[]              @relation("RowCreatedBy")
   pagePermissions    PagePermission[]
+  auditEvents        AuditLog[]           @relation("AuditActor")
 
   @@map("users")
 }
@@ -97,6 +98,7 @@ model Workspace {
   attendances    Attendance[]
   leaveRequests  LeaveRequest[]
   knowledgePages KnowledgePage[]
+  auditLogs      AuditLog[]
 
   @@map("workspaces")
 }
@@ -751,4 +753,32 @@ model DbRow {
 
   @@index([databaseId, position])
   @@map("db_rows")
+}
+
+// ============================================================
+// 審計日誌：記錄敏感操作（登入、權限變更、報銷審批、知識庫分享等）
+// ============================================================
+
+/// 不可變事件流。`actorId` 可為 null 代表系統事件或登入失敗（帳號不存在）。
+/// action 使用 dot 命名：auth.login / auth.login_failed / knowledge.share / knowledge.visibility_change /
+/// knowledge.delete / expense.approve / expense.reject / expense.mark_paid / workspace.role_change。
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?
+  workspaceId String?
+  action      String
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  actor     User?      @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
 }
