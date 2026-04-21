@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
@@ -12,13 +13,15 @@ class _BlockItem {
   String type;
   Map<String, dynamic> content;
   final TextEditingController controller;
+  final FocusNode focusNode;
 
   _BlockItem({
     required this.id,
     required this.type,
     required this.content,
     required String initialText,
-  }) : controller = TextEditingController(text: initialText);
+  })  : controller = TextEditingController(text: initialText),
+        focusNode = FocusNode();
 
   Map<String, dynamic> toPayload(int position) => {
         if (id != null) 'id': id,
@@ -43,7 +46,10 @@ class _BlockItem {
     }
   }
 
-  void dispose() => controller.dispose();
+  void dispose() {
+    controller.dispose();
+    focusNode.dispose();
+  }
 }
 
 class BlockEditor extends ConsumerStatefulWidget {
@@ -64,6 +70,14 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
   late List<_BlockItem> _blocks;
   Timer? _saveDebounce;
   bool _saving = false;
+
+  // Slash-command menu state. When _slashIndex != null, we render an inline
+  // popup under that block row filtered by _slashQuery (the text typed after
+  // the `/`). Caret position of the `/` is cached so we can remove it on pick.
+  int? _slashIndex;
+  String _slashQuery = '';
+  int _slashStart = -1; // index of the '/' in the block's text
+  int _slashHighlight = 0; // which filtered item is selected by arrow keys
 
   static const _menuTypes = [
     ('text', '一般文字', Icons.notes),
@@ -177,6 +191,120 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
     _scheduleSave();
   }
 
+  // ─── Slash command detection ────────────────────────────────────────────
+
+  /// 偵測 caret 前是否有一個觸發中的 slash（`/` 位於詞首且中間沒有空白／換行）。
+  /// 回傳 `/` 在文字中的 index，找不到則回傳 -1。
+  int _detectSlash(TextEditingController ctrl) {
+    final text = ctrl.text;
+    final caret = ctrl.selection.baseOffset;
+    if (caret <= 0 || caret > text.length) return -1;
+    for (int i = caret - 1; i >= 0; i--) {
+      final ch = text[i];
+      if (ch == '/') {
+        if (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\n') return i;
+        return -1;
+      }
+      if (ch == ' ' || ch == '\n') return -1;
+    }
+    return -1;
+  }
+
+  void _onBlockTextChanged(int index) {
+    final b = _blocks[index];
+    final slashPos = _detectSlash(b.controller);
+    if (slashPos >= 0) {
+      final caret = b.controller.selection.baseOffset;
+      final query = b.controller.text.substring(slashPos + 1, caret);
+      setState(() {
+        _slashIndex = index;
+        _slashStart = slashPos;
+        _slashQuery = query;
+        _slashHighlight = 0;
+      });
+    } else if (_slashIndex != null) {
+      _closeSlash();
+    }
+    _scheduleSave();
+  }
+
+  void _closeSlash() {
+    if (_slashIndex == null) return;
+    setState(() {
+      _slashIndex = null;
+      _slashQuery = '';
+      _slashStart = -1;
+      _slashHighlight = 0;
+    });
+  }
+
+  List<(String, String, IconData)> _filteredSlashTypes() {
+    final q = _slashQuery.toLowerCase().trim();
+    if (q.isEmpty) return _menuTypes;
+    return _menuTypes.where((t) {
+      // 用 type id、中文名的任何子字串都算命中。
+      return t.$1.toLowerCase().contains(q) || t.$2.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  void _applySlash(int index, String type) {
+    final b = _blocks[index];
+    final text = b.controller.text;
+    // 把 `/query` 部分從文字裡拿掉
+    final caret = b.controller.selection.baseOffset;
+    final before = text.substring(0, _slashStart.clamp(0, text.length));
+    final after = caret <= text.length ? text.substring(caret) : '';
+    final newText = before + after;
+    b.controller.text = newText;
+    b.controller.selection = TextSelection.collapsed(offset: before.length);
+
+    if (type == 'divider') {
+      // divider 沒有文字 → 永遠新增一個 block
+      _insertAfter(index, 'divider');
+    } else if (newText.isEmpty) {
+      // 空 block → 轉換類型
+      setState(() => b.type = type);
+      _scheduleSave();
+    } else {
+      // 有前文 → 新 block
+      _insertAfter(index, type);
+    }
+    _closeSlash();
+    // 把焦點還給當前 / 新 block
+    Future.microtask(() {
+      final insertedNew = (type == 'divider') || newText.isNotEmpty;
+      final target = insertedNew
+          ? (index + 1 < _blocks.length ? _blocks[index + 1] : b)
+          : b;
+      target.focusNode.requestFocus();
+    });
+  }
+
+  KeyEventResult _handleSlashKey(int index, KeyEvent event) {
+    if (_slashIndex != index || event is! KeyDownEvent) return KeyEventResult.ignored;
+    final filtered = _filteredSlashTypes();
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() => _slashHighlight = filtered.isEmpty ? 0 : (_slashHighlight + 1) % filtered.length);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() => _slashHighlight = filtered.isEmpty ? 0 : (_slashHighlight - 1 + filtered.length) % filtered.length);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter) {
+      if (filtered.isNotEmpty) {
+        _applySlash(index, filtered[_slashHighlight.clamp(0, filtered.length - 1)].$1);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      _closeSlash();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   Future<void> _openInsertMenu(int index) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -200,13 +328,13 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
     Widget field;
     switch (b.type) {
       case 'h1':
-        field = _textField(b, const TextStyle(fontSize: 26, fontWeight: FontWeight.w700));
+        field = _textField(b, const TextStyle(fontSize: 26, fontWeight: FontWeight.w700), index: index);
         break;
       case 'h2':
-        field = _textField(b, const TextStyle(fontSize: 22, fontWeight: FontWeight.w700));
+        field = _textField(b, const TextStyle(fontSize: 22, fontWeight: FontWeight.w700), index: index);
         break;
       case 'h3':
-        field = _textField(b, const TextStyle(fontSize: 18, fontWeight: FontWeight.w600));
+        field = _textField(b, const TextStyle(fontSize: 18, fontWeight: FontWeight.w600), index: index);
         break;
       case 'todo':
         field = Row(
@@ -224,6 +352,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                       b.content['checked'] == true ? TextDecoration.lineThrough : null,
                   color: b.content['checked'] == true ? Colors.grey : null,
                 ),
+                index: index,
               ),
             ),
           ],
@@ -234,7 +363,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Padding(padding: EdgeInsets.fromLTRB(12, 12, 12, 0), child: Text('•')),
-            Expanded(child: _textField(b, null)),
+            Expanded(child: _textField(b, null, index: index)),
           ],
         );
         break;
@@ -244,7 +373,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(padding: const EdgeInsets.fromLTRB(12, 12, 8, 0), child: Text('$n.')),
-            Expanded(child: _textField(b, null)),
+            Expanded(child: _textField(b, null, index: index)),
           ],
         );
         break;
@@ -254,7 +383,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           decoration: BoxDecoration(
             border: Border(left: BorderSide(color: Colors.grey.shade400, width: 3)),
           ),
-          child: _textField(b, const TextStyle(fontStyle: FontStyle.italic)),
+          child: _textField(b, const TextStyle(fontStyle: FontStyle.italic), index: index),
         );
         break;
       case 'code':
@@ -267,6 +396,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           child: _textField(
             b,
             const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            index: index,
           ),
         );
         break;
@@ -283,68 +413,132 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                 borderRadius: BorderRadius.circular(6),
                 child: Image.network(url, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image)),
               ),
-            _textField(b, const TextStyle(fontSize: 12, color: Colors.grey)),
+            _textField(b, const TextStyle(fontSize: 12, color: Colors.grey), index: index),
           ],
         );
         break;
       default:
-        field = _textField(b, const TextStyle(fontSize: 15));
+        field = _textField(b, const TextStyle(fontSize: 15), index: index);
     }
 
     return MouseRegion(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconButton(
-              icon: const Icon(Icons.add, size: 18),
-              tooltip: '於下方插入',
-              onPressed: () => _openInsertMenu(index),
-              visualDensity: VisualDensity.compact,
-            ),
-            Expanded(child: field),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.drag_indicator, size: 18),
-              tooltip: '轉換／刪除',
-              onSelected: (v) {
-                if (v == '__delete') {
-                  _delete(index);
-                } else {
-                  _changeType(index, v);
-                }
-              },
-              itemBuilder: (_) => [
-                ..._menuTypes.map(
-                  (t) => PopupMenuItem(
-                    value: t.$1,
-                    child: Row(children: [Icon(t.$3, size: 16), const SizedBox(width: 8), Text(t.$2)]),
-                  ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.add, size: 18),
+                  tooltip: '於下方插入',
+                  onPressed: () => _openInsertMenu(index),
+                  visualDensity: VisualDensity.compact,
                 ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: '__delete',
-                  child: Text('刪除', style: TextStyle(color: Colors.red)),
+                Expanded(child: field),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.drag_indicator, size: 18),
+                  tooltip: '轉換／刪除',
+                  onSelected: (v) {
+                    if (v == '__delete') {
+                      _delete(index);
+                    } else {
+                      _changeType(index, v);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    ..._menuTypes.map(
+                      (t) => PopupMenuItem(
+                        value: t.$1,
+                        child: Row(children: [Icon(t.$3, size: 16), const SizedBox(width: 8), Text(t.$2)]),
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: '__delete',
+                      child: Text('刪除', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
                 ),
               ],
             ),
+            if (_slashIndex == index) _buildSlashMenu(index),
           ],
         ),
       ),
     );
   }
 
-  Widget _textField(_BlockItem b, TextStyle? style) {
-    return TextField(
+  Widget _buildSlashMenu(int index) {
+    final filtered = _filteredSlashTypes();
+    if (filtered.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 44, top: 4, bottom: 4),
+        child: Text(
+          '沒有符合「$_slashQuery」的 block 類型',
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+        ),
+      );
+    }
+    final highlight = _slashHighlight.clamp(0, filtered.length - 1);
+    return Padding(
+      padding: const EdgeInsets.only(left: 44, top: 2, bottom: 4),
+      child: Material(
+        elevation: 3,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < filtered.length; i++)
+                InkWell(
+                  onTap: () => _applySlash(index, filtered[i].$1),
+                  child: Container(
+                    color: i == highlight ? Colors.blue.withOpacity(0.08) : null,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(filtered[i].$3, size: 16, color: Colors.grey.shade700),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(filtered[i].$2, style: const TextStyle(fontSize: 13))),
+                        Text('/${filtered[i].$1}',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontFamily: 'monospace')),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _textField(_BlockItem b, TextStyle? style, {int? index}) {
+    // 僅在純文字 block 且沒有內容時顯示 slash 提示，其他 block type 就保持乾淨。
+    final showHint = index != null && b.type == 'text' && b.controller.text.isEmpty;
+    final tf = TextField(
       controller: b.controller,
+      focusNode: b.focusNode,
       style: style,
       maxLines: null,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         border: InputBorder.none,
         isCollapsed: true,
-        contentPadding: EdgeInsets.symmetric(vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        hintText: showHint ? '輸入 / 叫出指令' : null,
+        hintStyle: showHint ? TextStyle(color: Colors.grey.shade400, fontSize: 14) : null,
       ),
-      onChanged: (_) => _scheduleSave(),
+      onChanged: (_) => index != null ? _onBlockTextChanged(index) : _scheduleSave(),
+    );
+    if (index == null) return tf;
+    // 當 slash 選單開著時，用 Focus 包裹 TextField 攔截上下／Enter／Esc，
+    // 但不會影響一般輸入（非選單鍵回傳 ignored）。
+    return Focus(
+      onKeyEvent: (node, event) => _handleSlashKey(index, event),
+      child: tf,
     );
   }
 
