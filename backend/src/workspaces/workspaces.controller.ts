@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query,
+  Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { WorkspacesService } from './workspaces.service';
@@ -51,12 +51,26 @@ export class WorkspacesController {
   }
 
   @Post(':id/members')
-  @ApiOperation({ summary: '邀請成員' })
+  @ApiOperation({
+    summary: '邀請成員',
+    description: '提供 `identifier`（email 或 username，對方須已註冊），或傳 `userId`（既有行為）',
+  })
   async inviteMember(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { userId: string; role?: string },
+    @Body() body: { userId?: string; identifier?: string; role?: string },
   ) {
+    if (body.identifier && body.identifier.trim()) {
+      return this.workspacesService.inviteByIdentifier(
+        req.user.userId,
+        id,
+        body.identifier.trim(),
+        body.role,
+      );
+    }
+    if (!body.userId) {
+      throw new BadRequestException('必須提供 userId 或 identifier（email / username）');
+    }
     return this.workspacesService.inviteMember(req.user.userId, id, body.userId, body.role);
   }
 

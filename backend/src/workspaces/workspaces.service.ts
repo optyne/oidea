@@ -98,6 +98,47 @@ export class WorkspacesService {
     });
   }
 
+  /**
+   * 以 email 或 username 邀請既有使用者加入工作空間。對方必須已註冊；
+   * 若尚未註冊，回 404 並提示由對方先完成註冊。
+   */
+  async inviteByIdentifier(
+    userId: string,
+    workspaceId: string,
+    identifier: string,
+    role: string = 'member',
+  ) {
+    await this.checkPermission(userId, workspaceId, 'admin');
+
+    const target = await this.prisma.user.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [{ email: identifier }, { username: identifier }],
+      },
+      select: { id: true, email: true, username: true, displayName: true },
+    });
+    if (!target) {
+      throw new NotFoundException(
+        `找不到使用者 "${identifier}"；請對方先至 https://oidea.oadpiz.com 註冊後再邀請`,
+      );
+    }
+
+    const existing = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: target.id } },
+    });
+    if (existing) {
+      throw new ForbiddenException(`${target.displayName} 已是成員`);
+    }
+
+    const member = await this.prisma.workspaceMember.create({
+      data: { workspaceId, userId: target.id, role },
+      include: {
+        user: { select: { id: true, email: true, username: true, displayName: true, avatarUrl: true } },
+      },
+    });
+    return member;
+  }
+
   async removeMember(userId: string, workspaceId: string, targetUserId: string) {
     await this.checkPermission(userId, workspaceId, 'admin');
     return this.prisma.workspaceMember.delete({
