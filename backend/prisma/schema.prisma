@@ -114,6 +114,7 @@ model Workspace {
   knowledgePages    KnowledgePage[]
   auditLogs         AuditLog[]
   invites           WorkspaceInvite[]
+  spreadsheets      Spreadsheet[]
   bots              BotAccount[]
 
   @@map("workspaces")
@@ -519,6 +520,41 @@ model WhiteboardSession {
   whiteboard Whiteboard @relation(fields: [whiteboardId], references: [id], onDelete: Cascade)
 
   @@map("whiteboard_sessions")
+}
+
+// ============================================================
+// 試算表 (Excel-like)
+// ============================================================
+
+/// 整份試算表以 JSON 存放，結構：
+/// ```
+/// {
+///   "cols": 26,           // 欄數（A..Z）
+///   "rows": 50,           // 列數
+///   "colWidths": {"0": 120, ...}, // 每欄寬度（optional）
+///   "cells": {
+///     "A1": {"v": "Name"},                       // 文字
+///     "B1": {"v": 42},                            // 數字
+///     "C1": {"v": null, "f": "=A1+B1", "c": 42},  // formula + 快取計算結果
+///     "D1": {"v": "hi", "s": {"bold": true}}      // 樣式 (optional)
+///   }
+/// }
+/// ```
+/// 這一代只做純值編輯；formula / 樣式 之後 iteration 補。
+model Spreadsheet {
+  id          String    @id @default(uuid())
+  workspaceId String
+  title       String
+  description String?
+  data        Json? // 見上方結構
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, deletedAt])
+  @@map("spreadsheets")
 }
 
 // ============================================================

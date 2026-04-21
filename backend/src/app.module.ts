@@ -29,6 +29,7 @@ import { AuditModule } from './audit/audit.module';
 import { InvitesModule } from './invites/invites.module';
 import { BotsModule } from './bots/bots.module';
 import { SearchModule } from './search/search.module';
+import { SpreadsheetsModule } from './spreadsheets/spreadsheets.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { SearchModule } from './search/search.module';
     InvitesModule,
     BotsModule,
     SearchModule,
+    SpreadsheetsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
