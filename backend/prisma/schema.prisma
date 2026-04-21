@@ -58,6 +58,8 @@ model User {
   auditEvents        AuditLog[]           @relation("AuditActor")
   createdInvites     WorkspaceInvite[]    @relation("InviteCreator")
   consumedInvites    WorkspaceInvite[]    @relation("InviteConsumer")
+  botAccount         BotAccount?          @relation("BotAccountUser")
+  createdBots        BotAccount[]         @relation("BotAccountCreator")
 
   @@map("users")
 }
@@ -112,6 +114,7 @@ model Workspace {
   knowledgePages    KnowledgePage[]
   auditLogs         AuditLog[]
   invites           WorkspaceInvite[]
+  bots              BotAccount[]
 
   @@map("workspaces")
 }
@@ -1009,4 +1012,35 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+// ============================================================
+// Bot 整合：外部程式（Claude Code / 自訂 agent）透過 token 存取 Oidea
+// ============================================================
+
+/// 每個 bot 有一條對應的 User（senderId 可直接指過去，現有 message FK 不變）
+/// 加一個 BotAccount 保存 token hash、擁有者、狀態等 metadata。
+model BotAccount {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  /// 對應的 bot User row（與 `User.botAccount` 1:1）
+  userId       String    @unique
+  name         String
+  description  String?
+  /// bcrypt hash of the full token; plaintext 只在 create response 回一次
+  tokenHash    String
+  /// Token 前 10 字元（含 `bot_` 前綴），用來在收到請求時快速查哪個 bot
+  tokenPrefix  String    @unique
+  /// 建立者（授權稽核用）
+  createdById  String
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("BotAccountUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("BotAccountCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, revokedAt])
+  @@map("bot_accounts")
 }
