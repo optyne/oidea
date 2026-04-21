@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
@@ -13,6 +14,7 @@ import { BroadcastMessageDto } from './dto/broadcast-message.dto';
 import { ConvertMessageToTaskDto } from './dto/convert-to-task.dto';
 import { MessagesGateway } from './messages.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class MessagesService {
@@ -21,6 +23,10 @@ export class MessagesService {
     @Inject(forwardRef(() => MessagesGateway))
     private readonly messagesGateway: MessagesGateway,
     private readonly notifications: NotificationsService,
+    // Optional + forwardRef：AI 模組可以關閉，也避免 bootstrap 解析環。
+    @Optional()
+    @Inject(forwardRef(() => AiService))
+    private readonly ai: AiService | null,
   ) {}
 
   async create(userId: string, dto: CreateMessageDto) {
@@ -50,6 +56,21 @@ export class MessagesService {
     await this.handleMentions(message.id, dto.channelId, dto.content, userId, message.sender.displayName);
 
     this.messagesGateway.emitNewMessage(dto.channelId, message);
+
+    // Fire-and-forget：@ai 觸發 AI 回覆，不阻塞送訊息流程。
+    if (this.ai) {
+      void this.ai
+        .handleAiMention({
+          messageId: message.id,
+          channelId: dto.channelId,
+          content: dto.content,
+          actorId: userId,
+        })
+        .catch(() => {
+          // AiService 內部已有 logger；這裡再保險一層不外洩 unhandled rejection
+        });
+    }
+
     return message;
   }
 

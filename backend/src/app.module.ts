@@ -27,6 +27,7 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AuditModule } from './audit/audit.module';
 import { InvitesModule } from './invites/invites.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { InvitesModule } from './invites/invites.module';
     AttendanceModule,
     KnowledgeModule,
     InvitesModule,
+    AiModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
