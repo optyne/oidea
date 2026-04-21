@@ -89,6 +89,39 @@ export class WhiteboardService {
     });
   }
 
+  /**
+   * 簡易 canvas 持久化：把前端當前的 items 陣列當成不透明 JSON 存進 `data` 欄位。
+   *
+   * 這條路徑**跳過 Yjs**（CRDT 仍留給未來做多人即時協作用）；現階段只要「關掉
+   * 白板再打開，畫的東西還在」。item 結構完全由前端定義，server 不解析。
+   */
+  async saveCanvas(userId: string, id: string, items: unknown[]) {
+    const board = await this.prisma.whiteboard.findUnique({ where: { id, deletedAt: null } });
+    if (!board) throw new NotFoundException('白板不存在');
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: board.workspaceId, userId } },
+    });
+    if (!member) throw new ForbiddenException('非此工作空間成員');
+
+    // 保留既有 Yjs buffer（若有），把 canvas items 放獨立 key
+    const existing =
+      board.data && typeof board.data === 'object' && !Array.isArray(board.data)
+        ? (board.data as Record<string, unknown>)
+        : {};
+
+    const nextData = {
+      ...existing,
+      canvasItems: items,
+      canvasSavedAt: new Date().toISOString(),
+    };
+
+    return this.prisma.whiteboard.update({
+      where: { id },
+      data: { data: nextData as any },
+      select: { id: true, updatedAt: true },
+    });
+  }
+
   async getTemplates(workspaceId: string) {
     return this.prisma.whiteboard.findMany({
       where: { workspaceId, isTemplate: true, deletedAt: null },

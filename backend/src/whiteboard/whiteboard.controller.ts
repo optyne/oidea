@@ -35,6 +35,20 @@ export class WhiteboardController {
     return this.whiteboardService.update(req.user.userId, id, dto);
   }
 
+  @Put(':id/canvas')
+  @ApiOperation({
+    summary: '儲存白板 canvas 內容（item 陣列，不透明 JSON）',
+    description:
+      '前端每次 debounce 到 ~1 秒後呼叫。整份覆寫，非 diff。單一白板上限建議 10,000 items；超過請分多張白板。',
+  })
+  async saveCanvas(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { items: unknown[] },
+  ) {
+    return this.whiteboardService.saveCanvas(req.user.userId, id, body?.items ?? []);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: '刪除白板' })
   async delete(@Req() req: any, @Param('id') id: string) {
