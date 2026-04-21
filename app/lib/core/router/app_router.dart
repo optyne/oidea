@@ -20,6 +20,7 @@ import '../../features/erp/presentation/pages/leaves_page.dart';
 import '../../features/erp/presentation/pages/members_page.dart';
 import '../../features/notes/presentation/pages/notes_home_page.dart';
 import '../../features/files/presentation/pages/files_gallery_page.dart';
+import '../../features/reminders/presentation/pages/reminders_page.dart';
 import '../../features/workspace/presentation/pages/invite_landing_page.dart';
 import '../../shared/pages/main_shell.dart';
 
@@ -132,6 +133,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/files',
             builder: (context, state) => const FilesGalleryPage(),
+          ),
+          GoRoute(
+            path: '/reminders',
+            builder: (context, state) => const RemindersPage(),
           ),
           GoRoute(
             path: '/erp',
