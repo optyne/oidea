@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
+import '../../features/search/presentation/widgets/command_palette.dart';
 import 'workspace_switcher_bar.dart';
 
 final currentTabProvider = StateProvider<int>((ref) => 0);
@@ -39,7 +41,23 @@ class MainShell extends ConsumerWidget {
     final unreadAsync = ref.watch(unreadCountProvider);
     final tabIndex = ref.watch(currentTabProvider);
 
-    return Scaffold(
+    return Shortcuts(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.keyK, control: true): _OpenCommandPaletteIntent(),
+        SingleActivator(LogicalKeyboardKey.keyK, meta: true): _OpenCommandPaletteIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          _OpenCommandPaletteIntent: CallbackAction<_OpenCommandPaletteIntent>(
+            onInvoke: (_) {
+              showCommandPalette(context);
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -106,6 +124,19 @@ class MainShell extends ConsumerWidget {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.small(
+        tooltip: '搜尋 (Ctrl/⌘+K)',
+        onPressed: () => showCommandPalette(context),
+        child: const Icon(Icons.search),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+          ),
+        ),
+      ),
     );
   }
+}
+
+class _OpenCommandPaletteIntent extends Intent {
+  const _OpenCommandPaletteIntent();
 }

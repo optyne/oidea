@@ -28,6 +28,7 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AuditModule } from './audit/audit.module';
 import { InvitesModule } from './invites/invites.module';
 import { BotsModule } from './bots/bots.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { BotsModule } from './bots/bots.module';
     KnowledgeModule,
     InvitesModule,
     BotsModule,
+    SearchModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

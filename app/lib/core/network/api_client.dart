@@ -125,6 +125,23 @@ class ApiClient {
     return res.data!;
   }
 
+  /// 全域搜尋：跨 messages / tasks / pages / files 做模糊比對。
+  Future<Map<String, dynamic>> search({
+    required String workspaceId,
+    required String query,
+    int limit = 5,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'search',
+      queryParameters: {
+        'workspaceId': workspaceId,
+        'q': query,
+        'limit': limit,
+      },
+    );
+    return res.data ?? {};
+  }
+
   Future<List<dynamic>> getChannels(String workspaceId) async {
     final res = await _dio.get<List<dynamic>>('channels', queryParameters: {'workspaceId': workspaceId});
     return res.data ?? [];
