@@ -7,6 +7,7 @@ import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/notes_providers.dart';
 import '../widgets/block_editor.dart';
 import '../widgets/database_view.dart';
+import '../widgets/share_page_dialog.dart';
 
 class NotesHomePage extends ConsumerWidget {
   const NotesHomePage({super.key});
@@ -304,7 +305,19 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_horiz),
                     onSelected: (v) async {
-                      if (v == 'delete') {
+                      if (v == 'share') {
+                        final workspaceId = page['workspaceId'] as String?;
+                        if (workspaceId == null) return;
+                        await showDialog<void>(
+                          context: context,
+                          builder: (_) => SharePageDialog(
+                            pageId: widget.pageId,
+                            workspaceId: workspaceId,
+                            pageTitle: (page['title'] as String?) ?? 'Untitled',
+                          ),
+                        );
+                        ref.invalidate(workspacePagesProvider(workspaceId));
+                      } else if (v == 'delete') {
                         final confirm = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
@@ -333,7 +346,22 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                       }
                     },
                     itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'delete', child: Text('刪除頁面')),
+                      PopupMenuItem(
+                        value: 'share',
+                        child: Row(children: [
+                          Icon(Icons.share_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('分享／權限'),
+                        ]),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(children: [
+                          Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('刪除頁面'),
+                        ]),
+                      ),
                     ],
                   ),
                 ],

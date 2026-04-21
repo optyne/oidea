@@ -425,6 +425,58 @@ class ApiClient {
     return res.data!;
   }
 
+  // ─────────────────── 知識庫：ACL ───────────────────
+
+  /// 當前使用者對此頁面的有效存取層級：view / edit / full / null。
+  Future<Map<String, dynamic>> getPageAccess(String pageId) async {
+    final res = await _dio.get<Map<String, dynamic>>('knowledge/pages/$pageId/access');
+    return res.data!;
+  }
+
+  /// 明確分享清單。
+  Future<List<dynamic>> listPagePermissions(String pageId) async {
+    final res = await _dio.get<List<dynamic>>('knowledge/pages/$pageId/permissions');
+    return res.data ?? [];
+  }
+
+  /// 新增或更新一條分享（userId 或 role 擇一）。
+  Future<Map<String, dynamic>> sharePage(
+    String pageId, {
+    String? userId,
+    String? role,
+    required String access,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'knowledge/pages/$pageId/permissions',
+      data: {
+        if (userId != null) 'userId': userId,
+        if (role != null) 'role': role,
+        'access': access,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<void> removePagePermission(String pageId, String permissionId) async {
+    await _dio.delete('knowledge/pages/$pageId/permissions/$permissionId');
+  }
+
+  /// 變更頁面可見性。
+  Future<Map<String, dynamic>> updatePageVisibility(
+    String pageId, {
+    required String visibility,
+    bool? inheritParentAcl,
+  }) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'knowledge/pages/$pageId/visibility',
+      data: {
+        'visibility': visibility,
+        if (inheritParentAcl != null) 'inheritParentAcl': inheritParentAcl,
+      },
+    );
+    return res.data!;
+  }
+
   // ─────────────────────── ERP：權限／成員 ───────────────────────
 
   Future<List<dynamic>> getWorkspaceMembers(String workspaceId) async {
