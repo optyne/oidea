@@ -1,11 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { addRecurrence, RecurrenceRule } from '../common/recurrence';
+import { AutomationEngine } from '../automation/automation.engine';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private automation: AutomationEngine,
+  ) {}
 
   async create(userId: string, dto: CreateTaskDto) {
     const project = await this.prisma.project.findUnique({
@@ -35,6 +40,8 @@ export class TasksService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         position: taskCount,
+        recurrence: dto.recurrence ?? 'none',
+        recurrenceInterval: dto.recurrenceInterval ?? 1,
       },
       include: {
         assignee: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
@@ -94,7 +101,12 @@ export class TasksService {
       assigneeId: dto.assigneeId,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
       startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+      recurrence: dto.recurrence,
+      recurrenceInterval: dto.recurrenceInterval,
     };
+
+    const transitioningToComplete =
+      dto.completed === true && !task.completedAt;
 
     if (dto.completed !== undefined) {
       updateData.completedAt = dto.completed ? new Date() : null;
@@ -111,7 +123,84 @@ export class TasksService {
 
     await this.logActivity(id, userId, 'updated', dto);
 
+    // P-14: 完成一張循環任務 → 自動生成下一張
+    if (transitioningToComplete) {
+      await this.spawnRecurringInstance(task);
+    }
+
+    // P-15: 派發自動化規則（task_completed 觸發）
+    if (transitioningToComplete) {
+      await this.automation.onTaskCompleted({
+        id: task.id,
+        projectId: task.projectId,
+        title: updated.title,
+        assigneeId: updated.assigneeId,
+        dueDate: updated.dueDate,
+      });
+    }
+
     return updated;
+  }
+
+  /**
+   * P-14：從已完成的循環任務產生下一張。
+   * 條件：recurrence ≠ 'none' 且有 dueDate（否則無從推算下期日期）。
+   * 新任務 inherit title / description / priority / assignee / 循環規則；
+   * completedAt = null，dueDate 為推進後日期。
+   *
+   * `recurringSourceId` 一律指向序列的「根」任務：
+   *   - 若原任務有 recurringSourceId → 沿用
+   *   - 否則 → 用原任務的 id (本張就是根)
+   */
+  private async spawnRecurringInstance(task: {
+    id: string;
+    projectId: string;
+    columnId: string;
+    title: string;
+    description: string | null;
+    priority: string;
+    assigneeId: string | null;
+    startDate: Date | null;
+    dueDate: Date | null;
+    recurrence: string;
+    recurrenceInterval: number;
+    recurringSourceId: string | null;
+  }) {
+    if (task.recurrence === 'none' || !task.dueDate) return null;
+
+    const nextDue = addRecurrence(
+      task.dueDate,
+      task.recurrence as RecurrenceRule,
+      task.recurrenceInterval,
+    );
+
+    let nextStart: Date | undefined;
+    if (task.startDate && task.dueDate) {
+      const offsetMs = task.startDate.getTime() - task.dueDate.getTime();
+      nextStart = new Date(nextDue.getTime() + offsetMs);
+    }
+
+    const rootId = task.recurringSourceId ?? task.id;
+    const siblingCount = await this.prisma.task.count({
+      where: { columnId: task.columnId },
+    });
+
+    return this.prisma.task.create({
+      data: {
+        projectId: task.projectId,
+        columnId: task.columnId,
+        title: task.title,
+        description: task.description ?? undefined,
+        priority: task.priority,
+        assigneeId: task.assigneeId ?? undefined,
+        dueDate: nextDue,
+        startDate: nextStart,
+        position: siblingCount,
+        recurrence: task.recurrence,
+        recurrenceInterval: task.recurrenceInterval,
+        recurringSourceId: rootId,
+      },
+    });
   }
 
   async move(userId: string, id: string, columnId: string, position: number) {

@@ -41,6 +41,11 @@ model User {
   notifications      Notification[]
   sharedFiles        File[]
   activities         TaskActivity[]
+  createdDatabases   Database[]           @relation("DatabaseCreator")
+  reminders          Reminder[]           @relation("ReminderCreator")
+  messageSnippets    MessageSnippet[]     @relation("SnippetCreator")
+  scheduledMessages  ScheduledMessage[]   @relation("ScheduledMessageCreator")
+  automationRules    AutomationRule[]     @relation("AutomationRuleCreator")
 
   @@map("users")
 }
@@ -79,11 +84,16 @@ model Workspace {
   ownerId String @map("ownerId")
   owner   User   @relation("WorkspaceOwner", fields: [ownerId], references: [id])
 
-  members  WorkspaceMember[]
-  channels Channel[]
-  projects Project[]
-  meetings Meeting[]
-  boards   Whiteboard[]
+  members   WorkspaceMember[]
+  channels  Channel[]
+  projects  Project[]
+  meetings  Meeting[]
+  boards    Whiteboard[]
+  databases         Database[]
+  reminders         Reminder[]
+  snippets          MessageSnippet[]
+  scheduledMessages ScheduledMessage[]
+  automationRules   AutomationRule[]
 
   @@map("workspaces")
 }
@@ -144,30 +154,33 @@ model ChannelMember {
 }
 
 model Message {
-  id        String    @id @default(uuid())
-  channelId String
-  senderId  String
-  parentId  String? // for thread replies
-  type      String    @default("text") // text, image, file, system
-  content   String?
-  metadata  Json? // extra data like file info
-  editedAt  DateTime?
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
+  id          String    @id @default(uuid())
+  channelId   String
+  senderId    String
+  parentId    String? // for thread replies
+  broadcastId String? // C-16 跨頻道廣播：同一批廣播出去的訊息共用此 id
+  type        String    @default("text") // text, image, file, system
+  content     String?
+  metadata    Json? // extra data like file info
+  editedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
 
   channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sender  User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
   parent  Message?  @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
   replies Message[] @relation("MessageThread")
 
-  reactions    MessageReaction[]
-  readStatuses MessageReadStatus[]
-  mentions     Mention[]
-  pinnedIn     PinnedMessage[]
-  files        File[]
+  reactions       MessageReaction[]
+  readStatuses    MessageReadStatus[]
+  mentions        Mention[]
+  pinnedIn        PinnedMessage[]
+  files           File[]
+  convertedTasks  Task[]              @relation("MessageConvertedTasks")
 
   @@index([channelId, createdAt])
   @@index([parentId])
+  @@index([broadcastId])
   @@map("messages")
 }
 
@@ -277,24 +290,31 @@ model ProjectColumn {
 }
 
 model Task {
-  id          String    @id @default(uuid())
-  projectId   String
-  columnId    String
-  title       String
-  description String?
-  priority    String    @default("medium") // urgent, high, medium, low
-  position    Int       @default(0)
-  dueDate     DateTime?
-  startDate   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id                 String    @id @default(uuid())
+  projectId          String
+  columnId           String
+  title              String
+  description        String?
+  priority           String    @default("medium") // urgent, high, medium, low
+  position           Int       @default(0)
+  dueDate            DateTime?
+  startDate          DateTime?
+  completedAt        DateTime?
+  sourceMessageId    String? // C-18 訊息轉任務：可回溯訊息來源
+  recurrence         String    @default("none") // P-14: none | daily | weekly | monthly | yearly
+  recurrenceInterval Int       @default(1)
+  recurringSourceId  String? // P-14: 指向本循環序列的根任務
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
 
-  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  column     ProjectColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  assignee   User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  assigneeId String?
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column          ProjectColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  assignee        User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId      String?
+  sourceMessage   Message?      @relation("MessageConvertedTasks", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  recurringSource Task?         @relation("TaskRecurringSeries", fields: [recurringSourceId], references: [id], onDelete: SetNull)
+  recurringInstances Task[]     @relation("TaskRecurringSeries")
 
   tags       TaskTag[]
   comments   TaskComment[]
@@ -303,6 +323,8 @@ model Task {
   files      File[]
 
   @@index([projectId, columnId, position])
+  @@index([sourceMessageId])
+  @@index([recurringSourceId])
   @@map("tasks")
 }
 
@@ -493,4 +515,198 @@ model Notification {
 
   @@index([userId, read, createdAt])
   @@map("notifications")
+}
+
+// ============================================================
+// 文件與資料庫 (P5 Docs & Database)
+//   D-02 結構化資料庫：支援自訂欄位 (text / number / date / select)
+// ============================================================
+
+model Database {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  icon        String?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("DatabaseCreator", fields: [createdBy], references: [id])
+
+  columns DatabaseColumn[]
+  rows    DatabaseRow[]
+
+  @@index([workspaceId, deletedAt])
+  @@map("databases")
+}
+
+model DatabaseColumn {
+  id         String   @id @default(uuid())
+  databaseId String
+  name       String
+  type       String // text, number, date, select
+  options    Json? // select 型別選項：{ choices: [{id, label, color}] }
+  position   Int      @default(0)
+  required   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  database Database       @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  cells    DatabaseCell[]
+
+  @@unique([databaseId, name])
+  @@map("database_columns")
+}
+
+model DatabaseRow {
+  id         String    @id @default(uuid())
+  databaseId String
+  position   Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  database Database       @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  cells    DatabaseCell[]
+
+  @@index([databaseId, deletedAt, position])
+  @@map("database_rows")
+}
+
+model DatabaseCell {
+  id        String   @id @default(uuid())
+  rowId     String
+  columnId  String
+  value     Json? // 依欄位型別：string / number / ISO date / select choice id
+  updatedAt DateTime @updatedAt
+
+  row    DatabaseRow    @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  column DatabaseColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  @@unique([rowId, columnId])
+  @@map("database_cells")
+}
+
+// ============================================================
+// 到期與重複提醒 (D-07)
+//   支援單次 / daily / weekly / monthly / yearly + interval
+//   targetType/targetId 可指向 database_row 或 task；null = 純提醒
+// ============================================================
+
+// ============================================================
+// 訊息範本 / 片段庫 (C-15)
+//   visibility: personal (僅作者) | workspace (同工作空間成員皆可使用)
+//   只有作者可以編輯 / 軟刪
+// ============================================================
+
+model MessageSnippet {
+  id          String    @id @default(uuid())
+  workspaceId String
+  createdBy   String
+  name        String
+  content     String
+  shortcut    String? // 例：/billing-notice
+  visibility  String    @default("personal") // personal | workspace
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("SnippetCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, deletedAt, visibility])
+  @@index([createdBy, deletedAt])
+  @@map("message_snippets")
+}
+
+// ============================================================
+// 自動化規則 (P-15)
+//   事件觸發：task_completed (本刀暫時支援此單一 trigger)
+//   scope: project — scopeId 指向 Project.id，執行時匹配 task.projectId
+//   action: notify_user | post_to_channel
+// ============================================================
+
+model AutomationRule {
+  id            String    @id @default(uuid())
+  workspaceId   String
+  createdBy     String
+  name          String
+  description   String?
+  scope         String // project | database
+  scopeId       String
+  trigger       String // task_completed | task_moved_to_column | ...
+  triggerConfig Json?
+  action        String // notify_user | post_to_channel
+  actionConfig  Json // 依 action 不同結構
+  enabled       Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("AutomationRuleCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([scope, scopeId, trigger, enabled, deletedAt])
+  @@index([workspaceId, deletedAt])
+  @@map("automation_rules")
+}
+
+// ============================================================
+// 排程訊息 (C-17)
+//   指定時間把訊息透過 C-16 broadcast 路徑送到 1+ 個頻道。
+//   內容於 schedule 當下 snapshot；之後改 snippet 不影響排定內容。
+// ============================================================
+
+model ScheduledMessage {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  createdBy       String
+  channelIds      String[]
+  content         String?
+  type            String    @default("text") // text | image | file | system
+  metadata        Json?
+  sendAt          DateTime
+  status          String    @default("pending") // pending | sent | canceled | failed
+  sentAt          DateTime?
+  sentBroadcastId String?
+  failedReason    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("ScheduledMessageCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([sendAt, status, deletedAt])
+  @@index([workspaceId, deletedAt])
+  @@map("scheduled_messages")
+}
+
+model Reminder {
+  id                 String    @id @default(uuid())
+  workspaceId        String
+  userId             String // 建立者
+  title              String
+  notes              String?
+  targetType         String? // database_row | task
+  targetId           String?
+  triggerAt          DateTime // 第一次觸發時間
+  recurrence         String    @default("none") // none | daily | weekly | monthly | yearly
+  recurrenceInterval Int       @default(1)
+  nextFireAt         DateTime // scheduler 輪詢用；與 triggerAt 同步 (第一次) 或 advance 後更新
+  lastFiredAt        DateTime?
+  status             String    @default("active") // active | paused | completed
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("ReminderCreator", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([nextFireAt, status, deletedAt])
+  @@index([workspaceId, deletedAt])
+  @@map("reminders")
 }

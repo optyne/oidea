@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
 import { AuthModule } from './auth/auth.module';
@@ -13,10 +14,16 @@ import { MeetingsModule } from './meetings/meetings.module';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { FilesModule } from './files/files.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { DatabasesModule } from './databases/databases.module';
+import { RemindersModule } from './reminders/reminders.module';
+import { SnippetsModule } from './snippets/snippets.module';
+import { ScheduledMessagesModule } from './scheduled-messages/scheduled-messages.module';
+import { AutomationModule } from './automation/automation.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
     AuthModule,
@@ -30,6 +37,11 @@ import { NotificationsModule } from './notifications/notifications.module';
     WhiteboardModule,
     FilesModule,
     NotificationsModule,
+    DatabasesModule,
+    RemindersModule,
+    SnippetsModule,
+    ScheduledMessagesModule,
+    AutomationModule,
   ],
 })
 export class AppModule {}
