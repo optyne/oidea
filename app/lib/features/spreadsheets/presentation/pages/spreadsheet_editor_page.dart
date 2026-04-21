@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../domain/formula_engine.dart';
 
 /// 試算表編輯頁 —— Excel-like 可捲動格線。
 ///
@@ -33,8 +34,11 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
   String _title = '';
   int _rows = 50;
   int _cols = 26;
-  // key: "A1" → {"v": value}
+  // Raw cells — key "A1" → {"v": literal | "=formula"}. 是 truth source，存盤就存這個。
   final Map<String, Map<String, dynamic>> _cells = {};
+  // 公式運算結果 — 每次編輯呼叫 recomputeCells 重算；display 用這個。
+  // shape: {addr: {v, f?, c?}}
+  Map<String, dynamic> _computed = const {};
 
   int _activeRow = 0;
   int _activeCol = 0;
@@ -109,6 +113,7 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
         _cells
           ..clear()
           ..addAll(cells);
+        _recompute();
         _loading = false;
       });
       _syncFormulaFromActive();
@@ -131,14 +136,12 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
     _saving = true;
     _dirty = false;
     try {
-      final cells = <String, dynamic>{};
-      _cells.forEach((k, v) {
-        cells[k] = v;
-      });
+      // 存 `_computed`（含 `c` 快取）而非 `_cells` — 讓其他客戶端不用自己算就看到結果。
+      // 資料結構跟 _cells 完全相容（v 保留 `=...` 原字串），只是多了 f / c。
       await ref.read(apiClientProvider).saveSpreadsheetData(widget.sheetId, {
         'rows': _rows,
         'cols': _cols,
-        'cells': cells,
+        'cells': _computed,
       });
     } catch (_) {
       _dirty = true; // 下次再試
@@ -159,12 +162,40 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
 
   String _addr(int row, int col) => '${_colLabel(col)}${row + 1}';
 
+  /// 格內顯示用：formula cell 顯示運算結果（來自 `_computed[addr].c`），
+  /// 一般 cell 顯示原值。
   String _cellDisplay(int row, int col) {
     final a = _addr(row, col);
-    final c = _cells[a];
-    if (c == null) return '';
-    final v = c['v'];
-    if (v == null) return '';
+    final c = _computed[a];
+    if (c is Map) {
+      if (c.containsKey('f')) {
+        final v = c['c'];
+        return v == null ? '' : _fmtComputed(v);
+      }
+      final v = c['v'];
+      return v == null ? '' : v.toString();
+    }
+    // fallback：`_computed` 還沒建好前
+    final raw = _cells[a];
+    if (raw == null) return '';
+    return (raw['v']?.toString()) ?? '';
+  }
+
+  /// formula bar 用 —— 編輯當下看到原始字串（公式要是 `=SUM(...)` 而非結果）。
+  String _cellRaw(int row, int col) {
+    final a = _addr(row, col);
+    final raw = _cells[a];
+    if (raw == null) return '';
+    final v = raw['v'];
+    return v?.toString() ?? '';
+  }
+
+  String _fmtComputed(Object v) {
+    if (v is double) {
+      // 整數值去掉尾數 `.0`
+      if (v == v.truncate() && v.abs() < 1e15) return v.toInt().toString();
+      return v.toString();
+    }
     return v.toString();
   }
 
@@ -172,17 +203,27 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
     final a = _addr(row, col);
     if (raw.isEmpty) {
       _cells.remove(a);
+    } else if (raw.startsWith('=') && raw.length > 1) {
+      // 公式 —— 原封不動保留 `=...`
+      _cells[a] = {'v': raw};
     } else {
       // 嘗試 int / double，失敗保留 string
       final asInt = int.tryParse(raw);
       final asNum = asInt ?? double.tryParse(raw);
       _cells[a] = {'v': asNum ?? raw};
     }
+    _recompute();
     _scheduleSave();
   }
 
+  void _recompute() {
+    // `recomputeCells` 吃的是 `Map<String, dynamic>`，_cells 是巢狀 Map<String, Map>
+    _computed = recomputeCells(_cells.map((k, v) => MapEntry(k, v)));
+  }
+
   void _syncFormulaFromActive() {
-    _formulaCtrl.text = _cellDisplay(_activeRow, _activeCol);
+    // formula bar 顯示的是 raw（`=...` 保留），不是運算結果
+    _formulaCtrl.text = _cellRaw(_activeRow, _activeCol);
     _formulaCtrl.selection = TextSelection.collapsed(offset: _formulaCtrl.text.length);
   }
 
@@ -477,6 +518,14 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
   Widget _cell(int r, int c) {
     final selected = r == _activeRow && c == _activeCol;
     final display = _cellDisplay(r, c);
+    // 公式 cell 左上角畫一顆小綠點；錯誤結果 cell 整個字紅色。
+    final addr = _addr(r, c);
+    final computedEntry = _computed[addr];
+    final isFormula = computedEntry is Map && computedEntry.containsKey('f');
+    final isError = display.startsWith('#') && display.endsWith('!');
+    final textColor = isError
+        ? Colors.red.shade700
+        : (isFormula ? Colors.blue.shade900 : null);
     return GestureDetector(
       onTap: () => _selectCell(r, c),
       behavior: HitTestBehavior.opaque,
@@ -494,11 +543,31 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
             left: selected ? BorderSide(color: Colors.blue.shade600, width: 2) : BorderSide.none,
           ),
         ),
-        child: Text(
-          display,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 13),
+        child: Stack(
+          children: [
+            if (isFormula)
+              Positioned(
+                left: 1,
+                top: 1,
+                child: Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade400,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                display,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: textColor),
+              ),
+            ),
+          ],
         ),
       ),
     );
