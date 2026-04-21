@@ -26,6 +26,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AuditModule } from './audit/audit.module';
+import { InvitesModule } from './invites/invites.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { AuditModule } from './audit/audit.module';
     ExpensesModule,
     AttendanceModule,
     KnowledgeModule,
+    InvitesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

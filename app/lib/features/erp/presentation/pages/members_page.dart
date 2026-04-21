@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
@@ -26,7 +27,16 @@ class MembersPage extends ConsumerWidget {
     final membersAsync = ref.watch(workspaceMembersProvider(workspaceId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('成員與權限')),
+      appBar: AppBar(
+        title: const Text('成員與權限'),
+        actions: [
+          IconButton(
+            tooltip: '建立邀請連結',
+            icon: const Icon(Icons.link),
+            onPressed: () => _openInviteLinkDialog(context, ref, workspaceId),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.person_add_alt),
         label: const Text('邀請成員'),
@@ -58,6 +68,13 @@ class MembersPage extends ConsumerWidget {
     );
   }
 
+  Future<void> _openInviteLinkDialog(BuildContext context, WidgetRef ref, String workspaceId) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _InviteLinkDialog(workspaceId: workspaceId),
+    );
+  }
+
   Future<void> _openInviteDialog(BuildContext context, WidgetRef ref, String workspaceId) async {
     final added = await showDialog<bool>(
       context: context,
@@ -69,6 +86,7 @@ class MembersPage extends ConsumerWidget {
   }
 }
 
+/// 以 email / username 直接加入既有使用者（對方必須已註冊）。
 class _InviteMemberDialog extends ConsumerStatefulWidget {
   final String workspaceId;
   const _InviteMemberDialog({required this.workspaceId});
@@ -237,6 +255,169 @@ class _MemberTile extends ConsumerWidget {
                 PopupMenuItem(value: 'member', child: Text('一般成員')),
               ],
             ),
+    );
+  }
+}
+
+/// 建立邀請連結對話框：選角色／有效天數 → 產 token → 顯示可複製的完整 URL。
+class _InviteLinkDialog extends ConsumerStatefulWidget {
+  final String workspaceId;
+  const _InviteLinkDialog({required this.workspaceId});
+
+  @override
+  ConsumerState<_InviteLinkDialog> createState() => _InviteLinkDialogState();
+}
+
+class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
+  String _role = 'member';
+  int _days = 7;
+  bool _busy = false;
+  String? _link;
+  String? _error;
+
+  /// 產連結時使用的 base。build 時 bake 進去，讓生產 / 本地可以用不同 base。
+  static const _webBase = String.fromEnvironment(
+    'WEB_BASE_URL',
+    defaultValue: 'https://oidea.oadpiz.com',
+  );
+
+  Future<void> _create() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _link = null;
+    });
+    try {
+      final res = await ref.read(apiClientProvider).createWorkspaceInvite(
+            widget.workspaceId,
+            role: _role,
+            expiresInDays: _days,
+          );
+      final token = res['token'] as String?;
+      if (token == null) throw Exception('後端未回傳 token');
+      setState(() {
+        _link = '$_webBase/invite/$token';
+        _busy = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = _prettyError(e.toString());
+        _busy = false;
+      });
+    }
+  }
+
+  String _prettyError(String raw) {
+    if (raw.contains('403')) return '權限不足（需 admin 以上才能建立邀請）';
+    return raw;
+  }
+
+  Future<void> _copy() async {
+    if (_link == null) return;
+    await Clipboard.setData(ClipboardData(text: _link!));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('連結已複製')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('建立邀請連結'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '任何人拿到連結、登入／註冊後就能加入此工作空間。每條連結只能用一次，可隨時撤銷。',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _role,
+              decoration: const InputDecoration(
+                labelText: '角色',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'admin', child: Text('管理員')),
+                DropdownMenuItem(value: 'hr', child: Text('HR')),
+                DropdownMenuItem(value: 'finance', child: Text('財務')),
+                DropdownMenuItem(value: 'member', child: Text('一般成員')),
+              ],
+              onChanged: _busy || _link != null ? null : (v) => setState(() => _role = v ?? 'member'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              value: _days,
+              decoration: const InputDecoration(
+                labelText: '有效天數',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 1, child: Text('1 天')),
+                DropdownMenuItem(value: 3, child: Text('3 天')),
+                DropdownMenuItem(value: 7, child: Text('7 天')),
+                DropdownMenuItem(value: 14, child: Text('14 天')),
+                DropdownMenuItem(value: 30, child: Text('30 天')),
+              ],
+              onChanged: _busy || _link != null ? null : (v) => setState(() => _days = v ?? 7),
+            ),
+            if (_link != null) ...[
+              const SizedBox(height: 20),
+              const Text(
+                '邀請連結（複製給對方）',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F5FA),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0x1A000000)),
+                ),
+                child: SelectableText(
+                  _link!,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        if (_link == null)
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+        if (_link == null)
+          FilledButton(
+            onPressed: _busy ? null : _create,
+            child: _busy
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('產生連結'),
+          )
+        else ...[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('關閉'),
+          ),
+          FilledButton.icon(
+            onPressed: _copy,
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('複製連結'),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -56,6 +56,8 @@ model User {
   createdRows        DbRow[]              @relation("RowCreatedBy")
   pagePermissions    PagePermission[]
   auditEvents        AuditLog[]           @relation("AuditActor")
+  createdInvites     WorkspaceInvite[]    @relation("InviteCreator")
+  consumedInvites    WorkspaceInvite[]    @relation("InviteConsumer")
 
   @@map("users")
 }
@@ -109,8 +111,37 @@ model Workspace {
   leaveRequests     LeaveRequest[]
   knowledgePages    KnowledgePage[]
   auditLogs         AuditLog[]
+  invites           WorkspaceInvite[]
 
   @@map("workspaces")
+}
+
+/// 工作空間邀請連結：管理員產 token，任何人憑連結可加入（未註冊者先註冊再接受）。
+/// 一個 invite 只能被兌換一次（consumedAt 設值後作廢）。沒有 email 綁定—— 任何 logged-in user 拿到 token 都能接受（比 email 綁定好用、也避開 email 郵寄系統）。
+model WorkspaceInvite {
+  id               String    @id @default(uuid())
+  workspaceId      String
+  /// 隨機 32+ bytes base64url 字串；URL-safe
+  token            String    @unique
+  /// 被邀請者登記的 email（可選，僅作紀錄；不強制 invitee 用此 email）
+  email            String?
+  /// 核准後授予的角色
+  role             String    @default("member")
+  createdById      String
+  /// 過期時間（預設 7 天後）
+  expiresAt        DateTime
+  /// 被接受時間；non-null 代表作廢
+  consumedAt       DateTime?
+  consumedByUserId String?
+  createdAt        DateTime  @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy     User      @relation("InviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  consumedBy    User?     @relation("InviteConsumer", fields: [consumedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, consumedAt])
+  @@index([token])
+  @@map("workspace_invites")
 }
 
 model WorkspaceMember {
