@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/auth/providers/auth_provider.dart';
@@ -91,6 +92,11 @@ class WorkspaceSwitcherBar extends ConsumerWidget {
                   tooltip: '新增工作空間',
                   icon: const Icon(Icons.add),
                   onPressed: () => _showCreateWorkspaceDialog(context, ref),
+                ),
+                IconButton(
+                  tooltip: '提醒',
+                  icon: const Icon(Icons.notifications_none_outlined),
+                  onPressed: () => context.push('/reminders'),
                 ),
                 const SizedBox(width: 4),
                 _UserAvatarButton(parentContext: context),
