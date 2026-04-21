@@ -6,6 +6,7 @@ import 'package:badges/badges.dart' as badges;
 import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
 import '../../features/search/presentation/widgets/command_palette.dart';
+import '../../features/shortcuts/presentation/widgets/shortcuts_cheatsheet.dart';
 import 'workspace_switcher_bar.dart';
 
 final currentTabProvider = StateProvider<int>((ref) => 0);
@@ -45,12 +46,20 @@ class MainShell extends ConsumerWidget {
       shortcuts: const <ShortcutActivator, Intent>{
         SingleActivator(LogicalKeyboardKey.keyK, control: true): _OpenCommandPaletteIntent(),
         SingleActivator(LogicalKeyboardKey.keyK, meta: true): _OpenCommandPaletteIntent(),
+        SingleActivator(LogicalKeyboardKey.slash, control: true): _OpenShortcutsIntent(),
+        SingleActivator(LogicalKeyboardKey.slash, meta: true): _OpenShortcutsIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
           _OpenCommandPaletteIntent: CallbackAction<_OpenCommandPaletteIntent>(
             onInvoke: (_) {
               showCommandPalette(context);
+              return null;
+            },
+          ),
+          _OpenShortcutsIntent: CallbackAction<_OpenShortcutsIntent>(
+            onInvoke: (_) {
+              showShortcutsCheatsheet(context);
               return null;
             },
           ),
@@ -144,4 +153,8 @@ class MainShell extends ConsumerWidget {
 
 class _OpenCommandPaletteIntent extends Intent {
   const _OpenCommandPaletteIntent();
+}
+
+class _OpenShortcutsIntent extends Intent {
+  const _OpenShortcutsIntent();
 }
