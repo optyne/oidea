@@ -1,9 +1,137 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
 import '../../providers/whiteboard_provider.dart';
 
 enum DrawingTool { select, pen, line, rect, circle, text, sticky, eraser }
+
+// ─── JSON 序列化 helper ───────────────────────────────────────────────────────
+
+int _colorToInt(Color c) => c.toARGB32();
+Color _intToColor(int v) => Color(v);
+
+Map<String, dynamic> _itemToJson(CanvasItem it) {
+  final base = {
+    'id': it.id,
+    'color': _colorToInt(it.color),
+    'strokeWidth': it.strokeWidth,
+  };
+  if (it is PathItem) {
+    return {
+      ...base,
+      'type': 'path',
+      'points': it.points.map((p) => [p.dx, p.dy]).toList(),
+    };
+  }
+  if (it is RectItem) {
+    return {
+      ...base,
+      'type': 'rect',
+      'x': it.topLeft.dx,
+      'y': it.topLeft.dy,
+      'w': it.size.width,
+      'h': it.size.height,
+    };
+  }
+  if (it is CircleItem) {
+    return {
+      ...base,
+      'type': 'circle',
+      'cx': it.center.dx,
+      'cy': it.center.dy,
+      'r': it.radius,
+    };
+  }
+  if (it is LineItem) {
+    return {
+      ...base,
+      'type': 'line',
+      'x1': it.start.dx,
+      'y1': it.start.dy,
+      'x2': it.end.dx,
+      'y2': it.end.dy,
+    };
+  }
+  if (it is TextItem) {
+    return {
+      ...base,
+      'type': 'text',
+      'x': it.position.dx,
+      'y': it.position.dy,
+      'text': it.text,
+      'fontSize': it.fontSize,
+    };
+  }
+  if (it is StickyItem) {
+    return {
+      ...base,
+      'type': 'sticky',
+      'x': it.position.dx,
+      'y': it.position.dy,
+      'text': it.text,
+      'bgColor': _colorToInt(it.bgColor),
+    };
+  }
+  return base;
+}
+
+CanvasItem? _itemFromJson(Map<String, dynamic> j) {
+  final id = (j['id'] as String?) ?? '';
+  final color = _intToColor((j['color'] as num?)?.toInt() ?? 0xFF000000);
+  final strokeWidth = (j['strokeWidth'] as num?)?.toDouble() ?? 2.0;
+  switch (j['type']) {
+    case 'path':
+      final pts = (j['points'] as List?)
+              ?.map((p) => Offset(
+                  (p[0] as num).toDouble(), (p[1] as num).toDouble()))
+              .toList() ??
+          [];
+      return PathItem(id: id, points: pts, color: color, strokeWidth: strokeWidth);
+    case 'rect':
+      return RectItem(
+        id: id,
+        topLeft: Offset((j['x'] as num).toDouble(), (j['y'] as num).toDouble()),
+        size: Size((j['w'] as num).toDouble(), (j['h'] as num).toDouble()),
+        color: color,
+        strokeWidth: strokeWidth,
+      );
+    case 'circle':
+      return CircleItem(
+        id: id,
+        center: Offset((j['cx'] as num).toDouble(), (j['cy'] as num).toDouble()),
+        radius: (j['r'] as num).toDouble(),
+        color: color,
+        strokeWidth: strokeWidth,
+      );
+    case 'line':
+      return LineItem(
+        id: id,
+        start: Offset((j['x1'] as num).toDouble(), (j['y1'] as num).toDouble()),
+        end: Offset((j['x2'] as num).toDouble(), (j['y2'] as num).toDouble()),
+        color: color,
+        strokeWidth: strokeWidth,
+      );
+    case 'text':
+      return TextItem(
+        id: id,
+        position: Offset((j['x'] as num).toDouble(), (j['y'] as num).toDouble()),
+        text: (j['text'] as String?) ?? '',
+        color: color,
+        fontSize: (j['fontSize'] as num?)?.toDouble() ?? 16,
+      );
+    case 'sticky':
+      return StickyItem(
+        id: id,
+        position: Offset((j['x'] as num).toDouble(), (j['y'] as num).toDouble()),
+        text: (j['text'] as String?) ?? '',
+        bgColor: _intToColor((j['bgColor'] as num?)?.toInt() ?? 0xFFFFF9C4),
+      );
+  }
+  return null;
+}
 
 // ─── Canvas items ─────────────────────────────────────────────────────────────
 
@@ -237,6 +365,11 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
   Offset? _moveDragPrev;
   int _idCounter = 0;
 
+  Timer? _saveDebounce;
+  bool _loaded = false;
+  bool _saving = false;
+  bool _dirty = false;
+
   static const _stickyColors = [
     Color(0xFFFFF9C4),
     Color(0xFFB3E5FC),
@@ -264,6 +397,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     _redoStack.add(List.from(_items));
     final prev = _undoStack.removeLast();
     setState(() { _items..clear()..addAll(prev); _selectedId = null; });
+    _scheduleSave();
   }
 
   void _redo() {
@@ -271,16 +405,78 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     _undoStack.add(List.from(_items));
     final next = _redoStack.removeLast();
     setState(() { _items..clear()..addAll(next); _selectedId = null; });
+    _scheduleSave();
   }
 
   @override
   void initState() {
     super.initState();
     ref.read(socketProvider).joinBoard(widget.boardId);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitial());
+  }
+
+  Future<void> _loadInitial() async {
+    try {
+      final board = await ref.read(whiteboardProvider(widget.boardId).future);
+      final data = board['data'];
+      if (data is Map<String, dynamic>) {
+        final items = data['canvasItems'];
+        if (items is List) {
+          final loaded = <CanvasItem>[];
+          for (final raw in items) {
+            if (raw is Map<String, dynamic>) {
+              final it = _itemFromJson(raw);
+              if (it != null) loaded.add(it);
+            }
+          }
+          if (mounted) {
+            setState(() {
+              _items
+                ..clear()
+                ..addAll(loaded);
+              _idCounter = loaded.length;
+            });
+          }
+        }
+      }
+    } catch (_) {
+      // 載入失敗就從空白畫布開始，不阻塞 UI
+    } finally {
+      _loaded = true;
+    }
+  }
+
+  void _scheduleSave() {
+    if (!_loaded) return; // 還沒載完就別存，避免用空陣列覆蓋
+    _dirty = true;
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 1500), _flushSave);
+  }
+
+  Future<void> _flushSave() async {
+    if (_saving || !_dirty) return;
+    _saving = true;
+    _dirty = false;
+    try {
+      final payload = _items.map(_itemToJson).toList();
+      await ref.read(apiClientProvider).saveWhiteboardCanvas(widget.boardId, payload);
+    } catch (_) {
+      _dirty = true; // 下次再試
+    } finally {
+      _saving = false;
+    }
   }
 
   @override
   void dispose() {
+    _saveDebounce?.cancel();
+    if (_dirty) {
+      // fire-and-forget；dispose 不能 await
+      final payload = _items.map(_itemToJson).toList();
+      unawaited(
+        ref.read(apiClientProvider).saveWhiteboardCanvas(widget.boardId, payload).onError((_, __) {}),
+      );
+    }
     ref.read(socketProvider).leaveBoard(widget.boardId);
     _tc.dispose();
     super.dispose();
@@ -336,6 +532,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             _items[idx] = moved;
           }
         });
+        _scheduleSave();
       }
       return;
     }
@@ -345,6 +542,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
       if (toRemove.isNotEmpty) {
         _saveUndo();
         setState(() => _items.removeWhere((it) => toRemove.contains(it.id)));
+        _scheduleSave();
       }
       return;
     }
@@ -372,6 +570,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     if (_currentItem != null) {
       _saveUndo();
       setState(() { _items.add(_currentItem!); _currentItem = null; });
+      _scheduleSave();
     }
     _dragStart = null;
   }
@@ -398,6 +597,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     if (result == null) return;
     _saveUndo();
     setState(() => _items.add(TextItem(id: _nextId(), position: pos, text: result, color: _currentColor)));
+    _scheduleSave();
   }
 
   Future<void> _showStickyInput(Offset pos) async {
@@ -440,12 +640,14 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     if (result == null) return;
     _saveUndo();
     setState(() => _items.add(StickyItem(id: _nextId(), position: pos, text: result['text'] as String, bgColor: result['color'] as Color)));
+    _scheduleSave();
   }
 
   void _deleteSelected() {
     if (_selectedId == null) return;
     _saveUndo();
     setState(() { _items.removeWhere((it) => it.id == _selectedId); _selectedId = null; });
+    _scheduleSave();
   }
 
   @override
@@ -482,7 +684,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
                         FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                            onPressed: () { Navigator.pop(ctx); _saveUndo(); setState(() { _items.clear(); _selectedId = null; }); },
+                            onPressed: () { Navigator.pop(ctx); _saveUndo(); setState(() { _items.clear(); _selectedId = null; }); _scheduleSave(); },
                             child: const Text('清除')),
                       ],
                     ),

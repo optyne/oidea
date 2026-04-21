@@ -212,6 +212,12 @@ class ApiClient {
     await _dio.delete('whiteboard/$id');
   }
 
+  /// 把 canvas items（不透明 JSON 陣列）整份覆寫到 server。
+  /// 前端約每 1.5 秒 debounce 呼叫；dispose 時也要 flush。
+  Future<void> saveWhiteboardCanvas(String boardId, List<Map<String, dynamic>> items) async {
+    await _dio.put('whiteboard/$boardId/canvas', data: {'items': items});
+  }
+
   Future<List<dynamic>> getWorkspaces() async {
     final res = await _dio.get<List<dynamic>>('workspaces');
     return res.data ?? [];
