@@ -118,4 +118,97 @@ export class FilesService {
       take: 100,
     });
   }
+
+  /**
+   * 檔案庫頁面專用查詢：支援類別篩選、檔名搜尋、分頁。
+   *
+   * type 分類規則（用 `fileType` 即 MIME 做粗分）：
+   *   - `image`: image/*
+   *   - `pdf`: application/pdf
+   *   - `doc`: 文件類（Office、csv、tsv、純文字、markdown、rtf、odf 系列）
+   *   - `video`: video/*
+   *   - `audio`: audio/*
+   *   - `other`: 以上都不是
+   *   - `all` / 未指定：全部
+   */
+  async browse(
+    workspaceId: string,
+    opts: {
+      type?: 'all' | 'image' | 'pdf' | 'doc' | 'video' | 'audio' | 'other';
+      search?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) {
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const offset = Math.max(opts.offset ?? 0, 0);
+    const q = opts.search?.trim();
+
+    // MIME 篩選條件映射到 Prisma where
+    const typeWhere = (() => {
+      switch (opts.type) {
+        case 'image':
+          return { fileType: { startsWith: 'image/' } };
+        case 'pdf':
+          return { fileType: 'application/pdf' };
+        case 'video':
+          return { fileType: { startsWith: 'video/' } };
+        case 'audio':
+          return { fileType: { startsWith: 'audio/' } };
+        case 'doc':
+          return {
+            OR: [
+              { fileType: { startsWith: 'text/' } },
+              // Office 系列
+              { fileType: { contains: 'officedocument' } },
+              { fileType: { contains: 'msword' } },
+              { fileType: { contains: 'ms-excel' } },
+              { fileType: { contains: 'ms-powerpoint' } },
+              { fileType: { contains: 'opendocument' } },
+              { fileType: 'application/rtf' },
+            ],
+          };
+        case 'other':
+          return {
+            AND: [
+              { fileType: { not: { startsWith: 'image/' } } },
+              { fileType: { not: { startsWith: 'video/' } } },
+              { fileType: { not: { startsWith: 'audio/' } } },
+              { fileType: { not: { startsWith: 'text/' } } },
+              { fileType: { not: 'application/pdf' } },
+              { fileType: { not: { contains: 'officedocument' } } },
+              { fileType: { not: { contains: 'msword' } } },
+              { fileType: { not: { contains: 'ms-excel' } } },
+              { fileType: { not: { contains: 'ms-powerpoint' } } },
+              { fileType: { not: { contains: 'opendocument' } } },
+              { fileType: { not: 'application/rtf' } },
+            ],
+          };
+        default:
+          return {};
+      }
+    })();
+
+    const where: any = {
+      workspaceId,
+      deletedAt: null,
+      ...typeWhere,
+      ...(q ? { fileName: { contains: q, mode: 'insensitive' } } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.file.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          uploader: { select: { id: true, displayName: true, avatarUrl: true } },
+        },
+      }),
+      this.prisma.file.count({ where }),
+    ]);
+
+    return { items, total, limit, offset };
+  }
 }

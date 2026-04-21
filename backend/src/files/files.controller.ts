@@ -36,6 +36,27 @@ export class FilesController {
     return this.filesService.findByWorkspace(workspaceId);
   }
 
+  @Get('workspace/:workspaceId/browse')
+  @ApiOperation({
+    summary: '檔案庫：依類別 / 關鍵字 / 分頁',
+    description:
+      '類別（type）可用 all/image/pdf/doc/video/audio/other；search 對 fileName 做不分大小寫子字串比對；limit 上限 200。',
+  })
+  async browse(
+    @Param('workspaceId') workspaceId: string,
+    @Query('type') type?: 'all' | 'image' | 'pdf' | 'doc' | 'video' | 'audio' | 'other',
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.filesService.browse(workspaceId, {
+      type,
+      search,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+    });
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: '刪除檔案' })
   async delete(@Param('id') id: string) {
