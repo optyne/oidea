@@ -5,6 +5,8 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../../shared/widgets/message_body.dart';
+import '../../../mentions/presentation/widgets/mention_text_field.dart';
+import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/message_provider.dart';
 
 /// 討論串：根訊息 [parentSummary] 可由上一頁 [extra] 傳入以便顯示頂部摘要。
@@ -178,14 +180,26 @@ class _ThreadPageState extends ConsumerState<ThreadPage> {
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: const InputDecoration(
-                hintText: '回覆討論串…',
+            child: Builder(builder: (ctx) {
+              final wsId = ref.watch(currentWorkspaceIdProvider);
+              const decoration = InputDecoration(
+                hintText: '回覆討論串… 用 @ 提及成員',
                 border: InputBorder.none,
-              ),
-              onSubmitted: (_) => _send(),
-            ),
+              );
+              if (wsId == null) {
+                return TextField(
+                  controller: _messageController,
+                  decoration: decoration,
+                  onSubmitted: (_) => _send(),
+                );
+              }
+              return MentionTextField(
+                controller: _messageController,
+                workspaceId: wsId,
+                decoration: decoration,
+                onSubmitted: (_) => _send(),
+              );
+            }),
           ),
           IconButton(icon: const Icon(Icons.send), onPressed: _send),
         ],

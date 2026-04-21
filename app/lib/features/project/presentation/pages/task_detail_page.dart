@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
+import '../../../mentions/presentation/widgets/mention_text_field.dart';
+import '../../../../shared/widgets/message_body.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/project_provider.dart';
 
@@ -405,7 +407,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                         ),
                       ],
                     ),
-                    subtitle: Text(c['content'] ?? ''),
+                    subtitle: MessageBody(
+                      content: (c['content'] as String?) ?? '',
+                      baseStyle: const TextStyle(fontSize: 14),
+                    ),
                   );
                 }),
 
@@ -456,25 +461,35 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         child: Row(
           children: [
             Expanded(
-              child: TextField(
-                controller: _commentController,
-                decoration: const InputDecoration(
-                  hintText: '新增評論...',
+              child: Builder(builder: (ctx) {
+                final wsId = ref.watch(currentWorkspaceIdProvider);
+                const decoration = InputDecoration(
+                  hintText: '新增評論… 用 @ 提及成員',
                   border: OutlineInputBorder(),
                   isDense: true,
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                ),
-                onSubmitted: (v) async {
-                  if (v.trim().isNotEmpty) {
-                    await ref
-                        .read(apiClientProvider)
-                        .addComment(widget.taskId, v.trim());
-                    _commentController.clear();
-                    ref.invalidate(taskProvider(widget.taskId));
-                  }
-                },
-              ),
+                );
+                Future<void> submit(String v) async {
+                  if (v.trim().isEmpty) return;
+                  await ref.read(apiClientProvider).addComment(widget.taskId, v.trim());
+                  _commentController.clear();
+                  ref.invalidate(taskProvider(widget.taskId));
+                }
+                if (wsId == null) {
+                  return TextField(
+                    controller: _commentController,
+                    decoration: decoration,
+                    onSubmitted: submit,
+                  );
+                }
+                return MentionTextField(
+                  controller: _commentController,
+                  workspaceId: wsId,
+                  decoration: decoration,
+                  onSubmitted: submit,
+                );
+              }),
             ),
             const SizedBox(width: 8),
             IconButton(
