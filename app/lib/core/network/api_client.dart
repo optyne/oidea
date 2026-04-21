@@ -125,6 +125,57 @@ class ApiClient {
     return res.data!;
   }
 
+  // ─────────────────────── 提醒 ───────────────────────
+
+  Future<List<dynamic>> getReminders(String workspaceId, {bool includeCompleted = false}) async {
+    final res = await _dio.get<List<dynamic>>(
+      'reminders',
+      queryParameters: {
+        'workspaceId': workspaceId,
+        if (includeCompleted) 'includeCompleted': 'true',
+      },
+    );
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> createReminder({
+    required String workspaceId,
+    required String title,
+    required DateTime triggerAt,
+    String? notes,
+    String recurrence = 'none',
+    int recurrenceInterval = 1,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'reminders',
+      data: {
+        'workspaceId': workspaceId,
+        'title': title,
+        'triggerAt': triggerAt.toUtc().toIso8601String(),
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+        'recurrence': recurrence,
+        'recurrenceInterval': recurrenceInterval,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<void> pauseReminder(String id) async {
+    await _dio.post('reminders/$id/pause');
+  }
+
+  Future<void> resumeReminder(String id) async {
+    await _dio.post('reminders/$id/resume');
+  }
+
+  Future<void> completeReminder(String id) async {
+    await _dio.post('reminders/$id/complete');
+  }
+
+  Future<void> deleteReminder(String id) async {
+    await _dio.delete('reminders/$id');
+  }
+
   Future<List<dynamic>> getChannels(String workspaceId) async {
     final res = await _dio.get<List<dynamic>>('channels', queryParameters: {'workspaceId': workspaceId});
     return res.data ?? [];
