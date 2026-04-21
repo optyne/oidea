@@ -49,6 +49,7 @@ model User {
   createdPages       KnowledgePage[]      @relation("PageCreatedBy")
   editedBlocks       KnowledgeBlock[]     @relation("BlockLastEditedBy")
   createdRows        DbRow[]              @relation("RowCreatedBy")
+  pagePermissions    PagePermission[]
 
   @@map("users")
 }
@@ -634,19 +635,44 @@ model KnowledgePage {
   kind        String    @default("page") // page, database
   archived    Boolean   @default(false)
   position    Int       @default(0)
+  /// 可見性：workspace=所有成員可 edit；private=僅 creator 與明確分享對象；restricted=無預設權限，需明確分享
+  visibility       String  @default("workspace")
+  /// 當本頁自己沒有 permissions 時，是否繼承父頁的權限設定
+  inheritParentAcl Boolean @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  parent    KnowledgePage?     @relation("PageTree", fields: [parentId], references: [id], onDelete: Cascade)
-  children  KnowledgePage[]    @relation("PageTree")
-  createdBy User               @relation("PageCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
-  blocks    KnowledgeBlock[]
-  database  KnowledgeDatabase?
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      KnowledgePage?     @relation("PageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    KnowledgePage[]    @relation("PageTree")
+  createdBy   User               @relation("PageCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  blocks      KnowledgeBlock[]
+  database    KnowledgeDatabase?
+  permissions PagePermission[]
 
   @@index([workspaceId, parentId, position])
   @@map("knowledge_pages")
+}
+
+/// 單頁的明確分享權限：可指定 userId（特定人）或 role（工作空間角色），access=view/edit/full。
+/// userId 與 role 必擇一（服務層強制）；同一頁不可對同一個 userId/role 各自重複設定。
+model PagePermission {
+  id        String   @id @default(uuid())
+  pageId    String
+  userId    String?
+  role      String?  // admin / hr / finance / member
+  access    String   // "view" | "edit" | "full"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page KnowledgePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, userId])
+  @@unique([pageId, role])
+  @@index([userId])
+  @@map("page_permissions")
 }
 
 /// Block 儲存於 Page 下。支援 text / h1 / h2 / h3 / todo / bullet / numbered / quote / code / divider / image 等類型。

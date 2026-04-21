@@ -2,10 +2,14 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../common/prisma.service';
 import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
+import { PageAccessService } from './page-access.service';
 
 @Injectable()
 export class KnowledgeService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private access: PageAccessService,
+  ) {}
 
   // ─────────────────── Pages ───────────────────
 
@@ -19,6 +23,8 @@ export class KnowledgeService {
       if (!parent || parent.workspaceId !== dto.workspaceId) {
         throw new NotFoundException('父頁面不存在');
       }
+      // 建立子頁需要對父頁至少 edit 權限
+      await this.access.assertAtLeast(userId, dto.parentId, 'edit');
     }
 
     const siblingCount = await this.prisma.knowledgePage.count({
@@ -40,7 +46,7 @@ export class KnowledgeService {
 
   async listWorkspacePages(userId: string, workspaceId: string) {
     await this.assertMember(userId, workspaceId);
-    return this.prisma.knowledgePage.findMany({
+    const pages = await this.prisma.knowledgePage.findMany({
       where: { workspaceId, deletedAt: null, archived: false },
       orderBy: [{ parentId: 'asc' }, { position: 'asc' }],
       select: {
@@ -51,11 +57,15 @@ export class KnowledgeService {
         kind: true,
         position: true,
         updatedAt: true,
+        visibility: true,
       },
     });
+    const visible = await this.access.filterVisible(userId, pages);
+    return pages.filter((p) => visible.has(p.id));
   }
 
   async getPage(userId: string, id: string) {
+    await this.access.assertAtLeast(userId, id, 'view');
     const page = await this.prisma.knowledgePage.findUnique({
       where: { id, deletedAt: null },
       include: {
@@ -71,14 +81,16 @@ export class KnowledgeService {
       },
     });
     if (!page) throw new NotFoundException('頁面不存在');
-    await this.assertMember(userId, page.workspaceId);
     return page;
   }
 
   async updatePage(userId: string, id: string, dto: UpdatePageDto) {
-    const page = await this.prisma.knowledgePage.findUnique({ where: { id } });
-    if (!page) throw new NotFoundException('頁面不存在');
-    await this.assertMember(userId, page.workspaceId);
+    await this.access.assertAtLeast(userId, id, 'edit');
+
+    // 若使用者想搬動到另一個父頁，需對新父頁也要 edit 權限
+    if (dto.parentId) {
+      await this.access.assertAtLeast(userId, dto.parentId, 'edit');
+    }
 
     return this.prisma.knowledgePage.update({
       where: { id },
@@ -94,9 +106,7 @@ export class KnowledgeService {
   }
 
   async deletePage(userId: string, id: string) {
-    const page = await this.prisma.knowledgePage.findUnique({ where: { id } });
-    if (!page) throw new NotFoundException('頁面不存在');
-    await this.assertMember(userId, page.workspaceId);
+    await this.access.assertAtLeast(userId, id, 'full');
     return this.prisma.knowledgePage.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -106,13 +116,7 @@ export class KnowledgeService {
   // ─────────────────── Blocks ───────────────────
 
   async listBlocks(userId: string, pageId: string) {
-    const page = await this.prisma.knowledgePage.findUnique({
-      where: { id: pageId },
-      select: { workspaceId: true },
-    });
-    if (!page) throw new NotFoundException('頁面不存在');
-    await this.assertMember(userId, page.workspaceId);
-
+    await this.access.assertAtLeast(userId, pageId, 'view');
     return this.prisma.knowledgeBlock.findMany({
       where: { pageId },
       orderBy: [{ parentBlockId: 'asc' }, { position: 'asc' }],
@@ -134,12 +138,7 @@ export class KnowledgeService {
       parentBlockId?: string | null;
     }>,
   ) {
-    const page = await this.prisma.knowledgePage.findUnique({
-      where: { id: pageId },
-      select: { workspaceId: true },
-    });
-    if (!page) throw new NotFoundException('頁面不存在');
-    await this.assertMember(userId, page.workspaceId);
+    await this.access.assertAtLeast(userId, pageId, 'edit');
 
     const existing = await this.prisma.knowledgeBlock.findMany({
       where: { pageId },
@@ -201,6 +200,9 @@ export class KnowledgeService {
     },
   ) {
     await this.assertMember(userId, workspaceId);
+    if (opts.parentId) {
+      await this.access.assertAtLeast(userId, opts.parentId, 'edit');
+    }
 
     const page = await this.prisma.knowledgePage.create({
       data: {
@@ -281,10 +283,10 @@ export class KnowledgeService {
   ) {
     const db = await this.prisma.knowledgeDatabase.findUnique({
       where: { id: databaseId },
-      include: { page: { select: { workspaceId: true } } },
+      select: { pageId: true },
     });
     if (!db) throw new NotFoundException('資料庫不存在');
-    await this.assertMember(userId, db.page.workspaceId);
+    await this.access.assertAtLeast(userId, db.pageId, 'edit');
 
     const count = await this.prisma.dbProperty.count({ where: { databaseId } });
     return this.prisma.dbProperty.create({
@@ -302,10 +304,10 @@ export class KnowledgeService {
   async listRows(userId: string, databaseId: string) {
     const db = await this.prisma.knowledgeDatabase.findUnique({
       where: { id: databaseId },
-      include: { page: { select: { workspaceId: true } } },
+      select: { pageId: true },
     });
     if (!db) throw new NotFoundException('資料庫不存在');
-    await this.assertMember(userId, db.page.workspaceId);
+    await this.access.assertAtLeast(userId, db.pageId, 'view');
 
     return this.prisma.dbRow.findMany({
       where: { databaseId },
@@ -319,10 +321,10 @@ export class KnowledgeService {
   async createRow(userId: string, databaseId: string, values: Record<string, any>) {
     const db = await this.prisma.knowledgeDatabase.findUnique({
       where: { id: databaseId },
-      include: { page: { select: { workspaceId: true } } },
+      select: { pageId: true },
     });
     if (!db) throw new NotFoundException('資料庫不存在');
-    await this.assertMember(userId, db.page.workspaceId);
+    await this.access.assertAtLeast(userId, db.pageId, 'edit');
 
     const count = await this.prisma.dbRow.count({ where: { databaseId } });
     return this.prisma.dbRow.create({
@@ -338,10 +340,10 @@ export class KnowledgeService {
   async updateRow(userId: string, rowId: string, values: Record<string, any>) {
     const row = await this.prisma.dbRow.findUnique({
       where: { id: rowId },
-      include: { database: { include: { page: { select: { workspaceId: true } } } } },
+      include: { database: { select: { pageId: true } } },
     });
     if (!row) throw new NotFoundException('資料列不存在');
-    await this.assertMember(userId, row.database.page.workspaceId);
+    await this.access.assertAtLeast(userId, row.database.pageId, 'edit');
 
     return this.prisma.dbRow.update({
       where: { id: rowId },
@@ -352,10 +354,10 @@ export class KnowledgeService {
   async deleteRow(userId: string, rowId: string) {
     const row = await this.prisma.dbRow.findUnique({
       where: { id: rowId },
-      include: { database: { include: { page: { select: { workspaceId: true } } } } },
+      include: { database: { select: { pageId: true } } },
     });
     if (!row) throw new NotFoundException('資料列不存在');
-    await this.assertMember(userId, row.database.page.workspaceId);
+    await this.access.assertAtLeast(userId, row.database.pageId, 'edit');
 
     return this.prisma.dbRow.delete({ where: { id: rowId } });
   }
@@ -367,10 +369,10 @@ export class KnowledgeService {
   async financeSummary(userId: string, databaseId: string, yearMonth: string) {
     const db = await this.prisma.knowledgeDatabase.findUnique({
       where: { id: databaseId },
-      include: { page: { select: { workspaceId: true } } },
+      select: { pageId: true },
     });
     if (!db) throw new NotFoundException('資料庫不存在');
-    await this.assertMember(userId, db.page.workspaceId);
+    await this.access.assertAtLeast(userId, db.pageId, 'view');
 
     const match = /^(\d{4})-(\d{2})$/.exec(yearMonth);
     if (!match) throw new ForbiddenException('yearMonth 必須為 YYYY-MM 格式');
@@ -420,6 +422,7 @@ export class KnowledgeService {
 
   // ─────────────────── helpers ───────────────────
 
+  /** 僅確認為 workspace 成員；頁面級別的權限判斷請用 PageAccessService。 */
   private async assertMember(userId: string, workspaceId: string) {
     const m = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },

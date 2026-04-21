@@ -14,14 +14,19 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
+import { SharePageDto, UpdateVisibilityDto } from './dto/share-page.dto';
 import { KnowledgeService } from './knowledge.service';
+import { PageAccessService } from './page-access.service';
 
 @ApiTags('知識庫')
 @Controller('knowledge')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class KnowledgeController {
-  constructor(private readonly knowledge: KnowledgeService) {}
+  constructor(
+    private readonly knowledge: KnowledgeService,
+    private readonly access: PageAccessService,
+  ) {}
 
   // ─────────── Pages ───────────
 
@@ -149,5 +154,46 @@ export class KnowledgeController {
     @Query('yearMonth') yearMonth: string,
   ) {
     return this.knowledge.financeSummary(req.user.userId, id, yearMonth);
+  }
+
+  // ─────────── 分享與可見性（ACL） ───────────
+
+  @Get('pages/:id/access')
+  @ApiOperation({ summary: '解析當前使用者對此頁面的有效存取層級' })
+  async myAccess(@Req() req: any, @Param('id') id: string) {
+    const level = await this.access.resolve(req.user.userId, id);
+    return { pageId: id, access: level };
+  }
+
+  @Get('pages/:id/permissions')
+  @ApiOperation({ summary: '列出此頁面的明確分享清單（view 以上可見）' })
+  listPermissions(@Req() req: any, @Param('id') id: string) {
+    return this.access.list(req.user.userId, id);
+  }
+
+  @Post('pages/:id/permissions')
+  @ApiOperation({ summary: '分享此頁面給某使用者或角色（需 full）' })
+  sharePage(@Req() req: any, @Param('id') id: string, @Body() dto: SharePageDto) {
+    return this.access.upsert(req.user.userId, id, dto);
+  }
+
+  @Delete('pages/:id/permissions/:permId')
+  @ApiOperation({ summary: '移除某一條分享（需 full）' })
+  removePermission(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('permId') permId: string,
+  ) {
+    return this.access.remove(req.user.userId, id, permId);
+  }
+
+  @Put('pages/:id/visibility')
+  @ApiOperation({ summary: '變更頁面可見性（workspace/private/restricted，需 full）' })
+  setVisibility(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateVisibilityDto,
+  ) {
+    return this.access.setVisibility(req.user.userId, id, dto.visibility, dto.inheritParentAcl);
   }
 }
