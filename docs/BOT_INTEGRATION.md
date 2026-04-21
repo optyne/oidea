@@ -52,9 +52,34 @@ Bot token 現在**跟使用者 JWT 一樣等級**：所有 `@UseGuards(JwtAuthGu
 
 | 方法 | 路徑 | 用途 |
 |---|---|---|
-| `GET` | `/api/bot/me` | 驗證 token、取得 bot 資訊 + 可見頻道清單 |
+| `GET` | `/api/bot/me` | 驗證 token、取得 bot 資訊 + 可見頻道 + **能力清單 + OpenAPI 指標** |
 | `GET` | `/api/bot/channels/:channelId/messages?after=ISO&limit=50` | 拉歷史訊息（polling） |
 | `POST` | `/api/bot/messages` | 發訊息到某頻道 |
+
+### 讓龍蝦自己知道能做什麼
+
+`GET /bot/me` 現在回傳這樣：
+
+```json
+{
+  "id": "...", "name": "龍蝦", "userId": "...", "workspaceId": "...",
+  "user": { ... }, "workspace": { ... },
+  "role": "member",
+  "channels": [ { "id", "name", "type" } ],
+  "capabilities": [
+    { "op": "send_message", "method": "POST", "path": "/messages", "desc": "在頻道發訊息" },
+    { "op": "create_task", "method": "POST", "path": "/tasks", "desc": "建任務（需要是 project 成員）" },
+    { "op": "create_db_row", "method": "POST", "path": "/knowledge/databases/:id/rows", "desc": "新增一筆資料列（例如記帳）" },
+    // ... 若 role=admin / finance / hr 還會多 approve_expense / attendance_report 等
+  ],
+  "apiSpec": {
+    "openapiJson": "/api/docs-json",
+    "swaggerUi": "/api/docs"
+  }
+}
+```
+
+**LLM-powered bot 的建議流程：** 啟動時打一次 `/bot/me`，把 `capabilities` 陣列餵給 Claude 當 system prompt / tools 清單。要更完整就再去抓 `apiSpec.openapiJson`。每次加新 role 或 bot 權限變動，重啟 bot 自動同步。
 
 ### 主站 API（全都能打）
 
