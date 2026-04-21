@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
 import '../../../../shared/widgets/common_widgets.dart';
+import '../../../../shared/widgets/message_body.dart';
 import '../../../auth/providers/auth_provider.dart';
+import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/channel_provider.dart';
 import '../../providers/message_provider.dart';
 import '../widgets/channel_search_delegate.dart';
@@ -128,6 +131,55 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
     _messageController.clear();
     socket.stopTyping(widget.channelId);
     ref.invalidate(messagesProvider(widget.channelId));
+  }
+
+  Future<void> _pickAndUploadFile() async {
+    final workspaceId = ref.read(currentWorkspaceIdProvider);
+    if (workspaceId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('請先選擇工作空間')));
+      }
+      return;
+    }
+
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.first;
+    final bytes = picked.bytes;
+    if (bytes == null) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('上傳中…'), duration: Duration(seconds: 1)));
+
+    try {
+      final api = ref.read(apiClientProvider);
+      final uploaded = await api.uploadFile(
+        workspaceId: workspaceId,
+        bytes: bytes,
+        fileName: picked.name,
+      );
+
+      await api.createMessage({
+        'channelId': widget.channelId,
+        'content': picked.name,
+        'type': 'file',
+        'metadata': {
+          'fileId': uploaded['id'],
+          'url': uploaded['url'],
+          'fileName': uploaded['fileName'],
+          'fileType': uploaded['fileType'],
+          'fileSize': uploaded['fileSize'],
+        },
+      });
+      if (mounted) ref.invalidate(messagesProvider(widget.channelId));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('上傳失敗：$e')));
+      }
+    }
   }
 
   Future<void> _toggleReaction(String messageId, String emoji, bool currentlyHas) async {
@@ -437,9 +489,18 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                                 ),
                                 const SizedBox(height: 2),
                                 if (msg['type'] == 'text')
-                                  SelectableText(
-                                    msg['content'] as String? ?? '',
-                                    style: const TextStyle(fontSize: 15),
+                                  MessageBody(
+                                    content: msg['content'] as String? ?? '',
+                                    onMentionTap: (u) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('@$u')),
+                                      );
+                                    },
+                                  ),
+                                if (msg['type'] == 'file')
+                                  _FileMessageTile(
+                                    metadata: (msg['metadata'] as Map?)?.cast<String, dynamic>(),
+                                    fallback: msg['content'] as String? ?? '',
                                   ),
                                 if (msg['type'] == 'image')
                                   ClipRRect(
@@ -532,7 +593,11 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
       ),
       child: Row(
         children: [
-          IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.attach_file),
+            tooltip: '附加檔案',
+            onPressed: _pickAndUploadFile,
+          ),
           Expanded(
             child: TextField(
               controller: _messageController,
@@ -556,5 +621,71 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
     final dt = DateTime.tryParse(createdAt.toString());
     if (dt == null) return '';
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _FileMessageTile extends StatelessWidget {
+  final Map<String, dynamic>? metadata;
+  final String fallback;
+  const _FileMessageTile({required this.metadata, required this.fallback});
+
+  bool get _isImage {
+    final ft = metadata?['fileType'] as String? ?? '';
+    return ft.startsWith('image/');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = metadata?['url'] as String? ?? '';
+    final name = metadata?['fileName'] as String? ?? fallback;
+    final size = metadata?['fileSize'];
+
+    if (_isImage && url.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          url,
+          height: 200,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+        ),
+      );
+    }
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.insert_drive_file_outlined, size: 28),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                if (size is int)
+                  Text(
+                    _formatBytes(size),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 }

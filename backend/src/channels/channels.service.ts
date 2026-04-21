@@ -64,7 +64,7 @@ export class ChannelsService {
     if (!channel) throw new NotFoundException('頻道不存在');
 
     if (channel.type === 'private' || channel.type === 'dm') {
-      const isMember = channel.members.some((m) => m.userId === userId);
+      const isMember = channel.members.some((m: { userId: string }) => m.userId === userId);
       if (!isMember) throw new ForbiddenException('無權存取此頻道');
     }
 

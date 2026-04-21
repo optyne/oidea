@@ -303,4 +303,379 @@ class ApiClient {
     );
     return res.data ?? [];
   }
+
+  Future<List<dynamic>> getNotifications({bool unreadOnly = false}) async {
+    final res = await _dio.get<List<dynamic>>(
+      'notifications',
+      queryParameters: unreadOnly ? {'unread': 'true'} : null,
+    );
+    return res.data ?? [];
+  }
+
+  Future<void> markNotificationRead(String id) async {
+    await _dio.put('notifications/$id/read');
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    await _dio.post('notifications/read-all');
+  }
+
+  Future<void> pinMessage(String id) async {
+    await _dio.put('messages/$id/pin');
+  }
+
+  Future<void> unpinMessage(String id) async {
+    await _dio.put('messages/$id/unpin');
+  }
+
+  Future<List<dynamic>> getPinnedMessages(String channelId) async {
+    final res = await _dio.get<List<dynamic>>('messages/channel/$channelId/pinned');
+    return res.data ?? [];
+  }
+
+  // ─────────────────────── 知識庫（Notion 風）───────────────────────
+
+  Future<Map<String, dynamic>> createKnowledgePage(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('knowledge/pages', data: body);
+    return res.data!;
+  }
+
+  Future<List<dynamic>> getKnowledgePages(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('knowledge/pages/workspace/$workspaceId');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getKnowledgePage(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('knowledge/pages/$id');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> updateKnowledgePage(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _dio.put<Map<String, dynamic>>('knowledge/pages/$id', data: body);
+    return res.data!;
+  }
+
+  Future<void> deleteKnowledgePage(String id) async {
+    await _dio.delete('knowledge/pages/$id');
+  }
+
+  Future<List<dynamic>> replaceBlocks(String pageId, List<Map<String, dynamic>> blocks) async {
+    final res = await _dio.put<List<dynamic>>(
+      'knowledge/pages/$pageId/blocks',
+      data: {'blocks': blocks},
+    );
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> createDatabase(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('knowledge/databases', data: body);
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createFinanceLog(String workspaceId, {String? parentId}) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'knowledge/databases/finance-log',
+      data: {'workspaceId': workspaceId, if (parentId != null) 'parentId': parentId},
+    );
+    return res.data!;
+  }
+
+  Future<List<dynamic>> getDatabaseRows(String databaseId) async {
+    final res = await _dio.get<List<dynamic>>('knowledge/databases/$databaseId/rows');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> createDatabaseRow(
+    String databaseId,
+    Map<String, dynamic> values,
+  ) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'knowledge/databases/$databaseId/rows',
+      data: {'values': values},
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> updateDatabaseRow(
+    String rowId,
+    Map<String, dynamic> values,
+  ) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'knowledge/rows/$rowId',
+      data: {'values': values},
+    );
+    return res.data!;
+  }
+
+  Future<void> deleteDatabaseRow(String rowId) async {
+    await _dio.delete('knowledge/rows/$rowId');
+  }
+
+  Future<Map<String, dynamic>> getFinanceSummary(
+    String databaseId,
+    String yearMonth,
+  ) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'knowledge/databases/$databaseId/finance-summary',
+      queryParameters: {'yearMonth': yearMonth},
+    );
+    return res.data!;
+  }
+
+  // ─────────────────── 知識庫：ACL ───────────────────
+
+  /// 當前使用者對此頁面的有效存取層級：view / edit / full / null。
+  Future<Map<String, dynamic>> getPageAccess(String pageId) async {
+    final res = await _dio.get<Map<String, dynamic>>('knowledge/pages/$pageId/access');
+    return res.data!;
+  }
+
+  /// 明確分享清單。
+  Future<List<dynamic>> listPagePermissions(String pageId) async {
+    final res = await _dio.get<List<dynamic>>('knowledge/pages/$pageId/permissions');
+    return res.data ?? [];
+  }
+
+  /// 新增或更新一條分享（userId 或 role 擇一）。
+  Future<Map<String, dynamic>> sharePage(
+    String pageId, {
+    String? userId,
+    String? role,
+    required String access,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'knowledge/pages/$pageId/permissions',
+      data: {
+        if (userId != null) 'userId': userId,
+        if (role != null) 'role': role,
+        'access': access,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<void> removePagePermission(String pageId, String permissionId) async {
+    await _dio.delete('knowledge/pages/$pageId/permissions/$permissionId');
+  }
+
+  /// 變更頁面可見性。
+  Future<Map<String, dynamic>> updatePageVisibility(
+    String pageId, {
+    required String visibility,
+    bool? inheritParentAcl,
+  }) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'knowledge/pages/$pageId/visibility',
+      data: {
+        'visibility': visibility,
+        if (inheritParentAcl != null) 'inheritParentAcl': inheritParentAcl,
+      },
+    );
+    return res.data!;
+  }
+
+  // ─────────────────────── ERP：權限／成員 ───────────────────────
+
+  Future<List<dynamic>> getWorkspaceMembers(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('workspaces/$workspaceId/members');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> updateMemberRole(
+    String workspaceId,
+    String userId,
+    String role,
+  ) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'workspaces/$workspaceId/members/$userId/role',
+      data: {'role': role},
+    );
+    return res.data!;
+  }
+
+  // ─────────────────────── ERP：費用報銷 ───────────────────────
+
+  Future<Map<String, dynamic>> createExpense(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('expenses', data: body);
+    return res.data!;
+  }
+
+  Future<List<dynamic>> getExpenses(String workspaceId, {String? status}) async {
+    final res = await _dio.get<List<dynamic>>(
+      'expenses/workspace/$workspaceId',
+      queryParameters: status == null ? null : {'status': status},
+    );
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getExpenseStats(String workspaceId) async {
+    final res = await _dio.get<Map<String, dynamic>>('expenses/workspace/$workspaceId/stats');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> getExpense(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('expenses/$id');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> approveExpense(String id, {String? comment}) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'expenses/$id/approve',
+      data: {'comment': comment},
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> rejectExpense(String id, String reason) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'expenses/$id/reject',
+      data: {'reason': reason},
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> markExpensePaid(String id) async {
+    final res = await _dio.put<Map<String, dynamic>>('expenses/$id/paid');
+    return res.data!;
+  }
+
+  Future<void> cancelExpense(String id) async {
+    await _dio.delete('expenses/$id');
+  }
+
+  Future<Map<String, dynamic>> addExpenseReceipt(
+    String id,
+    Map<String, dynamic> receiptData,
+  ) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'expenses/$id/receipts',
+      data: receiptData,
+    );
+    return res.data!;
+  }
+
+  // ─────────────────────── ERP：考勤打卡 ───────────────────────
+
+  Future<Map<String, dynamic>> checkIn(
+    String workspaceId, {
+    String? location,
+    String? note,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'attendance/check-in',
+      data: {
+        'workspaceId': workspaceId,
+        if (location != null) 'location': location,
+        if (note != null) 'note': note,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> checkOut(
+    String workspaceId, {
+    String? location,
+    String? note,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'attendance/check-out',
+      data: {
+        'workspaceId': workspaceId,
+        if (location != null) 'location': location,
+        if (note != null) 'note': note,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>?> getTodayAttendance(String workspaceId) async {
+    final res = await _dio.get<dynamic>(
+      'attendance/today',
+      queryParameters: {'workspaceId': workspaceId},
+    );
+    final data = res.data;
+    if (data == null || data == '') return null;
+    if (data is Map<String, dynamic>) return data;
+    return null;
+  }
+
+  Future<List<dynamic>> getMyAttendance(
+    String workspaceId, {
+    required String from,
+    required String to,
+  }) async {
+    final res = await _dio.get<List<dynamic>>(
+      'attendance/me',
+      queryParameters: {'workspaceId': workspaceId, 'from': from, 'to': to},
+    );
+    return res.data ?? [];
+  }
+
+  Future<List<dynamic>> getAttendanceReport(
+    String workspaceId, {
+    required String from,
+    required String to,
+  }) async {
+    final res = await _dio.get<List<dynamic>>(
+      'attendance/workspace/$workspaceId/report',
+      queryParameters: {'from': from, 'to': to},
+    );
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> createLeave(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('attendance/leaves', data: body);
+    return res.data!;
+  }
+
+  Future<List<dynamic>> getLeaves(String workspaceId, {String? status}) async {
+    final res = await _dio.get<List<dynamic>>(
+      'attendance/leaves/workspace/$workspaceId',
+      queryParameters: status == null ? null : {'status': status},
+    );
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> approveLeave(String id) async {
+    final res = await _dio.put<Map<String, dynamic>>('attendance/leaves/$id/approve');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> rejectLeave(String id, {String? reason}) async {
+    final res = await _dio.put<Map<String, dynamic>>(
+      'attendance/leaves/$id/reject',
+      data: {'reason': reason},
+    );
+    return res.data!;
+  }
+
+  Future<void> cancelLeave(String id) async {
+    await _dio.delete('attendance/leaves/$id');
+  }
+
+  /// 上傳檔案至 MinIO 並同時寫入 File 表；帶 [messageId] 或 [taskId] 以建立關聯。
+  Future<Map<String, dynamic>> uploadFile({
+    required String workspaceId,
+    required List<int> bytes,
+    required String fileName,
+    String? messageId,
+    String? taskId,
+  }) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+    });
+    final res = await _dio.post<Map<String, dynamic>>(
+      'files/upload',
+      data: form,
+      queryParameters: {
+        'workspaceId': workspaceId,
+        if (messageId != null) 'messageId': messageId,
+        if (taskId != null) 'taskId': taskId,
+      },
+    );
+    return res.data!;
+  }
 }

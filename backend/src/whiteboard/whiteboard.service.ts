@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { CreateWhiteboardDto } from './dto/create-whiteboard.dto';
 import * as Y from 'yjs';
@@ -106,7 +105,7 @@ export class WhiteboardService {
       data: {
         workspaceId: template.workspaceId,
         title,
-        data: (template.data ?? {}) as Prisma.InputJsonValue,
+        data: (template.data ?? {}) as any,
       },
     });
   }

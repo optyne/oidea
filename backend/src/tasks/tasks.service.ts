@@ -4,12 +4,14 @@ import { addRecurrence, RecurrenceRule } from '../common/recurrence';
 import { AutomationEngine } from '../automation/automation.engine';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService {
   constructor(
     private prisma: PrismaService,
     private automation: AutomationEngine,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateTaskDto) {
@@ -29,7 +31,7 @@ export class TasksService {
       where: { columnId: dto.columnId },
     });
 
-    return this.prisma.task.create({
+    const task = await this.prisma.task.create({
       data: {
         projectId: dto.projectId,
         columnId: dto.columnId,
@@ -48,6 +50,12 @@ export class TasksService {
         tags: true,
       },
     });
+
+    if (task.assigneeId && task.assigneeId !== userId) {
+      await this.notifyAssigned(task.assigneeId, task.id, task.title, project.name);
+    }
+
+    return task;
   }
 
   async findByProject(userId: string, projectId: string) {
@@ -91,7 +99,10 @@ export class TasksService {
   }
 
   async update(userId: string, id: string, dto: UpdateTaskDto) {
-    const task = await this.prisma.task.findUnique({ where: { id } });
+    const task = await this.prisma.task.findUnique({
+      where: { id },
+      include: { project: { select: { name: true } } },
+    });
     if (!task) throw new NotFoundException('任務不存在');
 
     const updateData: any = {
@@ -139,18 +150,18 @@ export class TasksService {
       });
     }
 
+    // 新指派通知（assignee 變更且非自己指派自己）
+    const newAssignee = updated.assigneeId;
+    if (newAssignee && newAssignee !== task.assigneeId && newAssignee !== userId) {
+      await this.notifyAssigned(newAssignee, id, updated.title, task.project?.name ?? '');
+    }
+
     return updated;
   }
 
   /**
    * P-14：從已完成的循環任務產生下一張。
    * 條件：recurrence ≠ 'none' 且有 dueDate（否則無從推算下期日期）。
-   * 新任務 inherit title / description / priority / assignee / 循環規則；
-   * completedAt = null，dueDate 為推進後日期。
-   *
-   * `recurringSourceId` 一律指向序列的「根」任務：
-   *   - 若原任務有 recurringSourceId → 沿用
-   *   - 否則 → 用原任務的 id (本張就是根)
    */
   private async spawnRecurringInstance(task: {
     id: string;
@@ -203,6 +214,16 @@ export class TasksService {
     });
   }
 
+  private async notifyAssigned(assigneeId: string, taskId: string, title: string, projectName: string) {
+    await this.notifications.create({
+      userId: assigneeId,
+      type: 'task_assigned',
+      title: `你被指派了新任務：${title}`,
+      content: projectName ? `專案：${projectName}` : undefined,
+      link: `/project/task/${taskId}`,
+    });
+  }
+
   async move(userId: string, id: string, columnId: string, position: number) {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) throw new NotFoundException('任務不存在');
@@ -218,7 +239,7 @@ export class TasksService {
         where: { id },
         data: { columnId, position },
       }),
-      ...tasksInColumn.map((t, i) =>
+      ...tasksInColumn.map((t: { id: string }, i: number) =>
         this.prisma.task.update({
           where: { id: t.id },
           data: { position: i >= position ? i + 1 : i },
