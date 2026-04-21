@@ -60,6 +60,7 @@ export class FilesService {
     file: Express.Multer.File,
     messageId?: string,
     taskId?: string,
+    folderPath?: string,
   ) {
     this.assertMinioReady();
     const key = `${workspaceId}/${Date.now()}-${file.originalname}`;
@@ -79,8 +80,52 @@ export class FilesService {
         fileType: file.mimetype,
         fileSize: file.size,
         url,
+        folderPath: this.normalizeFolderPath(folderPath),
       },
     });
+  }
+
+  /// 正規化資料夾路徑：去首尾 `/`、折疊連續 `/`、trim。空字串視為 null（根目錄）。
+  private normalizeFolderPath(raw?: string | null): string | null {
+    if (!raw) return null;
+    const cleaned = raw
+      .trim()
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\/+/g, '/');
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
+  async moveToFolder(userId: string, id: string, folderPath: string | null) {
+    const file = await this.prisma.file.findUnique({ where: { id } });
+    if (!file) throw new NotFoundException('檔案不存在');
+    return this.prisma.file.update({
+      where: { id },
+      data: { folderPath: this.normalizeFolderPath(folderPath) },
+    });
+  }
+
+  /// 回傳工作空間中所有已使用的資料夾路徑（包含「含子資料夾」的前綴）。
+  /// 例：檔案 A 在 `work/2026/Q2` → 回傳 `['work', 'work/2026', 'work/2026/Q2']`。
+  async listFolders(workspaceId: string): Promise<string[]> {
+    const rows = await this.prisma.file.findMany({
+      where: {
+        workspaceId,
+        deletedAt: null,
+        folderPath: { not: null },
+      },
+      select: { folderPath: true },
+      distinct: ['folderPath'],
+    });
+    const all = new Set<string>();
+    for (const r of rows) {
+      const p = r.folderPath;
+      if (!p) continue;
+      const segments = p.split('/');
+      for (let i = 1; i <= segments.length; i++) {
+        all.add(segments.slice(0, i).join('/'));
+      }
+    }
+    return Array.from(all).sort();
   }
 
   async findById(id: string) {
@@ -138,11 +183,17 @@ export class FilesService {
       search?: string;
       limit?: number;
       offset?: number;
+      /** 資料夾篩選：undefined = 忽略；"" = 根（folderPath IS NULL）；
+       *  其它字串 = 此資料夾及子資料夾（前綴比對）。 */
+      folderPath?: string;
     } = {},
   ) {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
     const offset = Math.max(opts.offset ?? 0, 0);
     const q = opts.search?.trim();
+    const folder = opts.folderPath === undefined
+      ? undefined
+      : this.normalizeFolderPath(opts.folderPath);
 
     // MIME 篩選條件映射到 Prisma where
     const typeWhere = (() => {
@@ -189,10 +240,23 @@ export class FilesService {
       }
     })();
 
+    const folderWhere = (() => {
+      if (folder === undefined) return {};
+      if (folder === null) return { folderPath: null };
+      // 此資料夾或其子資料夾：精確等於 `folder`，或以 `folder/` 開頭。
+      return {
+        OR: [
+          { folderPath: folder },
+          { folderPath: { startsWith: `${folder}/` } },
+        ],
+      };
+    })();
+
     const where: any = {
       workspaceId,
       deletedAt: null,
       ...typeWhere,
+      ...folderWhere,
       ...(q ? { fileName: { contains: q, mode: 'insensitive' } } : {}),
     };
 

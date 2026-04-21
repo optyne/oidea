@@ -835,6 +835,8 @@ class ApiClient {
     String search = '',
     int limit = 50,
     int offset = 0,
+    /// null = 忽略資料夾過濾（= 所有檔案）；"" = 根目錄；其它 = 該資料夾與子資料夾。
+    String? folderPath,
   }) async {
     final res = await _dio.get<Map<String, dynamic>>(
       'files/workspace/$workspaceId/browse',
@@ -843,9 +845,21 @@ class ApiClient {
         if (search.isNotEmpty) 'search': search,
         'limit': limit,
         'offset': offset,
+        if (folderPath != null) 'folderPath': folderPath,
       },
     );
     return res.data!;
+  }
+
+  Future<List<dynamic>> listFileFolders(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>(
+      'files/workspace/$workspaceId/folders',
+    );
+    return res.data ?? [];
+  }
+
+  Future<void> moveFileToFolder(String id, String? folderPath) async {
+    await _dio.patch('files/$id/folder', data: {'folderPath': folderPath});
   }
 
   Future<void> deleteFile(String id) async {
@@ -859,6 +873,7 @@ class ApiClient {
     required String fileName,
     String? messageId,
     String? taskId,
+    String? folderPath,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: fileName),
@@ -870,6 +885,7 @@ class ApiClient {
         'workspaceId': workspaceId,
         if (messageId != null) 'messageId': messageId,
         if (taskId != null) 'taskId': taskId,
+        if (folderPath != null && folderPath.isNotEmpty) 'folderPath': folderPath,
       },
     );
     return res.data!;

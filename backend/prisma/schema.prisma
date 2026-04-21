@@ -572,6 +572,9 @@ model File {
   fileSize     Int
   url          String
   thumbnailUrl String?
+  /// 檔案在資料夾樹中的路徑，斜線分隔（例：`work/2026/Q2`）。null = 根目錄。
+  /// 沒有單獨的 Folder 表 —— 資料夾就是「存在於此欄位裡的 distinct 值」。
+  folderPath   String?
   createdAt    DateTime  @default(now())
   deletedAt    DateTime?
 
@@ -579,6 +582,7 @@ model File {
   message  Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
   task     Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
+  @@index([workspaceId, folderPath, deletedAt])
   @@map("files")
 }
 
