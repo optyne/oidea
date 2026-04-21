@@ -19,6 +19,7 @@ import { RemindersModule } from './reminders/reminders.module';
 import { SnippetsModule } from './snippets/snippets.module';
 import { ScheduledMessagesModule } from './scheduled-messages/scheduled-messages.module';
 import { AutomationModule } from './automation/automation.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AutomationModule } from './automation/automation.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
+    HealthModule,
     AuthModule,
     UsersModule,
     WorkspacesModule,
