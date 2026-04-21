@@ -5,7 +5,7 @@
 ## 0. 前置準備
 
 - 一台 Linux 主機（2 核 / 4GB RAM 起跳，Ubuntu 22.04+ / Debian 12+）
-- 一個指向主機 IP 的網域（例如 `api.oidea.example.com`）
+- 一個指向主機 IP 的網域（例如 `api.oidea.oadpiz.com`）
 - 已安裝 Dokploy。尚未安裝請在主機上跑：
   ```bash
   curl -sSL https://dokploy.com/install.sh | sh
@@ -87,7 +87,7 @@ JWT_SECRET=<必換！openssl rand -hex 32>
 JWT_EXPIRATION=15m
 JWT_REFRESH_EXPIRATION=7d
 PORT=3001
-CORS_ORIGIN=https://app.oidea.example.com,https://admin.oidea.example.com
+CORS_ORIGIN=https://oidea.oadpiz.com,https://admin.oidea.oadpiz.com
 NODE_ENV=production
 ```
 
@@ -99,7 +99,7 @@ NODE_ENV=production
 ### 網域 + HTTPS
 
 Application → **Domains** → **Add Domain**：
-- Host: `api.oidea.example.com`
+- Host: `api.oidea.oadpiz.com`
 - Port: `3001`
 - HTTPS: 勾（Dokploy 用 Traefik + Let's Encrypt 自動簽憑證）
 - Certificate: Let's Encrypt
@@ -115,15 +115,15 @@ Dockerfile 的 `docker-entrypoint.sh` 會在容器啟動時自動跑 `prisma mig
 ## 3. 驗證
 
 ```bash
-curl https://api.oidea.example.com/api/docs-json | head -c 200
+curl https://api.oidea.oadpiz.com/api/docs-json | head -c 200
 # 應該回傳 OpenAPI JSON
 
-# 或瀏覽器開 Swagger：https://api.oidea.example.com/api/docs
+# 或瀏覽器開 Swagger：https://api.oidea.oadpiz.com/api/docs
 ```
 
 第一次註冊：
 ```bash
-curl -X POST https://api.oidea.example.com/api/auth/register \
+curl -X POST https://api.oidea.oadpiz.com/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"you@example.com","username":"admin","displayName":"Admin","password":"changeMe123!"}'
 ```
@@ -159,15 +159,15 @@ Dokploy Application → **Webhooks** 建一個 → 把 URL 加到 GitHub repo Se
 Application → **Advanced** → **Build Arguments**：
 
 ```
-API_URL=https://api.oidea.example.com
-WS_URL=https://api.oidea.example.com
+API_URL=https://api.oidea.oadpiz.com
+WS_URL=https://api.oidea.oadpiz.com
 ```
 
 ⚠️ **build-time 決定，之後不能在 runtime 改**。換 API 網域 → 得重 build。
 
 ### 網域
 **Domains** → Add：
-- Host: `app.oidea.example.com`（前端網域）
+- Host: `oidea.oadpiz.com`（前端網域）
 - Port: `80`
 - HTTPS: 勾 → Let's Encrypt
 
@@ -175,13 +175,13 @@ WS_URL=https://api.oidea.example.com
 前端網域確定後，去 `oidea-backend` Application → **Environment** → 改 `CORS_ORIGIN`：
 
 ```env
-CORS_ORIGIN=https://app.oidea.example.com
+CORS_ORIGIN=https://oidea.oadpiz.com
 ```
 
 改完 backend 按 **Redeploy** 讓新 CORS 生效。**沒做這步瀏覽器打 API 會被擋。**
 
 ### 部署
-右上 **Deploy**。第一次 build 需 3-5 分鐘（Flutter image 比較大，約 2GB）。完成後瀏覽器開 `https://app.oidea.example.com` 應該看到登入畫面。
+右上 **Deploy**。第一次 build 需 3-5 分鐘（Flutter image 比較大，約 2GB）。完成後瀏覽器開 `https://oidea.oadpiz.com` 應該看到登入畫面。
 
 ---
 
@@ -190,8 +190,8 @@ CORS_ORIGIN=https://app.oidea.example.com
 ```bash
 cd app
 flutter build apk --release \
-  --dart-define=API_URL=https://api.oidea.example.com/api \
-  --dart-define=WS_URL=https://api.oidea.example.com
+  --dart-define=API_URL=https://api.oidea.oadpiz.com/api \
+  --dart-define=WS_URL=https://api.oidea.oadpiz.com
 ```
 
 ## 常見問題
