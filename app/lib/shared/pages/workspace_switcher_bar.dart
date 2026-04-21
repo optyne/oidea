@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/api_client.dart';
+import '../../core/theme/theme_mode_provider.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/workspace/providers/workspace_provider.dart';
 import '../../features/workspace/workspace_slug.dart';
@@ -254,6 +255,9 @@ class _UserAvatarButton extends ConsumerWidget {
               child: const Text('更新名稱'),
             ),
             const Divider(height: 32),
+            // Theme mode
+            const _ThemeModeRow(),
+            const Divider(height: 32),
             // Logout
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -271,5 +275,49 @@ class _UserAvatarButton extends ConsumerWidget {
         ),
       ),
     ).then((_) => nameController.dispose());
+  }
+}
+
+/// 主題模式切換（System / Light / Dark）—— 用 SegmentedButton 呈現，
+/// 即時寫回 themeModeProvider，MaterialApp 會自動跟著切換。
+class _ThemeModeRow extends ConsumerWidget {
+  const _ThemeModeRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+    return Row(
+      children: [
+        const Icon(Icons.palette_outlined, size: 18),
+        const SizedBox(width: 8),
+        const Text('主題', style: TextStyle(fontWeight: FontWeight.w500)),
+        const Spacer(),
+        SegmentedButton<ThemeMode>(
+          segments: const [
+            ButtonSegment(
+              value: ThemeMode.system,
+              icon: Icon(Icons.brightness_auto, size: 16),
+              tooltip: '跟隨系統',
+            ),
+            ButtonSegment(
+              value: ThemeMode.light,
+              icon: Icon(Icons.light_mode_outlined, size: 16),
+              tooltip: '淺色',
+            ),
+            ButtonSegment(
+              value: ThemeMode.dark,
+              icon: Icon(Icons.dark_mode_outlined, size: 16),
+              tooltip: '深色',
+            ),
+          ],
+          selected: {mode},
+          showSelectedIcon: false,
+          onSelectionChanged: (sel) {
+            ref.read(themeModeProvider.notifier).setMode(sel.first);
+          },
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+        ),
+      ],
+    );
   }
 }
