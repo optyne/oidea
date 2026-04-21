@@ -9,6 +9,7 @@ import '../../../../core/network/socket_service.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../../shared/widgets/message_body.dart';
 import '../../../auth/providers/auth_provider.dart';
+import '../../../mentions/presentation/widgets/mention_text_field.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/channel_provider.dart';
 import '../../providers/message_provider.dart';
@@ -599,15 +600,30 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
             onPressed: _pickAndUploadFile,
           ),
           Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: const InputDecoration(
-                hintText: '輸入訊息…',
-                border: InputBorder.none,
-              ),
-              onChanged: (_) => _onInputChanged(socket),
-              onSubmitted: (_) => _sendMessage(),
-            ),
+            child: Builder(builder: (ctx) {
+              final wsId = ref.watch(currentWorkspaceIdProvider);
+              if (wsId == null) {
+                return TextField(
+                  controller: _messageController,
+                  decoration: const InputDecoration(
+                    hintText: '輸入訊息…',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (_) => _onInputChanged(socket),
+                  onSubmitted: (_) => _sendMessage(),
+                );
+              }
+              return MentionTextField(
+                controller: _messageController,
+                workspaceId: wsId,
+                decoration: const InputDecoration(
+                  hintText: '輸入訊息… 用 @ 提及成員',
+                  border: InputBorder.none,
+                ),
+                onChanged: (_) => _onInputChanged(socket),
+                onSubmitted: (_) => _sendMessage(),
+              );
+            }),
           ),
           IconButton(icon: const Icon(Icons.emoji_emotions_outlined), onPressed: () {}),
           IconButton(icon: const Icon(Icons.send), onPressed: () => _sendMessage()),
