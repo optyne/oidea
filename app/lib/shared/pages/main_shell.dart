@@ -51,7 +51,7 @@ class MainShell extends ConsumerWidget {
         selectedIndex: tabIndex,
         onDestinationSelected: (index) {
           ref.read(currentTabProvider.notifier).state = index;
-          const routes = ['/chat', '/projects', '/meetings', '/whiteboard', '/notes', '/erp'];
+          const routes = ['/chat', '/projects', '/meetings', '/whiteboard', '/notes', '/files', '/erp'];
           context.go(routes[index]);
         },
         destinations: [
@@ -93,6 +93,11 @@ class MainShell extends ConsumerWidget {
             icon: Icon(Icons.article_outlined),
             selectedIcon: Icon(Icons.article),
             label: '筆記',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder),
+            label: '檔案',
           ),
           const NavigationDestination(
             icon: Icon(Icons.business_center_outlined),

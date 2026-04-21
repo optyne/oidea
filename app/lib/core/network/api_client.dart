@@ -720,6 +720,31 @@ class ApiClient {
     await _dio.delete('attendance/leaves/$id');
   }
 
+  /// 檔案庫頁面 —— 依類別 / 關鍵字 / 分頁取得檔案清單。
+  /// 回傳 `{items: [...], total: N, limit, offset}`。
+  Future<Map<String, dynamic>> browseWorkspaceFiles(
+    String workspaceId, {
+    String type = 'all',
+    String search = '',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'files/workspace/$workspaceId/browse',
+      queryParameters: {
+        'type': type,
+        if (search.isNotEmpty) 'search': search,
+        'limit': limit,
+        'offset': offset,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<void> deleteFile(String id) async {
+    await _dio.delete('files/$id');
+  }
+
   /// 上傳檔案至 MinIO 並同時寫入 File 表；帶 [messageId] 或 [taskId] 以建立關聯。
   Future<Map<String, dynamic>> uploadFile({
     required String workspaceId,
