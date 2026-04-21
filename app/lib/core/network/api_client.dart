@@ -496,6 +496,23 @@ class ApiClient {
     return res.data!;
   }
 
+  /// 以 email 或 username 邀請既有使用者加入工作空間。對方未註冊會回 404。
+  Future<Map<String, dynamic>> inviteMemberByIdentifier(
+    String workspaceId, {
+    required String identifier,
+    String role = 'member',
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'workspaces/$workspaceId/members',
+      data: {'identifier': identifier, 'role': role},
+    );
+    return res.data!;
+  }
+
+  Future<void> removeMember(String workspaceId, String userId) async {
+    await _dio.delete('workspaces/$workspaceId/members/$userId');
+  }
+
   // ─────────────────────── ERP：費用報銷 ───────────────────────
 
   Future<Map<String, dynamic>> createExpense(Map<String, dynamic> body) async {
