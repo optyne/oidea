@@ -14,6 +14,11 @@ class _BlockItem {
   Map<String, dynamic> content;
   final TextEditingController controller;
   final FocusNode focusNode;
+  /// 當 UI 端還沒拿到 server 的 id（新建 block）時，ReorderableListView 也要一個
+  /// 穩定的 Key —— 用這個 client-only id。絕不等於 server id（開頭 `c_`）。
+  final String clientId;
+
+  static int _nextClientId = 0;
 
   _BlockItem({
     required this.id,
@@ -21,7 +26,8 @@ class _BlockItem {
     required this.content,
     required String initialText,
   })  : controller = TextEditingController(text: initialText),
-        focusNode = FocusNode();
+        focusNode = FocusNode(),
+        clientId = 'c_${++_nextClientId}';
 
   Map<String, dynamic> toPayload(int position) => {
         if (id != null) 'id': id,
@@ -430,6 +436,25 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 拖移手柄 —— 拖它才開始 reorder，避免誤觸 TextField。
+                // ReorderableDragStartListener 接 index，長按即開始拖。
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Tooltip(
+                    message: '拖曳以排序',
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.grab,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Icon(
+                          Icons.drag_indicator,
+                          size: 16,
+                          color: Colors.grey.shade400,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.add, size: 18),
                   tooltip: '於下方插入',
@@ -438,7 +463,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                 ),
                 Expanded(child: field),
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.drag_indicator, size: 18),
+                  icon: const Icon(Icons.more_horiz, size: 18),
                   tooltip: '轉換／刪除',
                   onSelected: (v) {
                     if (v == '__delete') {
@@ -542,22 +567,44 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
     );
   }
 
+  /// 拖移排序 —— Flutter's ReorderableListView 把新 index 套到「移除後」的 list
+  /// 上：往下拖要 -1 才對齊，往上拖直接就是目標位置。
+  void _onReorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (newIndex == oldIndex) return;
+    setState(() {
+      final item = _blocks.removeAt(oldIndex);
+      _blocks.insert(newIndex, item);
+      _closeSlash(); // 拖移完就關掉 slash 選單（如果開著）
+    });
+    _scheduleSave();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        ListView.builder(
+        ReorderableListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-          itemCount: _blocks.length + 1,
+          // 用自製 drag handle（`=` 圖示）代替預設右側 handle，視覺上更貼近 Notion
+          buildDefaultDragHandles: false,
+          itemCount: _blocks.length,
+          onReorder: _onReorder,
+          footer: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: TextButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text('新增 block'),
+              onPressed: () => _openInsertMenu(_blocks.length - 1),
+            ),
+          ),
           itemBuilder: (ctx, i) {
-            if (i == _blocks.length) {
-              return TextButton.icon(
-                icon: const Icon(Icons.add),
-                label: const Text('新增 block'),
-                onPressed: () => _openInsertMenu(_blocks.length - 1),
-              );
-            }
-            return _buildBlock(i);
+            final b = _blocks[i];
+            // 穩定 Key: server id 優先，否則 clientId —— 確保拖移時 Flutter 能正確追蹤。
+            return KeyedSubtree(
+              key: ValueKey(b.id ?? b.clientId),
+              child: _buildBlock(i),
+            );
           },
         ),
         if (_saving)
