@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../features/shortcuts/presentation/widgets/shortcuts_cheatsheet.dart';
 import '../../features/workspace/providers/workspace_provider.dart';
 import '../../features/workspace/workspace_slug.dart';
 import '../../features/workspace/workspace_storage.dart';
@@ -97,6 +98,11 @@ class WorkspaceSwitcherBar extends ConsumerWidget {
                   tooltip: '提醒',
                   icon: const Icon(Icons.notifications_none_outlined),
                   onPressed: () => context.push('/reminders'),
+                ),
+                IconButton(
+                  tooltip: '鍵盤快捷鍵 (Ctrl/⌘+/)',
+                  icon: const Icon(Icons.keyboard_outlined),
+                  onPressed: () => showShortcutsCheatsheet(context),
                 ),
                 const SizedBox(width: 4),
                 _UserAvatarButton(parentContext: context),
