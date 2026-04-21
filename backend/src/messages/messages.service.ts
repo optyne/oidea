@@ -13,6 +13,7 @@ import { BroadcastMessageDto } from './dto/broadcast-message.dto';
 import { ConvertMessageToTaskDto } from './dto/convert-to-task.dto';
 import { MessagesGateway } from './messages.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
+import { extractMentionTokens, stripMentionTokensForPreview } from '../common/mentions.util';
 
 @Injectable()
 export class MessagesService {
@@ -115,13 +116,8 @@ export class MessagesService {
   }
 
   /**
-   * 解析兩種 mention 格式：
-   *   - 結構化 `@[DisplayName](userId)` —— autocomplete 產生，userId 精確
-   *   - 舊式 `@username` —— 純文字，透過 DB 查詢解析
-   * 兩者合併去重後建立 Mention 記錄 + 通知。範圍限同工作空間成員。
-   *
-   * 若同一訊息已有某使用者的 Mention（例：edit 重入），Prisma 沒有 unique 約束，
-   * 會插入第二筆；我們在插前查一次以避免重複通知。
+   * 解析兩種 mention 格式並建立 Mention 記錄 + 通知。範圍限同工作空間成員。
+   * 實際的 token 解析邏輯在 common/mentions.util.ts，這裡只負責 DB 查詢與副作用。
    */
   private async handleMentions(
     messageId: string,
@@ -131,24 +127,7 @@ export class MessagesService {
     senderDisplayName: string,
   ) {
     if (!content) return;
-
-    // 1. 結構化 mention → 直接拿到 userId
-    const structuredIds = Array.from(
-      new Set(
-        Array.from(content.matchAll(/@\[[^\]]+\]\(([^)]+)\)/g), (m) => m[1]),
-      ),
-    );
-
-    // 2. 舊式 `@username` → 需透過 DB 反查
-    // 注意：要排除掉已經被結構化 mention 吃掉的部分。把結構化段先抽掉再 match
-    // 是最穩的做法：
-    const withoutStructured = content.replace(/@\[[^\]]+\]\([^)]+\)/g, ' ');
-    const usernames = Array.from(
-      new Set(
-        Array.from(withoutStructured.matchAll(/@([A-Za-z0-9_]{2,32})/g), (m) => m[1]),
-      ),
-    );
-
+    const { structuredIds, usernames } = extractMentionTokens(content);
     if (structuredIds.length === 0 && usernames.length === 0) return;
 
     const channel = await this.prisma.channel.findUnique({
@@ -195,16 +174,12 @@ export class MessagesService {
         userId: uid,
         type: 'mention',
         title: `${senderDisplayName} 在 #${channel.name} 提及你`,
-        content: this.stripMentionTokensForPreview(content).slice(0, 140),
+        content: stripMentionTokensForPreview(content).slice(0, 140),
         link: `/chat/channel/${channelId}?messageId=${messageId}`,
       });
     }
   }
 
-  /** 通知 preview 不要顯示 `@[Name](uid)` 原始 token；換成 `@Name`。 */
-  private stripMentionTokensForPreview(content: string): string {
-    return content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
-  }
 
   async findByChannel(userId: string, channelId: string, cursor?: string, limit: number = 50) {
     const member = await this.prisma.channelMember.findUnique({
