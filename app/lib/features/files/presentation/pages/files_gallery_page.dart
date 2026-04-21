@@ -33,10 +33,31 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
   bool _uploading = false;
   String? _error;
 
+  /// null = 「所有檔案」；"" = 根目錄；其它 = 特定資料夾（含子資料夾）。
+  String? _selectedFolder; // null = 全部
+  List<String> _folders = []; // 完整 flat list（含所有前綴），來自 API
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetch());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchFolders();
+      _fetch();
+    });
+  }
+
+  Future<void> _fetchFolders() async {
+    final wsId = ref.read(currentWorkspaceIdProvider);
+    if (wsId == null) return;
+    try {
+      final list = await ref.read(apiClientProvider).listFileFolders(wsId);
+      if (!mounted) return;
+      setState(() {
+        _folders = list.whereType<String>().toList();
+      });
+    } catch (_) {
+      // 資料夾列出失敗不擋主畫面；只是樹會變空
+    }
   }
 
   @override
@@ -75,6 +96,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
             type: _kindToApi(_kind),
             search: _search,
             limit: 100,
+            folderPath: _selectedFolder, // null = 忽略
           );
       final items = (res['items'] as List? ?? [])
           .whereType<Map>()
@@ -109,12 +131,16 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
     if (bytes == null) return;
     setState(() => _uploading = true);
     try {
+      // 上傳到當前選中的資料夾（若為「全部」則上傳到根）
+      final target = _selectedFolder == null ? null : _selectedFolder!;
       await ref.read(apiClientProvider).uploadFile(
             workspaceId: wsId,
             bytes: bytes,
             fileName: file.name,
+            folderPath: (target != null && target.isNotEmpty) ? target : null,
           );
       await _fetch();
+      await _fetchFolders();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上傳失敗：$e')));
@@ -225,28 +251,38 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          _buildToolbar(),
-          _buildFilterStrip(),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
-            ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _items.isEmpty
-                    ? _emptyState()
-                    : RefreshIndicator(
-                        onRefresh: _fetch,
-                        child: _view == _ViewMode.grid ? _buildGrid() : _buildList(),
-                      ),
+    final isWide = MediaQuery.sizeOf(context).width > 760;
+    final mainPane = Column(
+      children: [
+        _buildToolbar(),
+        _buildFilterStrip(),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(_error!, style: const TextStyle(color: Colors.red)),
           ),
-        ],
-      ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _items.isEmpty
+                  ? _emptyState()
+                  : RefreshIndicator(
+                      onRefresh: _fetch,
+                      child: _view == _ViewMode.grid ? _buildGrid() : _buildList(),
+                    ),
+        ),
+      ],
+    );
+    return Scaffold(
+      body: isWide
+          ? Row(
+              children: [
+                SizedBox(width: 240, child: _buildFolderSidebar()),
+                const VerticalDivider(width: 1),
+                Expanded(child: mainPane),
+              ],
+            )
+          : mainPane,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _uploading ? null : _uploadFile,
         icon: _uploading
@@ -259,6 +295,226 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
         label: Text(_uploading ? '上傳中…' : '上傳檔案'),
       ),
     );
+  }
+
+  Widget _buildFolderSidebar() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
+          child: Row(
+            children: [
+              const Text('資料夾',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              IconButton(
+                tooltip: '新增資料夾',
+                iconSize: 18,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                onPressed: _createFolder,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            children: [
+              _folderTile(
+                label: '全部檔案',
+                icon: Icons.inbox_outlined,
+                isSelected: _selectedFolder == null,
+                onTap: () => _selectFolder(null),
+              ),
+              _folderTile(
+                label: '未分類（根）',
+                icon: Icons.folder_off_outlined,
+                isSelected: _selectedFolder == '',
+                onTap: () => _selectFolder(''),
+              ),
+              const Divider(height: 16),
+              for (final f in _folders)
+                _folderTile(
+                  label: _folderDisplayLabel(f),
+                  icon: Icons.folder_outlined,
+                  depth: f.split('/').length - 1,
+                  isSelected: _selectedFolder == f,
+                  onTap: () => _selectFolder(f),
+                ),
+              if (_folders.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '還沒有資料夾\n上傳時或點「新增資料夾」即可建立',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _folderDisplayLabel(String p) {
+    final parts = p.split('/');
+    return parts.last;
+  }
+
+  Widget _folderTile({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    int depth = 0,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 1),
+        padding: EdgeInsets.fromLTRB(10 + depth * 14.0, 6, 10, 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35)
+              : null,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: Colors.grey.shade700),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectFolder(String? path) {
+    setState(() => _selectedFolder = path);
+    _fetch();
+  }
+
+  Future<void> _createFolder() async {
+    final ctrl = TextEditingController(
+      text: _selectedFolder == null || _selectedFolder!.isEmpty
+          ? ''
+          : '$_selectedFolder/',
+    );
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新增資料夾'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '路徑（用 / 分隔層級）',
+            hintText: '例：work/2026/Q2',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('建立'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.isEmpty) return;
+    // 資料夾是虛擬的 —— 沒有實體紀錄。只把 UI 端的選中路徑設到這裡，下次上傳自動塞。
+    // 也加進 _folders 讓側欄立刻顯示。
+    final clean = name.replaceAll(RegExp(r'^/+|/+$'), '').replaceAll(RegExp(r'/+'), '/');
+    if (clean.isEmpty) return;
+    final expanded = <String>{};
+    final segments = clean.split('/');
+    for (var i = 1; i <= segments.length; i++) {
+      expanded.add(segments.sublist(0, i).join('/'));
+    }
+    setState(() {
+      _folders = ({..._folders, ...expanded}).toList()..sort();
+      _selectedFolder = clean;
+    });
+    _fetch();
+  }
+
+  Future<void> _moveFile(Map<String, dynamic> item) async {
+    final ctrl = TextEditingController(
+      text: (item['folderPath'] as String?) ?? '',
+    );
+    final newPath = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('移動到資料夾'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '路徑（留空 = 移到根）',
+                hintText: 'work/2026',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_folders.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('已存在', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 120,
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final f in _folders)
+                      ListTile(
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                        leading: const Icon(Icons.folder_outlined, size: 16),
+                        title: Text(f, style: const TextStyle(fontSize: 12)),
+                        onTap: () => Navigator.pop(ctx, f),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('移動'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (newPath == null) return; // cancel
+    try {
+      await ref.read(apiClientProvider).moveFileToFolder(
+            item['id'] as String,
+            newPath.isEmpty ? null : newPath,
+          );
+      await _fetch();
+      await _fetchFolders();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('移動失敗：$e')));
+      }
+    }
   }
 
   Widget _buildToolbar() {
@@ -429,8 +685,10 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                     iconSize: 16,
                     onSelected: (v) {
                       if (v == 'delete') _deleteFile(item);
+                      if (v == 'move') _moveFile(item);
                     },
                     itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'move', child: Text('移動到資料夾…')),
                       PopupMenuItem(value: 'delete', child: Text('刪除', style: TextStyle(color: Colors.red))),
                     ],
                   ),
@@ -483,8 +741,10 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
           trailing: PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'delete') _deleteFile(item);
+              if (v == 'move') _moveFile(item);
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'move', child: Text('移動到資料夾…')),
               PopupMenuItem(value: 'delete', child: Text('刪除', style: TextStyle(color: Colors.red))),
             ],
           ),
