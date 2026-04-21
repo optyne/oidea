@@ -17,6 +17,9 @@ class _BlockItem {
   /// 當 UI 端還沒拿到 server 的 id（新建 block）時，ReorderableListView 也要一個
   /// 穩定的 Key —— 用這個 client-only id。絕不等於 server id（開頭 `c_`）。
   final String clientId;
+  /// toggle block 專用：body 內容的獨立 controller（頭摘要用 `controller`）。
+  /// 非 toggle 類型保持 null。
+  TextEditingController? bodyController;
 
   static int _nextClientId = 0;
 
@@ -27,7 +30,11 @@ class _BlockItem {
     required String initialText,
   })  : controller = TextEditingController(text: initialText),
         focusNode = FocusNode(),
-        clientId = 'c_${++_nextClientId}';
+        clientId = 'c_${++_nextClientId}' {
+    if (type == 'toggle') {
+      bodyController = TextEditingController(text: (content['body'] ?? '').toString());
+    }
+  }
 
   Map<String, dynamic> toPayload(int position) => {
         if (id != null) 'id': id,
@@ -47,6 +54,12 @@ class _BlockItem {
         return {'url': content['url'] ?? '', 'caption': txt};
       case 'divider':
         return {};
+      case 'toggle':
+        return {
+          'text': txt,
+          'collapsed': content['collapsed'] == true,
+          'body': bodyController?.text ?? '',
+        };
       default:
         return {'text': txt};
     }
@@ -55,6 +68,7 @@ class _BlockItem {
   void dispose() {
     controller.dispose();
     focusNode.dispose();
+    bodyController?.dispose();
   }
 }
 
@@ -94,6 +108,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
     ('bullet', '項目符號', Icons.circle),
     ('numbered', '編號列表', Icons.format_list_numbered),
     ('quote', '引用', Icons.format_quote),
+    ('toggle', '折疊區塊', Icons.keyboard_arrow_right),
     ('code', '程式碼', Icons.code),
     ('divider', '分隔線', Icons.horizontal_rule),
   ];
@@ -165,7 +180,18 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
   }
 
   void _changeType(int index, String type) {
-    setState(() => _blocks[index].type = type);
+    setState(() {
+      final b = _blocks[index];
+      final oldType = b.type;
+      b.type = type;
+      // toggle 需要獨立的 body controller；切換時建立或釋放。
+      if (type == 'toggle' && b.bodyController == null) {
+        b.bodyController = TextEditingController(text: (b.content['body'] ?? '').toString());
+      } else if (oldType == 'toggle' && type != 'toggle') {
+        b.bodyController?.dispose();
+        b.bodyController = null;
+      }
+    });
     _scheduleSave();
   }
 
@@ -268,9 +294,8 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
       // divider 沒有文字 → 永遠新增一個 block
       _insertAfter(index, 'divider');
     } else if (newText.isEmpty) {
-      // 空 block → 轉換類型
-      setState(() => b.type = type);
-      _scheduleSave();
+      // 空 block → 轉換類型（透過 _changeType 以正確初始化 bodyController 等）
+      _changeType(index, type);
     } else {
       // 有前文 → 新 block
       _insertAfter(index, type);
@@ -392,6 +417,9 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           child: _textField(b, const TextStyle(fontStyle: FontStyle.italic), index: index),
         );
         break;
+      case 'toggle':
+        field = _buildToggle(index);
+        break;
       case 'code':
         field = Container(
           padding: const EdgeInsets.all(8),
@@ -492,6 +520,68 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Toggle block —— 可折疊分組。
+  /// 頭：chevron + 摘要（用既有 `controller` / `_textField`）。
+  /// 身：展開時顯示多行 body（獨立 `bodyController`）。
+  ///
+  /// 收合時只存 summary，body 字還留著但不可見。body 是純文字；下一輪 iteration
+  /// 可升級為內嵌 block list（schema 已有 parentBlockId 可利用）。
+  Widget _buildToggle(int index) {
+    final b = _blocks[index];
+    final collapsed = b.content['collapsed'] == true;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () {
+                setState(() {
+                  b.content = {...b.content, 'collapsed': !collapsed};
+                });
+                _scheduleSave();
+              },
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 10, 2, 0),
+                child: Icon(
+                  collapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_down,
+                  size: 18,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ),
+            Expanded(
+              child: _textField(
+                b,
+                const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                index: index,
+              ),
+            ),
+          ],
+        ),
+        if (!collapsed)
+          Padding(
+            padding: const EdgeInsets.only(left: 20, top: 2, bottom: 4),
+            child: TextField(
+              controller: b.bodyController,
+              maxLines: null,
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isCollapsed: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                hintText: '空內容 —— 在此輸入',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              ),
+              onChanged: (_) => _scheduleSave(),
+            ),
+          ),
+      ],
     );
   }
 
