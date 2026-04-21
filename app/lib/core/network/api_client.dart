@@ -165,6 +165,45 @@ class ApiClient {
     return res.data ?? {};
   }
 
+  // ─────────────────────── 試算表 ───────────────────────
+
+  Future<List<dynamic>> getSpreadsheets(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('spreadsheets/workspace/$workspaceId');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getSpreadsheet(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('spreadsheets/$id');
+    return res.data!;
+  }
+
+  Future<Map<String, dynamic>> createSpreadsheet({
+    required String workspaceId,
+    required String title,
+    String? description,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'spreadsheets',
+      data: {'workspaceId': workspaceId, 'title': title, if (description != null) 'description': description},
+    );
+    return res.data!;
+  }
+
+  Future<void> updateSpreadsheetMeta(String id, {String? title, String? description}) async {
+    await _dio.put('spreadsheets/$id', data: {
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+    });
+  }
+
+  Future<void> saveSpreadsheetData(String id, Map<String, dynamic> data) async {
+    await _dio.put('spreadsheets/$id/data', data: {'data': data});
+  }
+
+  Future<void> deleteSpreadsheet(String id) async {
+    await _dio.delete('spreadsheets/$id');
+  }
+
   Future<List<dynamic>> getWhiteboards(String workspaceId) async {
     final res = await _dio.get<List<dynamic>>('whiteboard/workspace/$workspaceId');
     return res.data ?? [];

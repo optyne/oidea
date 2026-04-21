@@ -19,6 +19,8 @@ import '../../features/erp/presentation/pages/expenses_page.dart';
 import '../../features/erp/presentation/pages/leaves_page.dart';
 import '../../features/erp/presentation/pages/members_page.dart';
 import '../../features/notes/presentation/pages/notes_home_page.dart';
+import '../../features/spreadsheets/presentation/pages/spreadsheets_home_page.dart';
+import '../../features/spreadsheets/presentation/pages/spreadsheet_editor_page.dart';
 import '../../features/workspace/presentation/pages/invite_landing_page.dart';
 import '../../shared/pages/main_shell.dart';
 
@@ -127,6 +129,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/notes',
             builder: (context, state) => const NotesHomePage(),
+          ),
+          GoRoute(
+            path: '/sheets',
+            builder: (context, state) => const SpreadsheetsHomePage(),
+            routes: [
+              GoRoute(
+                path: ':sheetId',
+                builder: (context, state) => SpreadsheetEditorPage(
+                  sheetId: state.pathParameters['sheetId']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: '/erp',
