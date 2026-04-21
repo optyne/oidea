@@ -12,6 +12,7 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { BroadcastMessageDto } from './dto/broadcast-message.dto';
 import { ConvertMessageToTaskDto } from './dto/convert-to-task.dto';
 import { MessagesGateway } from './messages.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MessagesService {
@@ -19,6 +20,7 @@ export class MessagesService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => MessagesGateway))
     private readonly messagesGateway: MessagesGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateMessageDto) {
@@ -45,6 +47,8 @@ export class MessagesService {
       },
     });
 
+    await this.handleMentions(message.id, dto.channelId, dto.content, userId, message.sender.displayName);
+
     this.messagesGateway.emitNewMessage(dto.channelId, message);
     return message;
   }
@@ -54,8 +58,6 @@ export class MessagesService {
    *
    * 全有全無：任一頻道不存在 / 使用者非成員 / 跨 workspace → 整批拒絕。
    * 寫入用 $transaction 保原子性；成功後對每個頻道 emit WS 事件。
-   *
-   * 回傳 { broadcastId, messages }，前端可用 broadcastId 做聚合檢視。
    */
   async broadcast(userId: string, dto: BroadcastMessageDto) {
     const channelIds = Array.from(new Set(dto.channelIds));
@@ -110,6 +112,51 @@ export class MessagesService {
     }
 
     return { broadcastId, messages };
+  }
+
+  /** 解析 `@username` 並建立 Mention 記錄與通知。解析範圍限於同工作空間成員。 */
+  private async handleMentions(
+    messageId: string,
+    channelId: string,
+    content: string | null | undefined,
+    senderId: string,
+    senderDisplayName: string,
+  ) {
+    if (!content) return;
+    const usernames = Array.from(
+      new Set(Array.from(content.matchAll(/@([A-Za-z0-9_]{2,32})/g), (m) => m[1])),
+    );
+    if (usernames.length === 0) return;
+
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { workspaceId: true, name: true },
+    });
+    if (!channel) return;
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        username: { in: usernames },
+        workspaceMembers: { some: { workspaceId: channel.workspaceId } },
+      },
+      select: { id: true },
+    });
+
+    for (const u of users) {
+      if (u.id === senderId) continue;
+      try {
+        await this.prisma.mention.create({ data: { messageId, userId: u.id } });
+      } catch {
+        // 重複 mention（理論上不會出現，因為 usernames 已去重）忽略
+      }
+      await this.notifications.create({
+        userId: u.id,
+        type: 'mention',
+        title: `${senderDisplayName} 在 #${channel.name} 提及你`,
+        content: content.slice(0, 140),
+        link: `/chat/channel/${channelId}?messageId=${messageId}`,
+      });
+    }
   }
 
   async findByChannel(userId: string, channelId: string, cursor?: string, limit: number = 50) {
@@ -207,15 +254,6 @@ export class MessagesService {
 
   /**
    * C-18：把一則訊息轉成 Task。
-   *
-   * 權限：訊息的頻道成員才可轉；目標 project 必須同 workspace；
-   * 如指定 assignee，對方需為同 workspace 成員。
-   *
-   * 預設：
-   *   - title = message.content 前 100 字 (無內容 → '（空訊息）')
-   *   - description = 完整 content
-   *   - priority = 'medium'
-   * 全部可被 dto 覆蓋。建立的 Task.sourceMessageId 指向原訊息。
    */
   async convertToTask(
     userId: string,
@@ -279,6 +317,53 @@ export class MessagesService {
         assigneeId: dto.assigneeId,
         sourceMessageId: messageId,
       },
+    });
+  }
+
+  async pin(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message) throw new NotFoundException('訊息不存在');
+    const member = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId: message.channelId, userId } },
+    });
+    if (!member) throw new ForbiddenException('非此頻道成員');
+
+    return this.prisma.pinnedMessage.upsert({
+      where: { channelId_messageId: { channelId: message.channelId, messageId } },
+      create: { channelId: message.channelId, messageId, pinnedBy: userId },
+      update: { pinnedBy: userId, pinnedAt: new Date() },
+    });
+  }
+
+  async unpin(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message) throw new NotFoundException('訊息不存在');
+    const member = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId: message.channelId, userId } },
+    });
+    if (!member) throw new ForbiddenException('非此頻道成員');
+
+    return this.prisma.pinnedMessage.delete({
+      where: { channelId_messageId: { channelId: message.channelId, messageId } },
+    });
+  }
+
+  async findPinned(userId: string, channelId: string) {
+    const member = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId } },
+    });
+    if (!member) throw new ForbiddenException('非此頻道成員');
+
+    return this.prisma.pinnedMessage.findMany({
+      where: { channelId },
+      include: {
+        message: {
+          include: {
+            sender: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+          },
+        },
+      },
+      orderBy: { pinnedAt: 'desc' },
     });
   }
 

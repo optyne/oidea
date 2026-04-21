@@ -46,6 +46,16 @@ model User {
   messageSnippets    MessageSnippet[]     @relation("SnippetCreator")
   scheduledMessages  ScheduledMessage[]   @relation("ScheduledMessageCreator")
   automationRules    AutomationRule[]     @relation("AutomationRuleCreator")
+  expenses           Expense[]            @relation("ExpenseSubmitter")
+  approvals          ExpenseApproval[]    @relation("ExpenseApprover")
+  attendances        Attendance[]
+  leaveRequests      LeaveRequest[]       @relation("LeaveRequester")
+  leaveApprovals     LeaveRequest[]       @relation("LeaveApprover")
+  createdPages       KnowledgePage[]      @relation("PageCreatedBy")
+  editedBlocks       KnowledgeBlock[]     @relation("BlockLastEditedBy")
+  createdRows        DbRow[]              @relation("RowCreatedBy")
+  pagePermissions    PagePermission[]
+  auditEvents        AuditLog[]           @relation("AuditActor")
 
   @@map("users")
 }
@@ -84,16 +94,21 @@ model Workspace {
   ownerId String @map("ownerId")
   owner   User   @relation("WorkspaceOwner", fields: [ownerId], references: [id])
 
-  members   WorkspaceMember[]
-  channels  Channel[]
-  projects  Project[]
-  meetings  Meeting[]
-  boards    Whiteboard[]
+  members           WorkspaceMember[]
+  channels          Channel[]
+  projects          Project[]
+  meetings          Meeting[]
+  boards            Whiteboard[]
   databases         Database[]
   reminders         Reminder[]
   snippets          MessageSnippet[]
   scheduledMessages ScheduledMessage[]
   automationRules   AutomationRule[]
+  expenses          Expense[]
+  attendances       Attendance[]
+  leaveRequests     LeaveRequest[]
+  knowledgePages    KnowledgePage[]
+  auditLogs         AuditLog[]
 
   @@map("workspaces")
 }
@@ -102,7 +117,7 @@ model WorkspaceMember {
   id          String   @id @default(uuid())
   workspaceId String
   userId      String
-  role        String   @default("member") // owner, admin, member
+  role        String   @default("member") // owner, admin, hr, finance, member
   joinedAt    DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -504,7 +519,7 @@ model File {
 model Notification {
   id        String   @id @default(uuid())
   userId    String
-  type      String // message, mention, task_assigned, meeting_invite, etc.
+  type      String // message, mention, task_assigned, meeting_invite, expense_submitted, expense_approved, leave_approved, etc.
   title     String
   content   String?
   link      String?
@@ -517,6 +532,7 @@ model Notification {
   @@map("notifications")
 }
 
+// ============================================================
 // ============================================================
 // 文件與資料庫 (P5 Docs & Database)
 //   D-02 結構化資料庫：支援自訂欄位 (text / number / date / select)
@@ -591,15 +607,7 @@ model DatabaseCell {
 }
 
 // ============================================================
-// 到期與重複提醒 (D-07)
-//   支援單次 / daily / weekly / monthly / yearly + interval
-//   targetType/targetId 可指向 database_row 或 task；null = 純提醒
-// ============================================================
-
-// ============================================================
 // 訊息範本 / 片段庫 (C-15)
-//   visibility: personal (僅作者) | workspace (同工作空間成員皆可使用)
-//   只有作者可以編輯 / 軟刪
 // ============================================================
 
 model MessageSnippet {
@@ -624,9 +632,6 @@ model MessageSnippet {
 
 // ============================================================
 // 自動化規則 (P-15)
-//   事件觸發：task_completed (本刀暫時支援此單一 trigger)
-//   scope: project — scopeId 指向 Project.id，執行時匹配 task.projectId
-//   action: notify_user | post_to_channel
 // ============================================================
 
 model AutomationRule {
@@ -656,8 +661,6 @@ model AutomationRule {
 
 // ============================================================
 // 排程訊息 (C-17)
-//   指定時間把訊息透過 C-16 broadcast 路徑送到 1+ 個頻道。
-//   內容於 schedule 當下 snapshot；之後改 snippet 不影響排定內容。
 // ============================================================
 
 model ScheduledMessage {
@@ -685,6 +688,10 @@ model ScheduledMessage {
   @@map("scheduled_messages")
 }
 
+// ============================================================
+// 到期與重複提醒 (D-07)
+// ============================================================
+
 model Reminder {
   id                 String    @id @default(uuid())
   workspaceId        String
@@ -696,7 +703,7 @@ model Reminder {
   triggerAt          DateTime // 第一次觸發時間
   recurrence         String    @default("none") // none | daily | weekly | monthly | yearly
   recurrenceInterval Int       @default(1)
-  nextFireAt         DateTime // scheduler 輪詢用；與 triggerAt 同步 (第一次) 或 advance 後更新
+  nextFireAt         DateTime // scheduler 輪詢用
   lastFiredAt        DateTime?
   status             String    @default("active") // active | paused | completed
   createdAt          DateTime  @default(now())
@@ -709,4 +716,266 @@ model Reminder {
   @@index([nextFireAt, status, deletedAt])
   @@index([workspaceId, deletedAt])
   @@map("reminders")
+}
+
+// ============================================================
+// ERP：費用報銷
+// ============================================================
+
+model Expense {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  submitterId  String
+  title        String
+  amount       Decimal   @db.Decimal(12, 2)
+  currency     String    @default("TWD")
+  category     String    @default("other") // travel, meal, transport, office, other
+  description  String?
+  incurredAt   DateTime  @default(now())
+  status       String    @default("pending") // pending, approved, rejected, paid
+  rejectReason String?
+  paidAt       DateTime?
+  paidBy       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  submitter User              @relation("ExpenseSubmitter", fields: [submitterId], references: [id], onDelete: Cascade)
+  approvals ExpenseApproval[]
+  receipts  ExpenseReceipt[]
+
+  @@index([workspaceId, status, createdAt])
+  @@index([submitterId, createdAt])
+  @@map("expenses")
+}
+
+model ExpenseApproval {
+  id         String   @id @default(uuid())
+  expenseId  String
+  approverId String
+  decision   String // approved, rejected
+  comment    String?
+  decidedAt  DateTime @default(now())
+
+  expense  Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  approver User    @relation("ExpenseApprover", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId, decidedAt])
+  @@map("expense_approvals")
+}
+
+model ExpenseReceipt {
+  id         String   @id @default(uuid())
+  expenseId  String
+  fileName   String
+  fileType   String
+  fileSize   Int
+  url        String
+  uploadedAt DateTime @default(now())
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@map("expense_receipts")
+}
+
+// ============================================================
+// ERP：考勤打卡
+// ============================================================
+
+model Attendance {
+  id               String    @id @default(uuid())
+  workspaceId      String
+  userId           String
+  date             DateTime  @db.Date
+  checkInAt        DateTime?
+  checkOutAt       DateTime?
+  workMinutes      Int       @default(0)
+  checkInLocation  String?
+  checkOutLocation String?
+  note             String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, date])
+  @@index([workspaceId, date])
+  @@map("attendances")
+}
+
+model LeaveRequest {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  requesterId  String
+  type         String // sick, annual, personal, unpaid, other
+  startDate    DateTime  @db.Date
+  endDate      DateTime  @db.Date
+  reason       String?
+  status       String    @default("pending") // pending, approved, rejected, cancelled
+  approverId   String?
+  decidedAt    DateTime?
+  rejectReason String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requester User      @relation("LeaveRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  approver  User?     @relation("LeaveApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, startDate])
+  @@index([requesterId, startDate])
+  @@map("leave_requests")
+}
+
+// ============================================================
+// 知識管理：Notion 風 Page + Block + Database
+// ============================================================
+
+/// 一個 Page 即為一份文件。可巢狀，亦可作為 [KnowledgeDatabase] 的容器。
+model KnowledgePage {
+  id          String    @id @default(uuid())
+  workspaceId String
+  parentId    String?
+  createdById String
+  title       String    @default("Untitled")
+  icon        String? // emoji
+  coverUrl    String?
+  kind        String    @default("page") // page, database
+  archived    Boolean   @default(false)
+  position    Int       @default(0)
+  /// 可見性：workspace=所有成員可 edit；private=僅 creator 與明確分享對象；restricted=無預設權限，需明確分享
+  visibility       String  @default("workspace")
+  /// 當本頁自己沒有 permissions 時，是否繼承父頁的權限設定
+  inheritParentAcl Boolean @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      KnowledgePage?     @relation("PageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    KnowledgePage[]    @relation("PageTree")
+  createdBy   User               @relation("PageCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  blocks      KnowledgeBlock[]
+  database    KnowledgeDatabase?
+  permissions PagePermission[]
+
+  @@index([workspaceId, parentId, position])
+  @@map("knowledge_pages")
+}
+
+/// 單頁的明確分享權限：可指定 userId（特定人）或 role（工作空間角色），access=view/edit/full。
+model PagePermission {
+  id        String   @id @default(uuid())
+  pageId    String
+  userId    String?
+  role      String?  // admin / hr / finance / member
+  access    String   // "view" | "edit" | "full"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page KnowledgePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, userId])
+  @@unique([pageId, role])
+  @@index([userId])
+  @@map("page_permissions")
+}
+
+/// Block 儲存於 Page 下。支援 text / h1 / h2 / h3 / todo / bullet / numbered / quote / code / divider / image 等類型。
+model KnowledgeBlock {
+  id             String   @id @default(uuid())
+  pageId         String
+  parentBlockId  String?
+  type           String   @default("text")
+  content        Json     @default("{}")
+  position       Int      @default(0)
+  lastEditedById String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  page         KnowledgePage    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  parentBlock  KnowledgeBlock?  @relation("BlockTree", fields: [parentBlockId], references: [id], onDelete: Cascade)
+  childBlocks  KnowledgeBlock[] @relation("BlockTree")
+  lastEditedBy User?            @relation("BlockLastEditedBy", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  @@index([pageId, parentBlockId, position])
+  @@map("knowledge_blocks")
+}
+
+/// 掛在某個 Page 之下的資料庫。一個 Page 最多一個 Database。
+model KnowledgeDatabase {
+  id          String   @id @default(uuid())
+  pageId      String   @unique
+  description String?
+  defaultView String   @default("table")
+  template    String? // null = 一般, "finance_log" = 記帳
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  page       KnowledgePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  properties DbProperty[]
+  rows       DbRow[]
+
+  @@map("knowledge_databases")
+}
+
+model DbProperty {
+  id         String   @id @default(uuid())
+  databaseId String
+  key        String
+  name       String
+  type       String
+  config     Json     @default("{}")
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  database KnowledgeDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  @@unique([databaseId, key])
+  @@map("db_properties")
+}
+
+model DbRow {
+  id          String   @id @default(uuid())
+  databaseId  String
+  values      Json     @default("{}")
+  position    Int      @default(0)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  database  KnowledgeDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("RowCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([databaseId, position])
+  @@map("db_rows")
+}
+
+// ============================================================
+// 審計日誌：記錄敏感操作（登入、權限變更、報銷審批、知識庫分享等）
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?
+  workspaceId String?
+  action      String
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  actor     User?      @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
 }

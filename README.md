@@ -1,15 +1,18 @@
 # Oidea 協作平台
 
-整合 **JANDI／Slack 風格通訊**、**專案管理（看板）**、**會議排程與視訊骨架**、**Affine 取向之白板編輯** 的全端應用程式碼庫。
+整合 **JANDI／Slack 風格通訊**、**專案管理（看板）**、**會議排程與視訊骨架**、**Affine 取向之白板編輯**、輕量 **ERP（費用報銷／打卡／請假／角色權限）**，以及 **Notion 風知識管理（Page + Block + Database，含記帳範本）** 的全端應用程式碼庫。
 
 ## 產品願景 vs 目前可執行範圍
 
-| 模組 | 完整產品想像 | 本 repo 目前已具備（MVP 骨架） |
+| 模組 | 完整產品想像 | 本 repo 目前已具備 |
 |------|----------------|-------------------------------|
-| 通訊 | Thread、反應、@提及、搜尋、推播 | JWT、工作空間、頻道 REST 建立、訊息列表；**討論串頁**、**頻道內關鍵字搜尋**、**表情反應**、**正在輸入提示**；Socket 或 **REST 發訊皆會廣播 `newMessage` 給頻道房間** |
-| 專案 | 甘特圖、欄內排序、活動日誌 | 看板 API、新增欄位／任務、**長按任務拖曳跨欄**（呼叫 `PUT tasks/:id/move`） |
-| 會議 | WebRTC 多人、螢幕分享、協作筆記 | 會議 CRUD、行事曆 UI、會議室頁面骨架 |
+| 通訊 | Thread、反應、@提及、搜尋、推播 | JWT、工作空間、頻道 REST 建立、訊息列表；**討論串頁**、**關鍵字搜尋**、**表情反應**、**正在輸入提示**；Socket 或 REST 發訊皆廣播 `newMessage`；**Markdown 渲染 + `@username` 高亮**、**`@提及` 自動建 Mention 並發通知**、**訊息置頂 API**、**檔案附件（MinIO）**、**全域通知徽章（輪詢）** |
+| 專案 | 甘特圖、欄內排序、活動日誌 | 看板 API、新增欄位／任務、**長按跨欄拖曳**；**優先級色條 + 標籤 + 指派頭像 + 到期日**、**篩選（assignee／優先級）**、**新任務對話框含優先級／指派／截止日**、**活動日誌已在詳情呈現**、**任務附件上傳**、**被指派自動發通知** |
+| 會議 | WebRTC 多人、螢幕分享、協作筆記 | 會議 CRUD、行事曆 UI、會議室頁面骨架；**邀請參與者自動發通知** |
 | 白板 | Yjs CRDT、無限畫布、匯出 | 白板 CRUD、畫布繪圖 UI 骨架、Socket 事件名稱預留 |
+| 平台 | 統一錯誤、權限、觀測 | **全域 `AllExceptionsFilter` 回傳 `{statusCode, error, message, path, timestamp}`**、所有 controller 均掛 `JwtAuthGuard`；**`ROLE_PERMISSIONS` + `@RequirePermission` + `PermissionsGuard`** |
+| ERP | 報銷／考勤／請假／角色權限 | **Expense / ExpenseApproval / ExpenseReceipt / Attendance / LeaveRequest** 模型與 API；申請、審批、付款標記、狀態彙總；上下班打卡、月份查詢、HR 報表；請假申請／審批；`admin / hr / finance / member` 角色切換 UI；審批／付款自動通知申請人 |
+| 筆記 | Notion 風 Page + Block + Database | **KnowledgePage / KnowledgeBlock / KnowledgeDatabase / DbProperty / DbRow** 模型；巢狀 Page 樹、10 種 Block 型別（含 todo/code/quote/divider）可相互轉換、800ms debounce 自動儲存；Database table view + row 編輯 dialog（select、date picker、currency 等）；**一鍵建立「💰 記帳」範本**（日期/類別/金額/帳戶/備註）與月份彙總（收入／支出／淨額／分類 breakdown） |
 
 **結論：** 這是可持續擴充的 **MVP 架構與主要流程**，不是 Slack／Affine 的完整複製品。詳細功能項請見 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
 
@@ -66,9 +69,30 @@ flutter run -d chrome
 
 1. 註冊／登入  
 2. 頂端列建立或切換**工作空間**  
-3. **聊天**：建立頻道、傳送訊息；**回覆／討論串**、**搜尋**、**表情反應**、**正在輸入**（Socket 或 REST；其他人若在房間內會收到即時事件）  
-4. **專案**：建立專案 → 進入看板 → 新增欄位／任務 → **長按卡片拖曳到其他欄**  
-5. **會議／白板**：建立資源並開啟對應頁面（進階協作仍待迭代）
+3. **聊天**：建立頻道、傳送訊息；**Markdown 格式** `**粗體** *斜體* `code`` 即時渲染；**`@username` 會高亮並為對方產生通知**；**回覆／討論串**、**搜尋**、**表情反應**、**正在輸入**；**附件**（迴紋針 → 選檔 → 訊息顯示檔名或縮圖）  
+4. **專案**：建立專案 → 進入看板 → 新增任務時可選**優先級／負責人／截止日** → 卡片以色條／chips／頭像呈現 → 右上角**篩選**按 assignee/priority 組合 → **長按卡片拖曳到其他欄**；任務詳情可**上傳附件**、查看**活動日誌**  
+5. **通知**：AppBar 右上角鈴鐺顯示未讀數（15s 輪詢）；點擊進入列表，可單筆或全部標為已讀  
+6. **會議／白板**：建立資源並開啟對應頁面（WebRTC／CRDT 仍待迭代）  
+7. **筆記**（底部第 5 個 tab）：  
+   - 左側 Page 樹，可新建「📄 頁面」、「💰 記帳（含預設欄位）」、「📊 空白資料庫」  
+   - 頁面內：點任意 block 旁的 `+` 可插入 text/h1/h2/h3/todo/bullet/numbered/quote/code/divider；拖曳圖示可轉換型別或刪除；輸入 800ms 後自動儲存  
+   - 資料庫：table 顯示 row、點 row 開啟編輯 dialog；**記帳表另外顯示當月收入／支出／淨額與分類小計**  
+8. **ERP**（底部第 6 個 tab）：  
+   - **打卡**：上下班一鍵打卡、工時自動計算、本月一覽  
+   - **報銷**：新建單據（金額／類別／說明）→ 財務／管理員審批或退回（附原因）→ 標記付款；狀態彙總條  
+   - **請假**：選類別／日期範圍送出 → HR／Admin 核准或退回  
+   - **成員與權限**：將成員切換為 `admin / hr / finance / member`（`owner` 不可動）
+
+## 資料庫 Migration
+
+新增 ERP 與知識庫模組後，請在 `backend/` 依序執行：
+
+```bash
+npx prisma migrate dev --name add_erp_modules
+npx prisma migrate dev --name add_knowledge_modules
+```
+
+ERP migration 建立 `expenses`、`expense_approvals`、`expense_receipts`、`attendances`、`leave_requests` 五個資料表。知識庫 migration 建立 `knowledge_pages`、`knowledge_blocks`、`knowledge_databases`、`db_properties`、`db_rows` 五個資料表。首次同時跑時，可以合併為單次 `npx prisma migrate dev --name add_erp_and_knowledge`。
 
 ## API 文件
 

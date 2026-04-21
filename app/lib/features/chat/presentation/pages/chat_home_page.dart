@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
+import '../../../../shared/widgets/notification_badge.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/channel_provider.dart';
 import 'channel_page.dart';
@@ -55,6 +56,7 @@ class _ChatHomePageState extends ConsumerState<ChatHomePage> {
       appBar: AppBar(
         title: const Text('聊天'),
         actions: [
+          const NotificationBadge(),
           IconButton(icon: const Icon(Icons.search), onPressed: () {}),
           IconButton(
             icon: const Icon(Icons.add),

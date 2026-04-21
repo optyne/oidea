@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
 import { AuthModule } from './auth/auth.module';
@@ -20,13 +22,23 @@ import { SnippetsModule } from './snippets/snippets.module';
 import { ScheduledMessagesModule } from './scheduled-messages/scheduled-messages.module';
 import { AutomationModule } from './automation/automation.module';
 import { HealthModule } from './health/health.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { AttendanceModule } from './attendance/attendance.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
+    // 全域速率限制；auth 等敏感端點另以 @Throttle() 覆寫更嚴格的額度
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1000, limit: 20 },   // 突發：單秒 20 次
+      { name: 'default', ttl: 60_000, limit: 120 }, // 一般：每分鐘 120 次
+    ]),
     PrismaModule,
     RedisModule,
+    AuditModule,
     HealthModule,
     AuthModule,
     UsersModule,
@@ -44,6 +56,10 @@ import { HealthModule } from './health/health.module';
     SnippetsModule,
     ScheduledMessagesModule,
     AutomationModule,
+    ExpensesModule,
+    AttendanceModule,
+    KnowledgeModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

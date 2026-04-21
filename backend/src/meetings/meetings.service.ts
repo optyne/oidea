@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class MeetingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(userId: string, dto: CreateMeetingDto) {
     const member = await this.prisma.workspaceMember.findUnique({
@@ -44,6 +48,17 @@ export class MeetingsService {
         },
       },
     });
+
+    for (const pid of dto.participantIds || []) {
+      if (pid === userId) continue;
+      await this.notifications.create({
+        userId: pid,
+        type: 'meeting_invite',
+        title: `${meeting.organizer.displayName} 邀請你加入會議：${meeting.title}`,
+        content: meeting.startTime.toISOString(),
+        link: `/meeting/${meeting.id}`,
+      });
+    }
 
     return meeting;
   }

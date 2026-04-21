@@ -58,7 +58,7 @@ export class WorkspacesService {
     });
 
     if (!workspace) throw new NotFoundException('工作空間不存在');
-    if (!workspace.members.some((m) => m.userId === userId)) {
+    if (!workspace.members.some((m: { userId: string }) => m.userId === userId)) {
       throw new ForbiddenException('無權存取此工作空間');
     }
 
@@ -105,13 +105,60 @@ export class WorkspacesService {
     });
   }
 
+  async updateMemberRole(userId: string, workspaceId: string, targetUserId: string, role: string) {
+    await this.checkPermission(userId, workspaceId, 'admin');
+
+    const validRoles = ['owner', 'admin', 'hr', 'finance', 'member'];
+    if (!validRoles.includes(role)) {
+      throw new ForbiddenException(`角色必須為 ${validRoles.join(' / ')}`);
+    }
+
+    // 不可直接把自己降級為 member，避免誤操作鎖死管理權。
+    if (userId === targetUserId && role === 'member') {
+      throw new ForbiddenException('不可將自己降為 member，請改由其他管理員操作');
+    }
+
+    return this.prisma.workspaceMember.update({
+      where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+      data: { role },
+      include: {
+        user: {
+          select: { id: true, username: true, displayName: true, avatarUrl: true },
+        },
+      },
+    });
+  }
+
+  async listMembers(userId: string, workspaceId: string) {
+    const self = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    if (!self) throw new ForbiddenException('非此工作空間成員');
+
+    return this.prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: {
+        user: {
+          select: { id: true, username: true, displayName: true, avatarUrl: true, email: true },
+        },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+  }
+
   private async checkPermission(userId: string, workspaceId: string, requiredRole: string) {
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
     });
     if (!member) throw new ForbiddenException('非此工作空間成員');
 
-    const roleHierarchy: Record<string, number> = { owner: 3, admin: 2, member: 1 };
+    const roleHierarchy: Record<string, number> = {
+      owner: 3,
+      admin: 2,
+      hr: 2,
+      finance: 2,
+      member: 1,
+    };
     const memberRank = roleHierarchy[member.role] ?? 0;
     const requiredRank = roleHierarchy[requiredRole] ?? 0;
     if (memberRank < requiredRank) {

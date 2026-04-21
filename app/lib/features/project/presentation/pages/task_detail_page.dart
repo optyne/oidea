@@ -1,7 +1,9 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
+import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/project_provider.dart';
 
 class TaskDetailPage extends ConsumerStatefulWidget {
@@ -30,6 +32,40 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
       ref.invalidate(taskProvider(widget.taskId));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('操作失敗：$e')));
+    }
+  }
+
+  Future<void> _pickAndUploadAttachment() async {
+    final workspaceId = ref.read(currentWorkspaceIdProvider);
+    if (workspaceId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請先選擇工作空間')),
+      );
+      return;
+    }
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.first;
+    final bytes = picked.bytes;
+    if (bytes == null) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('上傳中…'), duration: Duration(seconds: 1)),
+    );
+    try {
+      await ref.read(apiClientProvider).uploadFile(
+            workspaceId: workspaceId,
+            bytes: bytes,
+            fileName: picked.name,
+            taskId: widget.taskId,
+          );
+      if (mounted) ref.invalidate(taskProvider(widget.taskId));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('上傳失敗：$e')));
+      }
     }
   }
 
@@ -307,6 +343,42 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
 
                 const Divider(height: 32),
 
+                // Attachments
+                Row(
+                  children: [
+                    Text(
+                      '附件 (${(task['files'] as List?)?.length ?? 0})',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      icon: const Icon(Icons.attach_file, size: 18),
+                      label: const Text('上傳'),
+                      onPressed: _pickAndUploadAttachment,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...((task['files'] as List<dynamic>?) ?? []).map((f) {
+                  final file = f as Map<String, dynamic>;
+                  final name = file['fileName'] as String? ?? '';
+                  final type = file['fileType'] as String? ?? '';
+                  final size = file['fileSize'];
+                  final isImage = type.startsWith('image/');
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      isImage ? Icons.image_outlined : Icons.insert_drive_file_outlined,
+                    ),
+                    title: Text(name, overflow: TextOverflow.ellipsis),
+                    subtitle: size is int ? Text(_formatBytes(size)) : null,
+                  );
+                }),
+                if ((task['files'] as List?)?.isEmpty ?? true)
+                  const Text('尚無附件', style: TextStyle(color: Colors.grey)),
+
+                const Divider(height: 32),
+
                 // Comments
                 Text('評論 (${comments.length})',
                     style: theme.textTheme.titleMedium),
@@ -454,6 +526,12 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
           'low': '🟢 低',
         }[priority] ??
         '🟡 中';
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 
   String _actionLabel(String? action) {
