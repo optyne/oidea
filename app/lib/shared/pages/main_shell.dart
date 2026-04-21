@@ -2,12 +2,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
+import '../../core/theme/app_theme.dart';
 import '../../features/search/presentation/widgets/command_palette.dart';
 import '../../features/shortcuts/presentation/widgets/shortcuts_cheatsheet.dart';
-import 'workspace_switcher_bar.dart';
+import '../widgets/oidea_sidebar.dart';
 
 final currentTabProvider = StateProvider<int>((ref) => 0);
 
@@ -33,14 +33,18 @@ final unreadCountProvider = FutureProvider<int>((ref) async {
   }
 });
 
+/// 對齊 prototype 的主視覺骨架：左側深色 `OideaSidebar` + 右側圓角內容卡。
+/// 窄畫面（< 720）自動 fallback 到底部 NavigationBar，避免手機被 sidebar 吃掉。
 class MainShell extends ConsumerWidget {
   final Widget child;
   const MainShell({super.key, required this.child});
 
+  static const double _mobileBreakpoint = 720;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final unreadAsync = ref.watch(unreadCountProvider);
-    final tabIndex = ref.watch(currentTabProvider);
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < _mobileBreakpoint;
 
     return Shortcuts(
       shortcuts: const <ShortcutActivator, Intent>{
@@ -66,72 +70,115 @@ class MainShell extends ConsumerWidget {
         },
         child: Focus(
           autofocus: true,
-          child: Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: isCompact ? _CompactShell(child: child) : _WideShell(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// 寬版 —— prototype 主要視覺：深色 sidebar + 圓角內容卡。
+class _WideShell extends ConsumerWidget {
+  final Widget child;
+  const _WideShell({required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final contentBg = Theme.of(context).scaffoldBackgroundColor;
+
+    return Scaffold(
+      backgroundColor: OideaTokens.sidebarBg,
+      body: Row(
         children: [
-          const WorkspaceSwitcherBar(),
-          Expanded(child: child),
+          const OideaSidebar(),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 6, 0, 6),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                child: Container(
+                  color: contentBg,
+                  child: child,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.small(
+        tooltip: '搜尋 (Ctrl/⌘+K)',
+        onPressed: () => showCommandPalette(context),
+        child: const Icon(Icons.search),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+}
+
+/// 窄版（手機） —— 保留原本底部導覽，只是把導覽 icon 對齊新版命名。
+class _CompactShell extends ConsumerWidget {
+  final Widget child;
+  const _CompactShell({required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tabIndex = ref.watch(currentTabProvider);
+
+    return Scaffold(
+      body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: tabIndex,
         onDestinationSelected: (index) {
           ref.read(currentTabProvider.notifier).state = index;
-          const routes = ['/chat', '/projects', '/meetings', '/whiteboard', '/notes', '/files', '/sheets', '/erp'];
+          const routes = [
+            '/chat',
+            '/projects',
+            '/meetings',
+            '/whiteboard',
+            '/notes',
+            '/files',
+            '/sheets',
+            '/erp',
+          ];
           context.go(routes[index]);
         },
-        destinations: [
+        destinations: const [
           NavigationDestination(
-            icon: badges.Badge(
-              showBadge: (unreadAsync.valueOrNull ?? 0) > 0,
-              badgeContent: Text(
-                '${unreadAsync.valueOrNull ?? 0}',
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-              child: const Icon(Icons.chat_bubble_outline),
-            ),
-            selectedIcon: badges.Badge(
-              showBadge: (unreadAsync.valueOrNull ?? 0) > 0,
-              badgeContent: Text(
-                '${unreadAsync.valueOrNull ?? 0}',
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-              child: const Icon(Icons.chat_bubble),
-            ),
-            label: '聊天',
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: '通訊',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: '專案',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.videocam_outlined),
             selectedIcon: Icon(Icons.videocam),
             label: '會議',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.draw_outlined),
             selectedIcon: Icon(Icons.draw),
             label: '白板',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.article_outlined),
             selectedIcon: Icon(Icons.article),
             label: '筆記',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.folder_outlined),
             selectedIcon: Icon(Icons.folder),
             label: '檔案',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.grid_on_outlined),
             selectedIcon: Icon(Icons.grid_on),
             label: '試算表',
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.business_center_outlined),
             selectedIcon: Icon(Icons.business_center),
             label: 'ERP',
@@ -144,9 +191,6 @@ class MainShell extends ConsumerWidget {
         child: const Icon(Icons.search),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-          ),
-        ),
-      ),
     );
   }
 }
