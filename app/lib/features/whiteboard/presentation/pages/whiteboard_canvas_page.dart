@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
@@ -370,6 +372,49 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
   bool _saving = false;
   bool _dirty = false;
 
+  // Zoom / pan state
+  static const double _canvasWidth = 4000;
+  static const double _canvasHeight = 3000;
+  static const double _minScale = 0.1;
+  static const double _maxScale = 5.0;
+  double _scale = 1.0; // 顯示用；實際來源 _tc.value
+
+  void _onTransformChanged() {
+    final s = _tc.value.getMaxScaleOnAxis();
+    if ((s - _scale).abs() > 0.005) {
+      setState(() => _scale = s);
+    }
+  }
+
+  void _applyScale(double target, {Offset? focal}) {
+    final clamped = target.clamp(_minScale, _maxScale);
+    final current = _tc.value.getMaxScaleOnAxis();
+    if ((clamped - current).abs() < 0.001) return;
+    final factor = clamped / current;
+    final f = focal ?? Offset(MediaQuery.of(context).size.width / 2,
+        (MediaQuery.of(context).size.height - 50) / 2);
+    _tc.value = _tc.value.clone()
+      ..translate(f.dx, f.dy)
+      ..scale(factor)
+      ..translate(-f.dx, -f.dy);
+  }
+
+  void _zoomIn() => _applyScale(_scale * 1.25);
+  void _zoomOut() => _applyScale(_scale / 1.25);
+  void _resetView() {
+    _tc.value = Matrix4.identity();
+    setState(() => _scale = 1.0);
+  }
+
+  void _onScrollZoom(PointerScrollEvent e) {
+    // 只在按住 Ctrl 時才縮放，否則讓 InteractiveViewer 走 pan（滾輪=上下卷）
+    if (!HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isMetaPressed) return;
+    final delta = -e.scrollDelta.dy;
+    final factor = delta > 0 ? 1.1 : (1 / 1.1);
+    _applyScale(_scale * factor, focal: e.localPosition);
+  }
+
   static const _stickyColors = [
     Color(0xFFFFF9C4),
     Color(0xFFB3E5FC),
@@ -412,6 +457,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
   void initState() {
     super.initState();
     ref.read(socketProvider).joinBoard(widget.boardId);
+    _tc.addListener(_onTransformChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitial());
   }
 
@@ -478,6 +524,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
       );
     }
     ref.read(socketProvider).leaveBoard(widget.boardId);
+    _tc.removeListener(_onTransformChanged);
     _tc.dispose();
     super.dispose();
   }
@@ -656,7 +703,24 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
+      body: Shortcuts(
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.equal, control: true): _ZoomInIntent(),
+          SingleActivator(LogicalKeyboardKey.add, control: true): _ZoomInIntent(),
+          SingleActivator(LogicalKeyboardKey.minus, control: true): _ZoomOutIntent(),
+          SingleActivator(LogicalKeyboardKey.numpadSubtract, control: true): _ZoomOutIntent(),
+          SingleActivator(LogicalKeyboardKey.digit0, control: true): _ResetViewIntent(),
+          SingleActivator(LogicalKeyboardKey.numpad0, control: true): _ResetViewIntent(),
+        },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            _ZoomInIntent: CallbackAction<_ZoomInIntent>(onInvoke: (_) { _zoomIn(); return null; }),
+            _ZoomOutIntent: CallbackAction<_ZoomOutIntent>(onInvoke: (_) { _zoomOut(); return null; }),
+            _ResetViewIntent: CallbackAction<_ResetViewIntent>(onInvoke: (_) { _resetView(); return null; }),
+          },
+          child: Focus(
+            autofocus: true,
+            child: Column(
         children: [
           // App bar
           Container(
@@ -671,6 +735,38 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   error: (_, __) => const Text('白板'),
                 ),
                 const Spacer(),
+                IconButton(
+                  tooltip: '縮小 (Ctrl+-)',
+                  icon: const Icon(Icons.zoom_out),
+                  onPressed: _scale <= _minScale + 0.001 ? null : _zoomOut,
+                ),
+                SizedBox(
+                  width: 52,
+                  child: Center(
+                    child: InkWell(
+                      onTap: _resetView,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Text(
+                          '${(_scale * 100).round()}%',
+                          style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '放大 (Ctrl++)',
+                  icon: const Icon(Icons.zoom_in),
+                  onPressed: _scale >= _maxScale - 0.001 ? null : _zoomIn,
+                ),
+                IconButton(
+                  tooltip: '重設檢視 (100%)',
+                  icon: const Icon(Icons.crop_free),
+                  onPressed: _resetView,
+                ),
+                Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 6)),
                 IconButton(tooltip: '復原', icon: Icon(Icons.undo, color: _undoStack.isEmpty ? Colors.grey.shade300 : null), onPressed: _undoStack.isEmpty ? null : _undo),
                 IconButton(tooltip: '重做', icon: Icon(Icons.redo, color: _redoStack.isEmpty ? Colors.grey.shade300 : null), onPressed: _redoStack.isEmpty ? null : _redo),
                 IconButton(
@@ -698,20 +794,29 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
           Expanded(
             child: Stack(
               children: [
-                InteractiveViewer(
-                  transformationController: _tc,
-                  minScale: 0.1,
-                  maxScale: 5.0,
-                  panEnabled: _currentTool == DrawingTool.select,
-                  child: GestureDetector(
-                    onPanStart: _onPanStart,
-                    onPanUpdate: _onPanUpdate,
-                    onPanEnd: _onPanEnd,
-                    onTapUp: _onTapUp,
-                    child: SizedBox(
-                      width: 4000,
-                      height: 3000,
-                      child: CustomPaint(painter: _CanvasPainter(items: _items, currentItem: _currentItem)),
+                Listener(
+                  onPointerSignal: (e) {
+                    if (e is PointerScrollEvent) _onScrollZoom(e);
+                  },
+                  child: InteractiveViewer(
+                    transformationController: _tc,
+                    minScale: _minScale,
+                    maxScale: _maxScale,
+                    // 所有工具都能用兩指 pan；select 工具額外開啟單指 pan
+                    panEnabled: _currentTool == DrawingTool.select,
+                    scaleEnabled: true,
+                    trackpadScrollCausesScale: true,
+                    boundaryMargin: const EdgeInsets.all(800),
+                    child: GestureDetector(
+                      onPanStart: _onPanStart,
+                      onPanUpdate: _onPanUpdate,
+                      onPanEnd: _onPanEnd,
+                      onTapUp: _onTapUp,
+                      child: SizedBox(
+                        width: _canvasWidth,
+                        height: _canvasHeight,
+                        child: CustomPaint(painter: _CanvasPainter(items: _items, currentItem: _currentItem)),
+                      ),
                     ),
                   ),
                 ),
@@ -842,6 +947,9 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             ),
           ),
         ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -872,6 +980,18 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     if (t == DrawingTool.text || t == DrawingTool.sticky) return '點擊畫布插入';
     if (t == DrawingTool.select) return '點擊選取，拖曳移動';
     if (t == DrawingTool.eraser) return '拖曳擦除';
-    return '拖曳繪製';
+    return '拖曳繪製 · Ctrl+滾輪縮放 · Ctrl+0 重設檢視';
   }
+}
+
+class _ZoomInIntent extends Intent {
+  const _ZoomInIntent();
+}
+
+class _ZoomOutIntent extends Intent {
+  const _ZoomOutIntent();
+}
+
+class _ResetViewIntent extends Intent {
+  const _ResetViewIntent();
 }
