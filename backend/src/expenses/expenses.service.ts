@@ -79,6 +79,9 @@ export class ExpensesService {
     const expense = await this.prisma.expense.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException('報銷單不存在');
     await this.assertPermission(userId, expense.workspaceId, 'expense.approve');
+    if (expense.submitterId === userId) {
+      throw new ForbiddenException('不可核准自己送出的報銷單');
+    }
     if (expense.status !== 'pending') {
       throw new ForbiddenException(`無法審核：目前狀態為 ${expense.status}`);
     }
@@ -112,6 +115,9 @@ export class ExpensesService {
     const expense = await this.prisma.expense.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException('報銷單不存在');
     await this.assertPermission(userId, expense.workspaceId, 'expense.approve');
+    if (expense.submitterId === userId) {
+      throw new ForbiddenException('不可退回自己送出的報銷單');
+    }
     if (expense.status !== 'pending') {
       throw new ForbiddenException(`無法拒絕：目前狀態為 ${expense.status}`);
     }
@@ -142,6 +148,9 @@ export class ExpensesService {
     const expense = await this.prisma.expense.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException('報銷單不存在');
     await this.assertPermission(userId, expense.workspaceId, 'expense.mark_paid');
+    if (expense.submitterId === userId) {
+      throw new ForbiddenException('不可為自己送出的報銷單標記付款');
+    }
     if (expense.status !== 'approved') {
       throw new ForbiddenException(`僅能為已核准的報銷單標記付款`);
     }
