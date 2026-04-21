@@ -9,6 +9,20 @@ import '../widgets/block_editor.dart';
 import '../widgets/database_view.dart';
 import '../widgets/share_page_dialog.dart';
 
+/// Docs 路線:prototype 的角色視角切換 UI(內容渲染仍走 Notion-style block editor)。
+/// 對齊 prototype OideaDocs.jsx 的 ROLES(L8–14) —— 目前純前端狀態,未影響內容。
+enum _DocRole { pm, eng, exec, external }
+
+String _docRoleLabel(_DocRole r) => const {
+      _DocRole.pm: '🧭 PM 視角',
+      _DocRole.eng: '⚙️ Eng 視角',
+      _DocRole.exec: '👔 高階視角',
+      _DocRole.external: '🌐 外部視角',
+    }[r]!;
+
+final docRoleProvider = StateProvider<_DocRole>((_) => _DocRole.pm);
+final docSearchQueryProvider = StateProvider<String>((_) => '');
+
 class NotesHomePage extends ConsumerWidget {
   const NotesHomePage({super.key});
 
@@ -45,13 +59,30 @@ class NotesHomePage extends ConsumerWidget {
   }
 }
 
-class _PageSidebar extends ConsumerWidget {
+class _PageSidebar extends ConsumerStatefulWidget {
   final String workspaceId;
   const _PageSidebar({required this.workspaceId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PageSidebar> createState() => _PageSidebarState();
+}
+
+class _PageSidebarState extends ConsumerState<_PageSidebar> {
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String get workspaceId => widget.workspaceId;
+
+  @override
+  Widget build(BuildContext context) {
     final pagesAsync = ref.watch(workspacePagesProvider(workspaceId));
+    final query = ref.watch(docSearchQueryProvider);
+    final role = ref.watch(docRoleProvider);
 
     return Column(
       children: [
@@ -103,11 +134,59 @@ class _PageSidebar extends ConsumerWidget {
                 }
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'finance', child: Text('💰 記帳（含預設欄位）')),
+                PopupMenuItem(value: 'finance', child: Text('💰 記帳(含預設欄位)')),
                 PopupMenuItem(value: 'blank', child: Text('📊 空白資料庫')),
               ],
             ),
           ],
+        ),
+        // 搜尋 + 角色切換(對齊 prototype L143–159, L308–323, L344)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+          child: Column(
+            children: [
+              TextField(
+                controller: _searchController,
+                onChanged: (v) =>
+                    ref.read(docSearchQueryProvider.notifier).state = v.trim(),
+                decoration: InputDecoration(
+                  hintText: '搜尋頁面…',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _searchController.clear();
+                            ref.read(docSearchQueryProvider.notifier).state = '';
+                          },
+                        ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: DropdownButtonFormField<_DocRole>(
+                  value: role,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  ),
+                  items: [
+                    for (final r in _DocRole.values)
+                      DropdownMenuItem(value: r, child: Text(_docRoleLabel(r))),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) ref.read(docRoleProvider.notifier).state = v;
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
         Expanded(
           child: pagesAsync.when(
@@ -125,7 +204,19 @@ class _PageSidebar extends ConsumerWidget {
                   ),
                 );
               }
-              return _PageTree(pages: list, workspaceId: workspaceId);
+              // 搜尋過濾:比對標題(含子孫的標題),命中即保留
+              final filtered = query.isEmpty
+                  ? list
+                  : list.where((p) {
+                      final t = ((p as Map)['title'] as String? ?? '').toLowerCase();
+                      return t.contains(query.toLowerCase());
+                    }).toList();
+              if (filtered.isEmpty) {
+                return const Center(
+                  child: Text('找不到符合的頁面', style: TextStyle(color: Colors.grey)),
+                );
+              }
+              return _PageTree(pages: filtered, workspaceId: workspaceId);
             },
           ),
         ),
@@ -434,6 +525,7 @@ class _PageTreeRowState extends State<_PageTreeRow> {
                   style: const TextStyle(fontSize: 14),
                 ),
               ),
+              _VisibilityBadge(visibility: widget.item['visibility'] as String?),
               // hover 時露出 + 與 ⋯
               if (_hover) ...[
                 InkWell(
@@ -548,6 +640,11 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                     style: const TextStyle(fontSize: 28),
                   ),
                   const SizedBox(width: 10),
+                  _VisibilityBadge(
+                    visibility: page['visibility'] as String?,
+                    expanded: true,
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
                       controller: _titleController,
@@ -656,6 +753,66 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('更新失敗：$e')));
       }
+    }
+  }
+}
+
+/// 頁面可見性 badge — 對齊 prototype L162–194 的 audience badges + L242–253 的 permission icon。
+/// 後端 visibility: workspace / private / restricted / inherit(繼承父層)。
+class _VisibilityBadge extends StatelessWidget {
+  final String? visibility;
+  final bool expanded;
+  const _VisibilityBadge({required this.visibility, this.expanded = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final v = visibility ?? 'inherit';
+    final (icon, label, color) = _style(v);
+    if (!expanded) {
+      return Tooltip(
+        message: label,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Icon(icon, size: 12, color: color),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: color,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  (IconData, String, Color) _style(String v) {
+    switch (v) {
+      case 'workspace':
+        return (Icons.groups_outlined, '工作空間', const Color(0xFF4F46E5));
+      case 'private':
+        return (Icons.lock_outline, '私人', const Color(0xFFEF4444));
+      case 'restricted':
+        return (Icons.shield_outlined, '限定', const Color(0xFFF59E0B));
+      case 'inherit':
+      default:
+        return (Icons.link, '繼承', Colors.grey);
     }
   }
 }

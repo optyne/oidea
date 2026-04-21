@@ -1,14 +1,21 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
+import '../../../auth/providers/auth_provider.dart';
 import '../../providers/whiteboard_provider.dart';
 
-enum DrawingTool { select, pen, line, rect, circle, text, sticky, eraser }
+enum DrawingTool { select, pen, line, arrow, rect, circle, text, sticky, eraser }
+
+enum GridStyle { line, dot, none }
 
 // ─── JSON 序列化 helper ───────────────────────────────────────────────────────
 
@@ -51,6 +58,16 @@ Map<String, dynamic> _itemToJson(CanvasItem it) {
     return {
       ...base,
       'type': 'line',
+      'x1': it.start.dx,
+      'y1': it.start.dy,
+      'x2': it.end.dx,
+      'y2': it.end.dy,
+    };
+  }
+  if (it is ArrowItem) {
+    return {
+      ...base,
+      'type': 'arrow',
       'x1': it.start.dx,
       'y1': it.start.dy,
       'x2': it.end.dx,
@@ -116,6 +133,14 @@ CanvasItem? _itemFromJson(Map<String, dynamic> j) {
         color: color,
         strokeWidth: strokeWidth,
       );
+    case 'arrow':
+      return ArrowItem(
+        id: id,
+        start: Offset((j['x1'] as num).toDouble(), (j['y1'] as num).toDouble()),
+        end: Offset((j['x2'] as num).toDouble(), (j['y2'] as num).toDouble()),
+        color: color,
+        strokeWidth: strokeWidth,
+      );
     case 'text':
       return TextItem(
         id: id,
@@ -133,6 +158,35 @@ CanvasItem? _itemFromJson(Map<String, dynamic> j) {
       );
   }
   return null;
+}
+
+// ─── Remote cursor (W-11 presence) ───────────────────────────────────────────
+
+class _RemoteCursor {
+  final String userId;
+  final String displayName;
+  final Color color;
+  final Offset position;
+  const _RemoteCursor({
+    required this.userId,
+    required this.displayName,
+    required this.color,
+    required this.position,
+  });
+}
+
+const List<Color> _kPresenceColors = [
+  Color(0xFF7C3AED),
+  Color(0xFF06B6D4),
+  Color(0xFFF59E0B),
+  Color(0xFFEF4444),
+  Color(0xFF10B981),
+  Color(0xFFEC4899),
+];
+
+Color _presenceColor(String key) {
+  final hash = key.codeUnits.fold<int>(0, (a, b) => a + b);
+  return _kPresenceColors[hash % _kPresenceColors.length];
 }
 
 // ─── Canvas items ─────────────────────────────────────────────────────────────
@@ -216,6 +270,19 @@ class LineItem extends CanvasItem {
       id: id, start: start + delta, end: end + delta, color: color, strokeWidth: strokeWidth);
 }
 
+class ArrowItem extends CanvasItem {
+  Offset start;
+  Offset end;
+  ArrowItem({required super.id, required this.start, required this.end, required super.color, required super.strokeWidth});
+
+  @override
+  Rect get bounds => Rect.fromPoints(start, end).inflate(12);
+
+  @override
+  CanvasItem copyMoved(Offset delta) => ArrowItem(
+      id: id, start: start + delta, end: end + delta, color: color, strokeWidth: strokeWidth);
+}
+
 class TextItem extends CanvasItem {
   Offset position;
   String text;
@@ -253,23 +320,79 @@ class StickyItem extends CanvasItem {
 class _CanvasPainter extends CustomPainter {
   final List<CanvasItem> items;
   final CanvasItem? currentItem;
+  final GridStyle gridStyle;
+  final List<_RemoteCursor> remoteCursors;
 
-  _CanvasPainter({required this.items, this.currentItem});
+  _CanvasPainter({
+    required this.items,
+    this.currentItem,
+    this.gridStyle = GridStyle.line,
+    this.remoteCursors = const [],
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Subtle grid
-    final gp = Paint()..color = const Color(0xFFE5E7EB)..strokeWidth = 0.5;
-    for (double x = 0; x < size.width; x += 40) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gp);
-    }
-    for (double y = 0; y < size.height; y += 40) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gp);
-    }
+    _drawGrid(canvas, size);
 
     for (final item in [...items, if (currentItem != null) currentItem!]) {
       _draw(canvas, item);
     }
+
+    // 遠端協作者游標(W-11 presence)
+    for (final c in remoteCursors) {
+      _drawRemoteCursor(canvas, c);
+    }
+  }
+
+  void _drawGrid(Canvas canvas, Size size) {
+    switch (gridStyle) {
+      case GridStyle.line:
+        final gp = Paint()..color = const Color(0xFFE5E7EB)..strokeWidth = 0.5;
+        for (double x = 0; x < size.width; x += 40) {
+          canvas.drawLine(Offset(x, 0), Offset(x, size.height), gp);
+        }
+        for (double y = 0; y < size.height; y += 40) {
+          canvas.drawLine(Offset(0, y), Offset(size.width, y), gp);
+        }
+        break;
+      case GridStyle.dot:
+        final dp = Paint()..color = const Color(0xFF4F46E5).withValues(alpha: 0.12);
+        for (double x = 0; x < size.width; x += 28) {
+          for (double y = 0; y < size.height; y += 28) {
+            canvas.drawCircle(Offset(x, y), 1.2, dp);
+          }
+        }
+        break;
+      case GridStyle.none:
+        break;
+    }
+  }
+
+  void _drawRemoteCursor(Canvas canvas, _RemoteCursor c) {
+    final path = Path()
+      ..moveTo(c.position.dx, c.position.dy)
+      ..lineTo(c.position.dx + 14, c.position.dy + 4)
+      ..lineTo(c.position.dx + 4, c.position.dy + 14)
+      ..close();
+    canvas.drawPath(path, Paint()..color = c.color);
+    final tp = TextPainter(
+      text: TextSpan(
+        text: c.displayName,
+        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final rect = Rect.fromLTWH(
+      c.position.dx + 10,
+      c.position.dy + 12,
+      tp.width + 10,
+      tp.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+      Paint()..color = c.color,
+    );
+    tp.paint(canvas, Offset(rect.left + 5, rect.top + 2));
   }
 
   void _draw(Canvas canvas, CanvasItem item) {
@@ -296,6 +419,35 @@ class _CanvasPainter extends CustomPainter {
       canvas.drawCircle(item.center, item.radius, p..style = PaintingStyle.stroke..color = item.color..strokeWidth = item.strokeWidth);
     } else if (item is LineItem) {
       canvas.drawLine(item.start, item.end, p);
+    } else if (item is ArrowItem) {
+      // 主體線
+      canvas.drawLine(item.start, item.end, p);
+      // 箭頭頭部
+      final dx = item.end.dx - item.start.dx;
+      final dy = item.end.dy - item.start.dy;
+      final angle = math.atan2(dy, dx);
+      final headLen = 10.0 + item.strokeWidth * 1.5;
+      final wing = math.pi / 7; // 約 25°
+      final tip = item.end;
+      final wing1 = Offset(
+        tip.dx - headLen * math.cos(angle - wing),
+        tip.dy - headLen * math.sin(angle - wing),
+      );
+      final wing2 = Offset(
+        tip.dx - headLen * math.cos(angle + wing),
+        tip.dy - headLen * math.sin(angle + wing),
+      );
+      final path = Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo(wing1.dx, wing1.dy)
+        ..lineTo(wing2.dx, wing2.dy)
+        ..close();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = item.color
+          ..style = PaintingStyle.fill,
+      );
     } else if (item is TextItem) {
       final tp = TextPainter(
         text: TextSpan(text: item.text, style: TextStyle(color: item.color, fontSize: item.fontSize, fontWeight: FontWeight.w500)),
@@ -371,6 +523,12 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
   bool _loaded = false;
   bool _saving = false;
   bool _dirty = false;
+
+  // W-11 背景 / 協作者游標 / 匯出
+  GridStyle _gridStyle = GridStyle.line;
+  final GlobalKey _exportKey = GlobalKey();
+  final List<_RemoteCursor> _remoteCursors = []; // 目前為 UI stub,後端 presence 事件未連
+  final List<Map<String, dynamic>> _presenceUsers = []; // 目前僅含自己
 
   // Zoom / pan state
   static const double _canvasWidth = 4000;
@@ -560,6 +718,8 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
       _currentItem = CircleItem(id: _nextId(), center: pos, radius: 0, color: _currentColor, strokeWidth: _strokeWidth);
     } else if (_currentTool == DrawingTool.line) {
       _currentItem = LineItem(id: _nextId(), start: pos, end: pos, color: _currentColor, strokeWidth: _strokeWidth);
+    } else if (_currentTool == DrawingTool.arrow) {
+      _currentItem = ArrowItem(id: _nextId(), start: pos, end: pos, color: _currentColor, strokeWidth: _strokeWidth);
     }
     setState(() {});
   }
@@ -605,6 +765,8 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
         (_currentItem as CircleItem).radius = (pos - _dragStart!).distance;
       } else if (_currentItem is LineItem) {
         (_currentItem as LineItem).end = pos;
+      } else if (_currentItem is ArrowItem) {
+        (_currentItem as ArrowItem).end = pos;
       }
     });
   }
@@ -697,6 +859,178 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     _scheduleSave();
   }
 
+  // ─── Template 套用(W-XX) ──────────────────────────────────────────────
+  // 對齊 prototype OideaWhiteboard.jsx L20–56 的三套預設模板。
+  void _applyTemplate(String kind) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    String nid() => 'tpl$now-${_idCounter++}';
+    final items = <CanvasItem>[];
+    switch (kind) {
+      case 'brainstorm':
+        items.addAll([
+          TextItem(
+            id: nid(),
+            position: const Offset(200, 120),
+            text: '🧠 腦力激盪',
+            color: const Color(0xFF0D0D1F),
+            fontSize: 28,
+          ),
+          RectItem(
+            id: nid(),
+            topLeft: const Offset(180, 180),
+            size: const Size(560, 380),
+            color: const Color(0xFF4F46E5),
+            strokeWidth: 2,
+          ),
+          StickyItem(id: nid(), position: const Offset(220, 220), text: '想法 1', bgColor: _stickyColors[0]),
+          StickyItem(id: nid(), position: const Offset(400, 220), text: '想法 2', bgColor: _stickyColors[1]),
+          StickyItem(id: nid(), position: const Offset(580, 220), text: '想法 3', bgColor: _stickyColors[2]),
+          StickyItem(id: nid(), position: const Offset(220, 400), text: '挑戰', bgColor: _stickyColors[3]),
+          StickyItem(id: nid(), position: const Offset(400, 400), text: '機會', bgColor: _stickyColors[4]),
+          StickyItem(id: nid(), position: const Offset(580, 400), text: '行動', bgColor: _stickyColors[0]),
+        ]);
+        break;
+      case 'retro':
+        const colW = 260.0;
+        for (var i = 0; i < 3; i++) {
+          final x = 200.0 + i * colW;
+          items.add(RectItem(
+            id: nid(),
+            topLeft: Offset(x, 160),
+            size: const Size(colW - 20, 460),
+            color: const Color(0xFF7C3AED),
+            strokeWidth: 1,
+          ));
+          items.add(TextItem(
+            id: nid(),
+            position: Offset(x + 12, 176),
+            text: ['✅ 做得好', '⚠️ 待改進', '💡 試試看'][i],
+            color: const Color(0xFF0D0D1F),
+            fontSize: 18,
+          ));
+        }
+        break;
+      case 'kanban':
+        const lanes = ['待辦', '進行中', '完成'];
+        for (var i = 0; i < lanes.length; i++) {
+          final x = 200.0 + i * 260;
+          items.add(TextItem(
+            id: nid(),
+            position: Offset(x, 140),
+            text: lanes[i],
+            color: const Color(0xFF0D0D1F),
+            fontSize: 18,
+          ));
+          for (var j = 0; j < 3; j++) {
+            items.add(StickyItem(
+              id: nid(),
+              position: Offset(x, 180.0 + j * 70),
+              text: '${lanes[i]} 任務 ${j + 1}',
+              bgColor: _stickyColors[(i + j) % _stickyColors.length],
+            ));
+          }
+        }
+        break;
+    }
+    if (items.isEmpty) return;
+    _saveUndo();
+    setState(() => _items.addAll(items));
+    _scheduleSave();
+  }
+
+  // ─── Export PNG(W-XX) ─────────────────────────────────────────────────
+  Future<void> _exportPng() async {
+    try {
+      final boundary = _exportKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: '匯出為 PNG',
+        fileName: 'whiteboard-${DateTime.now().millisecondsSinceEpoch}.png',
+        type: FileType.image,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (savePath != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('已匯出:$savePath')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('匯出失敗:$e')));
+      }
+    }
+  }
+
+  void _cycleGrid() {
+    setState(() {
+      _gridStyle = switch (_gridStyle) {
+        GridStyle.line => GridStyle.dot,
+        GridStyle.dot => GridStyle.none,
+        GridStyle.none => GridStyle.line,
+      };
+    });
+  }
+
+  String get _gridLabel => switch (_gridStyle) {
+        GridStyle.line => '格線',
+        GridStyle.dot => '點陣',
+        GridStyle.none => '無背景',
+      };
+
+  IconData get _gridIcon => switch (_gridStyle) {
+        GridStyle.line => Icons.grid_on,
+        GridStyle.dot => Icons.grain,
+        GridStyle.none => Icons.grid_off,
+      };
+
+  Future<void> _pickTemplate() async {
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.dashboard_customize_outlined, size: 18),
+                  SizedBox(width: 6),
+                  Text('套用範本', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Text('🧠', style: TextStyle(fontSize: 22)),
+              title: const Text('腦力激盪'),
+              subtitle: const Text('6 張便利貼 + 框架'),
+              onTap: () => Navigator.pop(ctx, 'brainstorm'),
+            ),
+            ListTile(
+              leading: const Text('🔄', style: TextStyle(fontSize: 22)),
+              title: const Text('Sprint Retrospective'),
+              subtitle: const Text('做得好 / 待改進 / 試試看'),
+              onTap: () => Navigator.pop(ctx, 'retro'),
+            ),
+            ListTile(
+              leading: const Text('📋', style: TextStyle(fontSize: 22)),
+              title: const Text('迷你 Kanban'),
+              subtitle: const Text('待辦 / 進行中 / 完成 × 3 張卡'),
+              onTap: () => Navigator.pop(ctx, 'kanban'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (kind != null) _applyTemplate(kind);
+  }
+
   @override
   Widget build(BuildContext context) {
     final boardAsync = ref.watch(whiteboardProvider(widget.boardId));
@@ -767,6 +1101,22 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   onPressed: _resetView,
                 ),
                 Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 6)),
+                IconButton(
+                  tooltip: '背景樣式($_gridLabel)',
+                  icon: Icon(_gridIcon),
+                  onPressed: _cycleGrid,
+                ),
+                IconButton(
+                  tooltip: '套用範本',
+                  icon: const Icon(Icons.dashboard_customize_outlined),
+                  onPressed: _pickTemplate,
+                ),
+                IconButton(
+                  tooltip: '匯出 PNG',
+                  icon: const Icon(Icons.file_download_outlined),
+                  onPressed: _items.isEmpty ? null : _exportPng,
+                ),
+                Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 6)),
                 IconButton(tooltip: '復原', icon: Icon(Icons.undo, color: _undoStack.isEmpty ? Colors.grey.shade300 : null), onPressed: _undoStack.isEmpty ? null : _undo),
                 IconButton(tooltip: '重做', icon: Icon(Icons.redo, color: _redoStack.isEmpty ? Colors.grey.shade300 : null), onPressed: _redoStack.isEmpty ? null : _redo),
                 IconButton(
@@ -812,10 +1162,20 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                       onPanUpdate: _onPanUpdate,
                       onPanEnd: _onPanEnd,
                       onTapUp: _onTapUp,
-                      child: SizedBox(
-                        width: _canvasWidth,
-                        height: _canvasHeight,
-                        child: CustomPaint(painter: _CanvasPainter(items: _items, currentItem: _currentItem)),
+                      child: RepaintBoundary(
+                        key: _exportKey,
+                        child: SizedBox(
+                          width: _canvasWidth,
+                          height: _canvasHeight,
+                          child: CustomPaint(
+                            painter: _CanvasPainter(
+                              items: _items,
+                              currentItem: _currentItem,
+                              gridStyle: _gridStyle,
+                              remoteCursors: _remoteCursors,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -854,10 +1214,20 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   ),
                 ),
 
-                // Color panel (right)
+                // Presence card (right, 對齊 prototype L374–381)
                 Positioned(
                   right: 12,
                   top: 12,
+                  child: _PresenceCard(
+                    users: _presenceUsers,
+                    self: ref.read(authStateProvider),
+                  ),
+                ),
+
+                // Color panel (right, 下移以避開 presence card)
+                Positioned(
+                  right: 12,
+                  top: 60,
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -958,6 +1328,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     DrawingTool.select: Icons.near_me,
     DrawingTool.pen: Icons.edit,
     DrawingTool.line: Icons.horizontal_rule,
+    DrawingTool.arrow: Icons.arrow_forward,
     DrawingTool.rect: Icons.crop_square,
     DrawingTool.circle: Icons.circle_outlined,
     DrawingTool.text: Icons.text_fields,
@@ -969,6 +1340,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
     DrawingTool.select: '選取 / 移動',
     DrawingTool.pen: '畫筆',
     DrawingTool.line: '直線',
+    DrawingTool.arrow: '箭頭 / 連接線',
     DrawingTool.rect: '矩形',
     DrawingTool.circle: '圓形',
     DrawingTool.text: '文字',
@@ -994,4 +1366,97 @@ class _ZoomOutIntent extends Intent {
 
 class _ResetViewIntent extends Intent {
   const _ResetViewIntent();
+}
+
+// ─── Presence card(W-11) ─────────────────────────────────────────────────────
+// 顯示當前在線協作者;後端 presence 事件尚未接上,目前僅顯示自己。
+class _PresenceCard extends StatelessWidget {
+  final List<Map<String, dynamic>> users;
+  final AuthState self;
+  const _PresenceCard({required this.users, required this.self});
+
+  @override
+  Widget build(BuildContext context) {
+    final all = <Map<String, dynamic>>[
+      if (self.userId != null)
+        {
+          'id': self.userId,
+          'displayName': self.displayName ?? self.email ?? 'You',
+          'isSelf': true,
+        },
+      ...users,
+    ];
+    if (all.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '線上 ${all.length}',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 8),
+          for (final u in all.take(4))
+            Padding(
+              padding: const EdgeInsets.only(left: 2),
+              child: _PresenceAvatar(
+                name: u['displayName'] as String? ?? '?',
+                color: _presenceColor(u['id'] as String? ?? u['displayName'] as String? ?? 'x'),
+                isSelf: u['isSelf'] == true,
+              ),
+            ),
+          if (all.length > 4)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text('+${all.length - 4}',
+                  style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PresenceAvatar extends StatelessWidget {
+  final String name;
+  final Color color;
+  final bool isSelf;
+  const _PresenceAvatar({required this.name, required this.color, required this.isSelf});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: isSelf ? '$name(你)' : name,
+      child: Container(
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 1.5),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          name.isNotEmpty ? name.characters.first.toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
 }
