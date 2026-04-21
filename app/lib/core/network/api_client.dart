@@ -496,6 +496,51 @@ class ApiClient {
     return res.data!;
   }
 
+  Future<void> removeMember(String workspaceId, String userId) async {
+    await _dio.delete('workspaces/$workspaceId/members/$userId');
+  }
+
+  // ─────────────────────── 工作空間邀請連結 ───────────────────────
+
+  /// 管理端：建邀請連結，回傳含 token 的記錄。
+  Future<Map<String, dynamic>> createWorkspaceInvite(
+    String workspaceId, {
+    String? email,
+    String role = 'member',
+    int expiresInDays = 7,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'workspaces/$workspaceId/invites',
+      data: {
+        if (email != null && email.isNotEmpty) 'email': email,
+        'role': role,
+        'expiresInDays': expiresInDays,
+      },
+    );
+    return res.data!;
+  }
+
+  Future<List<dynamic>> listWorkspaceInvites(String workspaceId) async {
+    final res = await _dio.get<List<dynamic>>('workspaces/$workspaceId/invites');
+    return res.data ?? [];
+  }
+
+  Future<void> revokeWorkspaceInvite(String workspaceId, String inviteId) async {
+    await _dio.delete('workspaces/$workspaceId/invites/$inviteId');
+  }
+
+  /// 使用者端：無需登入就能 peek 邀請內容（landing page 用）。
+  Future<Map<String, dynamic>> peekInvite(String token) async {
+    final res = await _dio.get<Map<String, dynamic>>('invites/$token');
+    return res.data!;
+  }
+
+  /// 使用者端：接受邀請（需登入）。
+  Future<Map<String, dynamic>> acceptInvite(String token) async {
+    final res = await _dio.post<Map<String, dynamic>>('invites/$token/accept');
+    return res.data!;
+  }
+
   // ─────────────────────── ERP：費用報銷 ───────────────────────
 
   Future<Map<String, dynamic>> createExpense(Map<String, dynamic> body) async {

@@ -19,6 +19,7 @@ import '../../features/erp/presentation/pages/expenses_page.dart';
 import '../../features/erp/presentation/pages/leaves_page.dart';
 import '../../features/erp/presentation/pages/members_page.dart';
 import '../../features/notes/presentation/pages/notes_home_page.dart';
+import '../../features/workspace/presentation/pages/invite_landing_page.dart';
 import '../../shared/pages/main_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -27,17 +28,26 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/chat',
     redirect: (context, state) {
-      final isLoggingIn = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/register';
+      final loc = state.matchedLocation;
+      final isLoggingIn = loc == '/login' || loc == '/register';
+      // /invite/:token 是公開入口，未登入也可以看邀請資訊（landing page 自己引導登入）
+      final isPublicInvite = loc.startsWith('/invite/');
       final isAuthenticated = authState.isAuthenticated;
 
-      if (!isAuthenticated && !isLoggingIn) return '/login';
+      if (!isAuthenticated && !isLoggingIn && !isPublicInvite) return '/login';
+      // 登入後若是從邀請連結過來，由 login / register 頁處理 redirect query
       if (isAuthenticated && isLoggingIn) return '/chat';
       return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
       GoRoute(path: '/register', builder: (context, state) => const RegisterPage()),
+      GoRoute(
+        path: '/invite/:token',
+        builder: (context, state) => InviteLandingPage(
+          token: state.pathParameters['token']!,
+        ),
+      ),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [
