@@ -114,7 +114,15 @@ export class MessagesService {
     return { broadcastId, messages };
   }
 
-  /** 解析 `@username` 並建立 Mention 記錄與通知。解析範圍限於同工作空間成員。 */
+  /**
+   * 解析兩種 mention 格式：
+   *   - 結構化 `@[DisplayName](userId)` —— autocomplete 產生，userId 精確
+   *   - 舊式 `@username` —— 純文字，透過 DB 查詢解析
+   * 兩者合併去重後建立 Mention 記錄 + 通知。範圍限同工作空間成員。
+   *
+   * 若同一訊息已有某使用者的 Mention（例：edit 重入），Prisma 沒有 unique 約束，
+   * 會插入第二筆；我們在插前查一次以避免重複通知。
+   */
   private async handleMentions(
     messageId: string,
     channelId: string,
@@ -123,10 +131,25 @@ export class MessagesService {
     senderDisplayName: string,
   ) {
     if (!content) return;
-    const usernames = Array.from(
-      new Set(Array.from(content.matchAll(/@([A-Za-z0-9_]{2,32})/g), (m) => m[1])),
+
+    // 1. 結構化 mention → 直接拿到 userId
+    const structuredIds = Array.from(
+      new Set(
+        Array.from(content.matchAll(/@\[[^\]]+\]\(([^)]+)\)/g), (m) => m[1]),
+      ),
     );
-    if (usernames.length === 0) return;
+
+    // 2. 舊式 `@username` → 需透過 DB 反查
+    // 注意：要排除掉已經被結構化 mention 吃掉的部分。把結構化段先抽掉再 match
+    // 是最穩的做法：
+    const withoutStructured = content.replace(/@\[[^\]]+\]\([^)]+\)/g, ' ');
+    const usernames = Array.from(
+      new Set(
+        Array.from(withoutStructured.matchAll(/@([A-Za-z0-9_]{2,32})/g), (m) => m[1]),
+      ),
+    );
+
+    if (structuredIds.length === 0 && usernames.length === 0) return;
 
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
@@ -134,29 +157,53 @@ export class MessagesService {
     });
     if (!channel) return;
 
-    const users = await this.prisma.user.findMany({
-      where: {
-        username: { in: usernames },
-        workspaceMembers: { some: { workspaceId: channel.workspaceId } },
-      },
-      select: { id: true },
-    });
+    // 驗證結構化 ids 真的屬於同一 workspace；防止偽造 userId 把通知打給外人
+    const structuredUsers = structuredIds.length === 0
+      ? []
+      : await this.prisma.user.findMany({
+          where: {
+            id: { in: structuredIds },
+            workspaceMembers: { some: { workspaceId: channel.workspaceId } },
+          },
+          select: { id: true },
+        });
 
-    for (const u of users) {
-      if (u.id === senderId) continue;
-      try {
-        await this.prisma.mention.create({ data: { messageId, userId: u.id } });
-      } catch {
-        // 重複 mention（理論上不會出現，因為 usernames 已去重）忽略
-      }
+    const usernameUsers = usernames.length === 0
+      ? []
+      : await this.prisma.user.findMany({
+          where: {
+            username: { in: usernames },
+            workspaceMembers: { some: { workspaceId: channel.workspaceId } },
+          },
+          select: { id: true },
+        });
+
+    const userIds = Array.from(
+      new Set([...structuredUsers.map((u) => u.id), ...usernameUsers.map((u) => u.id)]),
+    );
+
+    for (const uid of userIds) {
+      if (uid === senderId) continue;
+      // 冪等：edit 重入時不要重複插入 / 重複通知
+      const existing = await this.prisma.mention.findFirst({
+        where: { messageId, userId: uid },
+        select: { id: true },
+      });
+      if (existing) continue;
+      await this.prisma.mention.create({ data: { messageId, userId: uid } });
       await this.notifications.create({
-        userId: u.id,
+        userId: uid,
         type: 'mention',
         title: `${senderDisplayName} 在 #${channel.name} 提及你`,
-        content: content.slice(0, 140),
+        content: this.stripMentionTokensForPreview(content).slice(0, 140),
         link: `/chat/channel/${channelId}?messageId=${messageId}`,
       });
     }
+  }
+
+  /** 通知 preview 不要顯示 `@[Name](uid)` 原始 token；換成 `@Name`。 */
+  private stripMentionTokensForPreview(content: string): string {
+    return content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
   }
 
   async findByChannel(userId: string, channelId: string, cursor?: string, limit: number = 50) {
@@ -218,7 +265,7 @@ export class MessagesService {
     if (!message) throw new NotFoundException('訊息不存在');
     if (message.senderId !== userId) throw new ForbiddenException('僅能編輯自己的訊息');
 
-    return this.prisma.message.update({
+    const updated = await this.prisma.message.update({
       where: { id: messageId },
       data: { content, editedAt: new Date() },
       include: {
@@ -227,6 +274,17 @@ export class MessagesService {
         },
       },
     });
+
+    // 編輯後若有新 mention，補建 Mention + 通知。handleMentions 內有冪等檢查，
+    // 不會對既有 mention 再發通知。
+    await this.handleMentions(
+      updated.id,
+      updated.channelId,
+      content,
+      userId,
+      updated.sender.displayName,
+    );
+    return updated;
   }
 
   async delete(userId: string, messageId: string) {
