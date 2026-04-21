@@ -138,9 +138,54 @@ Dokploy Application → **Webhooks** 建一個 → 把 URL 加到 GitHub repo Se
 **B. 手動**  
 在 Dokploy UI 點 **Redeploy**。migration 會自動跑；已套用的會跳過。
 
-## 5. Flutter App 連線
+## 5. 部署 Flutter Web（瀏覽器版）
 
-重建 APK 指向生產 API：
+同一個 repo 的 `app/Dockerfile` 會把 Flutter Web 編出來用 nginx serve，可以在 Dokploy 再開一個 Application：
+
+### 建立
+**+ Create Service** → **Application**：
+
+| 欄位 | 填什麼 |
+|---|---|
+| Name | `oidea-web` |
+| Source Type | **Git** |
+| Repository | `https://github.com/optyne/oidea` |
+| Branch | `main` |
+| Build Type | **Dockerfile** |
+| Dockerfile | `app/Dockerfile` |
+| Build Context | `app` |
+
+### Build Arguments（不是 Environment！）
+Application → **Advanced** → **Build Arguments**：
+
+```
+API_URL=https://api.oidea.example.com
+WS_URL=https://api.oidea.example.com
+```
+
+⚠️ **build-time 決定，之後不能在 runtime 改**。換 API 網域 → 得重 build。
+
+### 網域
+**Domains** → Add：
+- Host: `app.oidea.example.com`（前端網域）
+- Port: `80`
+- HTTPS: 勾 → Let's Encrypt
+
+### CORS 必須回頭設 backend
+前端網域確定後，去 `oidea-backend` Application → **Environment** → 改 `CORS_ORIGIN`：
+
+```env
+CORS_ORIGIN=https://app.oidea.example.com
+```
+
+改完 backend 按 **Redeploy** 讓新 CORS 生效。**沒做這步瀏覽器打 API 會被擋。**
+
+### 部署
+右上 **Deploy**。第一次 build 需 3-5 分鐘（Flutter image 比較大，約 2GB）。完成後瀏覽器開 `https://app.oidea.example.com` 應該看到登入畫面。
+
+---
+
+## 6. 重建行動裝置 APK 指向生產 API
 
 ```bash
 cd app
