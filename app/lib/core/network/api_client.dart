@@ -446,6 +446,51 @@ class ApiClient {
     return res.data ?? [];
   }
 
+  /// C-16 跨頻道廣播 — 同一內容送到多個頻道。
+  Future<List<dynamic>> broadcastMessages({
+    required List<String> channelIds,
+    required String content,
+    String type = 'text',
+    Map<String, dynamic>? metadata,
+  }) async {
+    final res = await _dio.post<List<dynamic>>(
+      'messages/broadcast',
+      data: {
+        'channelIds': channelIds,
+        'content': content,
+        'type': type,
+        if (metadata != null) 'metadata': metadata,
+      },
+    );
+    return res.data ?? [];
+  }
+
+  /// C-18 將訊息轉為任務。
+  Future<Map<String, dynamic>> convertMessageToTask(
+    String messageId, {
+    required String projectId,
+    required String columnId,
+    String? title,
+    String? description,
+    String? priority,
+    String? dueDate,
+    String? assigneeId,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'messages/$messageId/convert-to-task',
+      data: {
+        'projectId': projectId,
+        'columnId': columnId,
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (priority != null) 'priority': priority,
+        if (dueDate != null) 'dueDate': dueDate,
+        if (assigneeId != null) 'assigneeId': assigneeId,
+      },
+    );
+    return res.data!;
+  }
+
   // ─────────────────────── 知識庫（Notion 風）───────────────────────
 
   Future<Map<String, dynamic>> createKnowledgePage(Map<String, dynamic> body) async {
