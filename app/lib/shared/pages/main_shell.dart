@@ -39,7 +39,9 @@ class MainShell extends ConsumerWidget {
   final Widget child;
   const MainShell({super.key, required this.child});
 
-  static const double _mobileBreakpoint = 720;
+  /// 寬度低於此值才走底部 NavigationBar 的窄版。
+  /// 原本是 720 對手機太嚴格,很多瀏覽器視窗(split view、小螢幕)都被切到窄版 → 看不到側欄。
+  static const double _mobileBreakpoint = 600;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -125,6 +127,10 @@ class _CompactShell extends ConsumerWidget {
     final tabIndex = ref.watch(currentTabProvider);
 
     return Scaffold(
+      // 窄版也讓側欄能叫出來:各 feature 頁面的 AppBar 會自動取得漢堡 icon。
+      drawer: const Drawer(
+        child: SafeArea(child: OideaSidebar()),
+      ),
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: tabIndex,
