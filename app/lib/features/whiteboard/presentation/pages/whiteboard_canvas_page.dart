@@ -523,6 +523,9 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
   bool _loaded = false;
   bool _saving = false;
   bool _dirty = false;
+  DateTime? _lastSavedAt;
+  String? _lastSaveError;
+  static const Duration _saveDebounceDuration = Duration(milliseconds: 800);
 
   // W-11 背景 / 協作者游標 / 匯出
   GridStyle _gridStyle = GridStyle.line;
@@ -653,22 +656,50 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
   void _scheduleSave() {
     if (!_loaded) return; // 還沒載完就別存，避免用空陣列覆蓋
     _dirty = true;
+    if (mounted) setState(() {}); // 讓頂部「儲存中」指示亮起
     _saveDebounce?.cancel();
-    _saveDebounce = Timer(const Duration(milliseconds: 1500), _flushSave);
+    _saveDebounce = Timer(_saveDebounceDuration, _flushSave);
   }
 
+  /// 立刻 flush(忽略 debounce);保留 retry:若 saving 中則等結束再 flush 一次。
   Future<void> _flushSave() async {
-    if (_saving || !_dirty) return;
+    if (_saving) {
+      // 正在存的中途又有新編輯;等結束後我們會被再次呼叫。這裡先把狀態反映上去。
+      return;
+    }
+    if (!_dirty) return;
+    _saveDebounce?.cancel();
     _saving = true;
     _dirty = false;
+    final payload = _items.map(_itemToJson).toList();
     try {
-      final payload = _items.map(_itemToJson).toList();
       await ref.read(apiClientProvider).saveWhiteboardCanvas(widget.boardId, payload);
-    } catch (_) {
+      _lastSavedAt = DateTime.now();
+      _lastSaveError = null;
+    } catch (e) {
       _dirty = true; // 下次再試
+      _lastSaveError = e.toString();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('白板儲存失敗:$e')));
+      }
     } finally {
       _saving = false;
+      if (mounted) setState(() {});
+      // 若在 save 的過程中又髒了(_dirty 重新為 true),馬上再存一次
+      if (_dirty && mounted) {
+        unawaited(_flushSave());
+      }
     }
+  }
+
+  /// 返回前同步 flush,避免 dispose fire-and-forget 被打斷。
+  Future<void> _flushAndPop() async {
+    _saveDebounce?.cancel();
+    if (_dirty) {
+      await _flushSave();
+    }
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -1062,11 +1093,19 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             color: Colors.grey.shade100,
             child: Row(
               children: [
-                IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
+                IconButton(icon: const Icon(Icons.arrow_back), onPressed: _flushAndPop),
                 boardAsync.when(
                   data: (b) => Text(b['title'] ?? '白板', style: const TextStyle(fontWeight: FontWeight.w600)),
                   loading: () => const Text('載入中...'),
                   error: (_, __) => const Text('白板'),
+                ),
+                const SizedBox(width: 10),
+                _SaveStatus(
+                  saving: _saving,
+                  dirty: _dirty,
+                  lastSavedAt: _lastSavedAt,
+                  lastError: _lastSaveError,
+                  onRetry: _flushSave,
                 ),
                 const Spacer(),
                 IconButton(
@@ -1425,6 +1464,78 @@ class _PresenceCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+// 頂欄儲存狀態:儲存中 / 已儲存 X 秒前 / 錯誤(可點擊重試)
+class _SaveStatus extends StatelessWidget {
+  final bool saving;
+  final bool dirty;
+  final DateTime? lastSavedAt;
+  final String? lastError;
+  final Future<void> Function() onRetry;
+  const _SaveStatus({
+    required this.saving,
+    required this.dirty,
+    required this.lastSavedAt,
+    required this.lastError,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (lastError != null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onRetry,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.error_outline, size: 14, color: Color(0xFFEF4444)),
+              SizedBox(width: 4),
+              Text(
+                '儲存失敗 · 點擊重試',
+                style: TextStyle(fontSize: 11, color: Color(0xFFEF4444), fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (saving) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(strokeWidth: 1.5),
+          ),
+          SizedBox(width: 4),
+          Text('儲存中…', style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
+      );
+    }
+    if (dirty) {
+      return const Text('未儲存的變更', style: TextStyle(fontSize: 11, color: Colors.grey));
+    }
+    if (lastSavedAt == null) return const SizedBox.shrink();
+    final diff = DateTime.now().difference(lastSavedAt!);
+    final label = diff.inSeconds < 5
+        ? '已儲存'
+        : diff.inMinutes < 1
+            ? '${diff.inSeconds} 秒前儲存'
+            : '${diff.inMinutes} 分鐘前儲存';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.cloud_done_outlined, size: 12, color: Color(0xFF10B981)),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ],
     );
   }
 }
