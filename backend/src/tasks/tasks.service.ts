@@ -5,6 +5,7 @@ import { AutomationEngine } from '../automation/automation.engine';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { extractMentionTokens, stripMentionTokensForPreview } from '../common/mentions.util';
 
 @Injectable()
 export class TasksService {
@@ -266,7 +267,15 @@ export class TasksService {
   }
 
   async addComment(userId: string, taskId: string, content: string) {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      select: {
+        id: true,
+        title: true,
+        projectId: true,
+        project: { select: { workspaceId: true } },
+      },
+    });
     if (!task) throw new NotFoundException('任務不存在');
 
     const comment = await this.prisma.taskComment.create({
@@ -277,8 +286,69 @@ export class TasksService {
     });
 
     await this.logActivity(taskId, userId, 'commented', { content });
+    // Fire 提及通知（無 Mention row —— schema 的 Mention 綁 Message；只發 notification）
+    await this.notifyMentions(
+      taskId,
+      task.title,
+      task.projectId,
+      task.project.workspaceId,
+      content,
+      userId,
+      comment.user.displayName,
+    );
 
     return comment;
+  }
+
+  /**
+   * Task comment 的 @mention 通知。與 MessagesService.handleMentions 類似但：
+   *   - 不建立 Mention 記錄（schema 的 Mention 目前只綁 Message）
+   *   - 通知 link 指向 task detail
+   * 若未來 schema 延伸支援 TaskComment mention，這裡可一併寫入 row。
+   */
+  private async notifyMentions(
+    taskId: string,
+    taskTitle: string,
+    projectId: string,
+    workspaceId: string,
+    content: string,
+    senderId: string,
+    senderDisplayName: string,
+  ) {
+    const { structuredIds, usernames } = extractMentionTokens(content);
+    if (structuredIds.length === 0 && usernames.length === 0) return;
+
+    const structured = structuredIds.length === 0
+      ? []
+      : await this.prisma.user.findMany({
+          where: {
+            id: { in: structuredIds },
+            workspaceMembers: { some: { workspaceId } },
+          },
+          select: { id: true },
+        });
+    const byName = usernames.length === 0
+      ? []
+      : await this.prisma.user.findMany({
+          where: {
+            username: { in: usernames },
+            workspaceMembers: { some: { workspaceId } },
+          },
+          select: { id: true },
+        });
+    const userIds = Array.from(
+      new Set([...structured.map((u) => u.id), ...byName.map((u) => u.id)]),
+    );
+    for (const uid of userIds) {
+      if (uid === senderId) continue;
+      await this.notifications.create({
+        userId: uid,
+        type: 'mention',
+        title: `${senderDisplayName} 在任務「${taskTitle}」中提及你`,
+        content: stripMentionTokensForPreview(content).slice(0, 140),
+        link: `/projects/board/${projectId}/task/${taskId}`,
+      });
+    }
   }
 
   async addSubtask(taskId: string, title: string) {
