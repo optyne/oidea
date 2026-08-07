@@ -35,7 +35,7 @@ class AuthHeroPanel extends StatelessWidget {
             child: _Blob(size: 120, opacity: 0.08),
           ),
           Center(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(52),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -111,10 +111,12 @@ class _FeatureRow extends StatelessWidget {
             child: Icon(icon, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 14),
-          Text(
-            label,
-            style: TextStyle(
-                color: Colors.white.withOpacity(0.9), fontSize: 15),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.9), fontSize: 15),
+            ),
           ),
         ],
       ),

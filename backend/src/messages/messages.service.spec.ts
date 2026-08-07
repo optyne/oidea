@@ -7,6 +7,9 @@ import {
 import { MessagesService } from './messages.service';
 import { MessagesGateway } from './messages.gateway';
 import { PrismaService } from '../common/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+const buildNotificationsMock = () => ({ create: jest.fn().mockResolvedValue({}) });
 
 type PrismaMock = {
   channel: { findMany: jest.Mock };
@@ -53,6 +56,7 @@ describe('MessagesService.broadcast (C-16)', () => {
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         { provide: MessagesGateway, useValue: gateway },
+        { provide: NotificationsService, useValue: buildNotificationsMock() },
       ],
     }).compile();
 
@@ -240,6 +244,7 @@ describe('MessagesService.convertToTask (C-18)', () => {
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         { provide: MessagesGateway, useValue: buildGatewayMock() },
+        { provide: NotificationsService, useValue: buildNotificationsMock() },
       ],
     }).compile();
     service = module.get(MessagesService);
