@@ -54,8 +54,19 @@ class PencilCanvasNativeView: NSObject, FlutterPlatformView, PKCanvasViewDelegat
     DispatchQueue.main.async { [weak self] in _ = self?.canvasView.becomeFirstResponder() }
 
     channel.setMethodCallHandler { [weak self] call, result in
-      self?.handle(call, result: result)
+      guard let self else {
+        result(FlutterError(code: "disposed", message: "畫布已釋放", details: nil))
+        return
+      }
+      self.handle(call, result: result)
     }
+  }
+
+  deinit {
+    channel.setMethodCallHandler(nil)
+    toolPicker.setVisible(false, forFirstResponder: canvasView)
+    toolPicker.removeObserver(canvasView)
+    canvasView.resignFirstResponder()
   }
 
   func view() -> UIView { canvasView }
