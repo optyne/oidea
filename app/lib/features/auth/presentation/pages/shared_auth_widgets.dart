@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
+
 // ─── Hero Panels ─────────────────────────────────────────────────────────────
 
 /// Full-height hero panel for wide (desktop/tablet) layout.
@@ -20,58 +22,57 @@ class AuthHeroPanel extends StatelessWidget {
       child: Stack(
         children: [
           // Decorative blobs
-          Positioned(
-            top: -80, right: -80,
+          const Positioned(
+            top: -80,
+            right: -80,
             child: _Blob(size: 260, opacity: 0.10),
           ),
-          Positioned(
-            bottom: -100, left: -60,
+          const Positioned(
+            bottom: -100,
+            left: -60,
             child: _Blob(size: 340, opacity: 0.07),
           ),
-          Positioned(
-            top: '40%'.contains('%') ? null : 0,
+          const Positioned(
             bottom: 200,
             left: 60,
             child: _Blob(size: 120, opacity: 0.08),
           ),
           Center(
+            // Scrolls rather than overflows when the viewport is short — at
+            // 800x600 the un-scrollable version clipped by 17px.
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(52),
+              padding: const EdgeInsets.all(OideaSpace.space12),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Logo
                   Container(
-                    width: 76,
-                    height: 76,
+                    width: OideaSpace.space16 + OideaSpace.space3,
+                    height: OideaSpace.space16 + OideaSpace.space3,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.18),
-                      borderRadius: BorderRadius.circular(22),
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: OideaRadius.xlAll,
                     ),
-                    child: const Icon(Icons.hub_rounded,
-                        size: 44, color: Colors.white),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Oidea',
-                    style: TextStyle(
+                    child: const Icon(
+                      Icons.hub_rounded,
+                      size: OideaSpace.space10 + OideaSpace.space1,
                       color: Colors.white,
-                      fontSize: 44,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -1.5,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: OideaSpace.space6),
+                  Text(
+                    'Oidea',
+                    style: OideaType.display.copyWith(color: Colors.white),
+                  ),
+                  const SizedBox(height: OideaSpace.space3),
                   Text(
                     '整合通訊、專案管理、\n會議排程與白板協作的\n全方位工作平台。',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.82),
-                      fontSize: 17,
-                      height: 1.65,
+                    style: OideaType.bodyLg.copyWith(
+                      color: Colors.white.withValues(alpha: 0.82),
                     ),
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: OideaSpace.space12),
                   ..._features.map((f) => _FeatureRow(icon: f.$1, label: f.$2)),
                 ],
               ),
@@ -98,24 +99,31 @@ class _FeatureRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       child: Row(
         children: [
           Container(
-            width: 38,
-            height: 38,
+            width: OideaSpace.space10,
+            height: OideaSpace.space10,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(11),
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: OideaRadius.mdAll,
             ),
-            child: Icon(icon, color: Colors.white, size: 20),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: OideaSize.iconMd,
+            ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: OideaSpace.space3),
+          // Expanded, otherwise a long Chinese label overflows the row — the
+          // panel is only 216px wide at the narrow breakpoint.
           Expanded(
             child: Text(
               label,
-              style: TextStyle(
-                  color: Colors.white.withOpacity(0.9), fontSize: 15),
+              style: OideaType.body.copyWith(
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
             ),
           ),
         ],
@@ -136,7 +144,7 @@ class _Blob extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(opacity),
+        color: Colors.white.withValues(alpha: opacity),
       ),
     );
   }
@@ -156,44 +164,45 @@ class AuthCompactHero extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [Color(0xFF4338CA), Color(0xFF6D28D9)],
         ),
-        borderRadius:
-            BorderRadius.vertical(bottom: Radius.circular(36)),
+        borderRadius: BorderRadius.vertical(
+          bottom: Radius.circular(OideaRadius.xl),
+        ),
       ),
       child: Stack(
         children: [
-          Positioned(
-              top: -40, right: -40,
-              child: _Blob(size: 160, opacity: 0.1)),
+          const Positioned(
+            top: -40,
+            right: -40,
+            child: _Blob(size: 160, opacity: 0.1),
+          ),
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 60,
-                  height: 60,
+                  width: OideaSpace.space16,
+                  height: OideaSpace.space16,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: OideaRadius.lgAll,
                   ),
-                  child: const Icon(Icons.hub_rounded,
-                      size: 36, color: Colors.white),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Oidea',
-                  style: TextStyle(
+                  child: const Icon(
+                    Icons.hub_rounded,
+                    size: OideaSpace.space8,
                     color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: OideaSpace.space3),
+                Text(
+                  'Oidea',
+                  style: OideaType.h1.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: OideaSpace.space1),
                 Text(
                   '全方位協作平台',
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 14),
+                  style: OideaType.body.copyWith(
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
                 ),
               ],
             ),
@@ -206,11 +215,16 @@ class AuthCompactHero extends StatelessWidget {
 
 // ─── Form components ──────────────────────────────────────────────────────────
 
+/// A labelled text field.
+///
+/// The label sits *above* the input rather than floating inside it, and there
+/// is no leading icon. Both are deliberate: a floating label reflows on focus
+/// and an icon inside the box eats horizontal room that Chinese labels need.
+/// Together they are most of what separates this from a stock Material form.
 class AuthTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String? hint;
-  final IconData icon;
   final bool obscureText;
   final Widget? suffixIcon;
   final TextInputType? keyboardType;
@@ -223,7 +237,6 @@ class AuthTextField extends StatelessWidget {
     super.key,
     required this.controller,
     required this.label,
-    required this.icon,
     this.hint,
     this.obscureText = false,
     this.suffixIcon,
@@ -237,57 +250,68 @@ class AuthTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      autofillHints: autofillHints,
-      validator: validator,
-      onFieldSubmitted: onFieldSubmitted,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-        prefixIcon: Icon(icon, size: 20),
-        suffixIcon: suffixIcon,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+    final textPrimary =
+        isDark ? OideaTokens.darkTextPrimary : OideaTokens.lightTextPrimary;
+    final tertiary =
+        isDark ? OideaTokens.darkTextTertiary : OideaTokens.lightTextTertiary;
+    final fieldBorder =
+        isDark ? OideaTokens.darkInputBorder : OideaTokens.lightInputBorder;
+    final fieldFill =
+        isDark ? const Color(0xFF16162A) : OideaTokens.lightSurface;
+
+    OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
+          borderRadius: OideaRadius.mdAll,
+          borderSide: BorderSide(color: color, width: width),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: OideaType.label.copyWith(color: textPrimary)),
+        const SizedBox(height: OideaSpace.space2),
+        TextFormField(
+          controller: controller,
+          obscureText: obscureText,
+          keyboardType: keyboardType,
+          autofillHints: autofillHints,
+          validator: validator,
+          onFieldSubmitted: onFieldSubmitted,
+          onChanged: onChanged,
+          style: OideaType.body.copyWith(color: textPrimary),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: OideaType.body.copyWith(color: tertiary),
+            suffixIcon: suffixIcon,
+            filled: true,
+            fillColor: fieldFill,
+            border: border(fieldBorder, 1),
+            enabledBorder: border(fieldBorder, 1),
+            focusedBorder: border(OideaTokens.accent, 1.5),
+            errorBorder: border(OideaTokens.danger, 1),
+            focusedErrorBorder: border(OideaTokens.danger, 1.5),
+            errorStyle: OideaType.caption.copyWith(color: OideaTokens.danger),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: OideaSpace.space4,
+              vertical: OideaSpace.space3,
+            ),
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide:
-              const BorderSide(color: Color(0xFF4F46E5), width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.red),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide:
-              const BorderSide(color: Colors.red, width: 2),
-        ),
-        filled: true,
-        fillColor: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF9FAFB),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-      ),
+      ],
     );
   }
 }
 
-class AuthGradientButton extends StatelessWidget {
+/// The primary call to action on the auth screens.
+///
+/// Solid accent rather than the previous indigo-to-violet gradient with a
+/// glow. The gradient read as a consumer app; a single flat brand colour reads
+/// as a tool, and it keeps the button legible against the tinted hero panel.
+class AuthPrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool loading;
   final String label;
 
-  const AuthGradientButton({
+  const AuthPrimaryButton({
     super.key,
     required this.onPressed,
     required this.label,
@@ -296,52 +320,35 @@ class AuthGradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final disabledBg =
+        isDark ? OideaTokens.darkColBg : const Color(0xFFE2E2EC);
+    final disabledFg =
+        isDark ? OideaTokens.darkTextTertiary : OideaTokens.lightTextTertiary;
     final disabled = onPressed == null;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      height: 52,
-      decoration: BoxDecoration(
-        gradient: disabled
-            ? null
-            : const LinearGradient(
-                colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)]),
-        color: disabled ? Colors.grey.shade300 : null,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: disabled
-            ? null
-            : [
-                const BoxShadow(
-                  color: Color(0x554F46E5),
-                  blurRadius: 14,
-                  offset: Offset(0, 5),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(12),
-          child: Center(
-            child: loading
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2.5),
-                  )
-                : Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: disabled ? Colors.grey.shade500 : Colors.white,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-          ),
+
+    return SizedBox(
+      height: OideaSize.controlHeight + OideaSpace.space2,
+      child: FilledButton(
+        onPressed: loading ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: disabled ? disabledBg : OideaTokens.accent,
+          foregroundColor: disabled ? disabledFg : Colors.white,
+          disabledBackgroundColor: disabledBg,
+          disabledForegroundColor: disabledFg,
+          elevation: 0,
+          shape: const RoundedRectangleBorder(borderRadius: OideaRadius.mdAll),
         ),
+        child: loading
+            ? const SizedBox(
+                width: OideaSize.iconMd,
+                height: OideaSize.iconMd,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
+            : Text(label, style: OideaType.button),
       ),
     );
   }
@@ -353,27 +360,33 @@ class AuthErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? OideaTokens.dangerBgDark : OideaTokens.dangerBg;
+    final borderColor =
+        isDark ? OideaTokens.dangerBorderDark : OideaTokens.dangerBorder;
+    final fg = isDark ? OideaTokens.dangerTextDark : OideaTokens.dangerText;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: OideaSpace.space3,
+        vertical: OideaSpace.space3,
+      ),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        border: Border.all(color: Colors.red.shade200),
-        borderRadius: BorderRadius.circular(10),
+        color: bg,
+        border: Border.all(color: borderColor),
+        borderRadius: OideaRadius.mdAll,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline_rounded,
-              color: Colors.red.shade600, size: 18),
-          const SizedBox(width: 8),
+          Icon(
+            Icons.error_outline_rounded,
+            color: fg,
+            size: OideaSize.iconSm + 2,
+          ),
+          const SizedBox(width: OideaSpace.space2),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                  color: Colors.red.shade800,
-                  fontSize: 13,
-                  height: 1.4),
-            ),
+            child: Text(message, style: OideaType.bodySm.copyWith(color: fg)),
           ),
         ],
       ),

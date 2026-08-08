@@ -40,6 +40,157 @@ class OideaTokens {
   static const darkTextSecondary = Color(0xFF8888AA);
   static const darkTextTertiary = Color(0xFF555577);
   static const darkMsgHover = Color(0x0AFFFFFF);
+
+  // Input borders. Deliberately stronger than [lightBorder] / [darkBorder]:
+  // a divider may be barely-there, but a field edge has to read as a target.
+  static const lightInputBorder = Color(0xFFDCDCE8);
+  static const darkInputBorder = Color(0xFF2E2E4A);
+
+  // Feedback (error / warning / success)
+  static const danger = Color(0xFFDC2626);
+  static const dangerBg = Color(0xFFFEF2F2);
+  static const dangerBorder = Color(0xFFFECACA);
+  static const dangerText = Color(0xFF991B1B);
+  static const dangerBgDark = Color(0x1FDC2626);
+  static const dangerBorderDark = Color(0x4DDC2626);
+  static const dangerTextDark = Color(0xFFFCA5A5);
+}
+
+/// Spacing scale ── every gap in the UI is one of these.
+///
+/// Built on a 4px grid: `spaceN` is `N * 4` logical pixels. The names match
+/// the multiplier so `space6` is unambiguously 24, which is what makes an
+/// off-scale value obvious when it shows up in review.
+///
+/// Nothing outside this class should write a raw number into an [EdgeInsets],
+/// a [SizedBox], or a gap. If a design genuinely needs a value that is not on
+/// the scale, add it here rather than inlining it.
+class OideaSpace {
+  OideaSpace._();
+
+  static const space1 = 4.0;
+  static const space2 = 8.0;
+  static const space3 = 12.0;
+  static const space4 = 16.0;
+  static const space5 = 20.0;
+  static const space6 = 24.0;
+  static const space8 = 32.0;
+  static const space10 = 40.0;
+  static const space12 = 48.0;
+  static const space16 = 64.0;
+}
+
+/// Corner radius scale.
+///
+/// Before this existed the codebase used 8, 10, 11, 12 and 22 more or less
+/// interchangeably, which is why surfaces never looked like a set. Four steps
+/// plus [full] cover everything: [sm] for chips and badges, [md] for inputs
+/// and buttons, [lg] for cards, [xl] for panels and sheets.
+class OideaRadius {
+  OideaRadius._();
+
+  static const sm = 6.0;
+  static const md = 10.0;
+  static const lg = 14.0;
+  static const xl = 20.0;
+  static const full = 999.0;
+
+  static const smAll = BorderRadius.all(Radius.circular(sm));
+  static const mdAll = BorderRadius.all(Radius.circular(md));
+  static const lgAll = BorderRadius.all(Radius.circular(lg));
+  static const xlAll = BorderRadius.all(Radius.circular(xl));
+}
+
+/// Type scale.
+///
+/// Deliberately carries only size, weight, height and tracking — never a
+/// font family or colour. Family comes from [AppTheme] so the Outfit fallback
+/// chain stays in one place, and colour comes from the surrounding
+/// [ColorScheme] so the same style works in both themes.
+///
+/// Apply with `.copyWith(color: ...)` at the call site.
+class OideaType {
+  OideaType._();
+
+  /// 40 / w800 — the one-per-screen hero number or title.
+  static const display = TextStyle(
+    fontSize: 40,
+    fontWeight: FontWeight.w800,
+    height: 1.15,
+    letterSpacing: -1.0,
+  );
+
+  /// 32 / w800 — page title.
+  static const h1 = TextStyle(
+    fontSize: 32,
+    fontWeight: FontWeight.w800,
+    height: 1.2,
+    letterSpacing: -0.6,
+  );
+
+  /// 24 / w700 — section heading.
+  static const h2 = TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.w700,
+    height: 1.25,
+    letterSpacing: -0.3,
+  );
+
+  /// 20 / w700 — card or dialog heading.
+  static const h3 = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.w700,
+    height: 1.3,
+  );
+
+  /// 16 / w400 — lead paragraph.
+  static const bodyLg = TextStyle(fontSize: 16, height: 1.6);
+
+  /// 14 / w400 — default body copy.
+  static const body = TextStyle(fontSize: 14, height: 1.6);
+
+  /// 13 / w400 — secondary copy, timestamps, helper text.
+  static const bodySm = TextStyle(fontSize: 13, height: 1.5);
+
+  /// 13 / w600 — form field labels sitting above their input.
+  static const label = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    height: 1.4,
+  );
+
+  /// 15 / w600 — button text.
+  static const button = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+
+  /// 12 / w400 — captions and metadata.
+  static const caption = TextStyle(fontSize: 12, height: 1.4);
+}
+
+/// Elevation scale. Two steps is enough: [sm] lifts a control off its
+/// surface, [md] lifts a surface off the page.
+class OideaShadow {
+  OideaShadow._();
+
+  static const sm = <BoxShadow>[
+    BoxShadow(color: Color(0x0F000000), blurRadius: 3, offset: Offset(0, 1)),
+  ];
+
+  static const md = <BoxShadow>[
+    BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 4)),
+  ];
+}
+
+/// Field heights, so inputs and the buttons next to them line up.
+class OideaSize {
+  OideaSize._();
+
+  static const controlHeight = 44.0;
+  static const iconSm = 16.0;
+  static const iconMd = 20.0;
 }
 
 class AppTheme {
@@ -90,9 +241,8 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
         iconTheme: IconThemeData(color: textPrimary),
-        titleTextStyle: TextStyle(
+        titleTextStyle: OideaType.bodyLg.copyWith(
           color: textPrimary,
-          fontSize: 16,
           fontWeight: FontWeight.w700,
           fontFamily: _fontFamily,
           fontFamilyFallback: _fontFallback,
@@ -102,7 +252,7 @@ class AppTheme {
         elevation: 0,
         color: surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: OideaRadius.lgAll,
           side: BorderSide(color: border),
         ),
       ),
@@ -110,29 +260,33 @@ class AppTheme {
         filled: true,
         fillColor: isDark ? const Color(0xFF141428) : OideaTokens.lightColBg,
         hintStyle: TextStyle(color: textSecondary),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+        border: const OutlineInputBorder(
+          borderRadius: OideaRadius.mdAll,
           borderSide: BorderSide.none,
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: OideaTokens.accent, width: 1.5),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: OideaRadius.mdAll,
+          borderSide: BorderSide(color: OideaTokens.accent, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: OideaSpace.space4,
+          vertical: OideaSpace.space3,
+        ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: OideaTokens.accent,
         foregroundColor: Colors.white,
       ),
-      chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      chipTheme: const ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: OideaRadius.smAll),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: OideaTokens.accent,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontFamily: _fontFamily),
+          minimumSize: const Size(0, OideaSize.controlHeight),
+          shape: const RoundedRectangleBorder(borderRadius: OideaRadius.mdAll),
+          textStyle: OideaType.button.copyWith(fontFamily: _fontFamily),
         ),
       ),
     );

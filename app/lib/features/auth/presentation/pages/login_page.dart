@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import 'shared_auth_widgets.dart';
+
+/// Width of the form column in the wide layout. Wider than this and the
+/// fields stretch past a comfortable reading measure.
+const _formColumnWidth = 480.0;
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -68,12 +73,13 @@ class _LoginPageState extends ConsumerState<LoginPage>
       children: [
         Expanded(child: const AuthHeroPanel()),
         SizedBox(
-          width: 480,
+          width: _formColumnWidth,
           child: SafeArea(
             child: Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 48, vertical: 32),
+                    horizontal: OideaSpace.space12,
+                    vertical: OideaSpace.space8),
                 child: FadeTransition(
                   opacity: _fadeAnim,
                   child: SlideTransition(
@@ -101,7 +107,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 position: _slideAnim,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 16),
+                      horizontal: OideaSpace.space6,
+                      vertical: OideaSpace.space4),
                   child: _buildForm(authState),
                 ),
               ),
@@ -113,7 +120,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 
   Widget _buildForm(AuthState authState) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final secondary = isDark
+        ? OideaTokens.darkTextSecondary
+        : OideaTokens.lightTextSecondary;
     return Form(
       key: _formKey,
       child: Column(
@@ -122,22 +133,19 @@ class _LoginPageState extends ConsumerState<LoginPage>
         children: [
           Text(
             '歡迎回來',
-            style: theme.textTheme.headlineMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
+            style: OideaType.h1.copyWith(color: scheme.onSurface),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: OideaSpace.space2),
           Text(
             '登入帳號以繼續使用 Oidea',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: Colors.grey.shade600),
+            style: OideaType.body.copyWith(color: secondary),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: OideaSpace.space8),
 
           AuthTextField(
             controller: _emailController,
             label: '電子信箱',
             hint: 'you@example.com',
-            icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
             autofillHints: const [AutofillHints.email],
             validator: (v) {
@@ -146,12 +154,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
               return null;
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: OideaSpace.space4),
 
           AuthTextField(
             controller: _passwordController,
             label: '密碼',
-            icon: Icons.lock_outline_rounded,
             obscureText: _obscurePassword,
             autofillHints: const [AutofillHints.password],
             suffixIcon: IconButton(
@@ -165,36 +172,33 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 (v?.length ?? 0) < 8 ? '密碼至少 8 字元' : null,
             onFieldSubmitted: (_) => _submit(),
           ),
-          const SizedBox(height: 8),
-
           if (authState.error != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(top: OideaSpace.space4),
               child: AuthErrorBanner(message: authState.error!),
             ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: OideaSpace.space6),
 
-          AuthGradientButton(
+          AuthPrimaryButton(
             onPressed: authState.isLoading ? null : _submit,
             loading: authState.isLoading,
             label: '登入',
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: OideaSpace.space5),
 
           Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('還沒有帳號？',
-                    style: TextStyle(color: Colors.grey.shade600)),
+                    style: OideaType.body.copyWith(color: secondary)),
                 TextButton(
                   onPressed: () => context.go('/register'),
                   style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF4F46E5)),
-                  child: const Text('免費建立帳號',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                      foregroundColor: OideaTokens.accent),
+                  child: Text('免費建立帳號', style: OideaType.label),
                 ),
               ],
             ),
