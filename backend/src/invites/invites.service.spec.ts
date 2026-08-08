@@ -59,6 +59,11 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
     tx.workspaceInvite.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(service.accept('u-2', 'tok-1')).rejects.toThrow(ForbiddenException);
+    expect(tx.workspaceInvite.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'inv-1', consumedAt: null }),
+      }),
+    );
     expect(tx.workspaceMember.create).not.toHaveBeenCalled();
   });
 
