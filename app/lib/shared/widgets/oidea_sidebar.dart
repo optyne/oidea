@@ -64,10 +64,10 @@ class OideaSidebar extends ConsumerWidget {
             children: [
               _WorkspaceSwitcher(collapsed: collapsed),
               Container(height: 1, color: OideaTokens.sidebarDivider),
-              const SizedBox(height: 6),
+              const SizedBox(height: OideaSpace.space15),
               // 導覽
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
+                padding: const EdgeInsets.symmetric(vertical: OideaSpace.space05),
                 child: Column(
                   children: [
                     for (final item in _navItems)
@@ -125,7 +125,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: collapsed ? 8 : 14,
-        vertical: 12,
+        vertical: OideaSpace.space3,
       ),
       child: Material(
         color: Colors.transparent,
@@ -133,7 +133,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
           borderRadius: BorderRadius.circular(8),
           onTap: () => _showMenu(context, ref, maps, currentId),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space15),
             child: Row(
               children: [
                 Container(
@@ -155,7 +155,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                   ),
                 ),
                 if (!collapsed) ...[
-                  const SizedBox(width: 10),
+                  const SizedBox(width: OideaSpace.space25),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,7 +221,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Padding(
-              padding: EdgeInsets.all(16),
+              padding: EdgeInsets.all(OideaSpace.space4),
               child: Text(
                 '切換工作空間',
                 style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
@@ -229,7 +229,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
             ),
             if (maps.isEmpty)
               const Padding(
-                padding: EdgeInsets.all(16),
+                padding: EdgeInsets.all(OideaSpace.space4),
                 child: Text('尚無工作空間', style: TextStyle(color: Colors.white70)),
               ),
             ...maps.map((w) {
@@ -385,7 +385,7 @@ class _SidebarItemState extends State<_SidebarItem> {
         onTap: widget.onTap,
         child: Container(
           height: 34,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 1),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(7),
@@ -406,7 +406,7 @@ class _SidebarItemState extends State<_SidebarItem> {
               SizedBox(width: widget.collapsed ? 0 : (widget.active ? 9 : 12)),
               Icon(widget.icon, size: 18, color: fg),
               if (!widget.collapsed) ...[
-                const SizedBox(width: 10),
+                const SizedBox(width: OideaSpace.space25),
                 Expanded(
                   child: Text(
                     widget.label,
@@ -439,7 +439,7 @@ class _BottomArea extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       child: Column(
         children: [
           // 提醒
@@ -473,7 +473,7 @@ class _BottomArea extends ConsumerWidget {
           ),
           Container(
             height: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space1),
             color: OideaTokens.sidebarDivider,
           ),
           // 使用者
@@ -482,7 +482,7 @@ class _BottomArea extends ConsumerWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: collapsed ? 0 : 14,
-                vertical: 8,
+                vertical: OideaSpace.space2,
               ),
               child: Row(
                 mainAxisAlignment:
@@ -528,7 +528,7 @@ class _BottomArea extends ConsumerWidget {
                     ],
                   ),
                   if (!collapsed) ...[
-                    const SizedBox(width: 10),
+                    const SizedBox(width: OideaSpace.space25),
                     Expanded(
                       child: Text(
                         auth.displayName ?? auth.email ?? 'You',
@@ -583,7 +583,7 @@ class _BottomArea extends ConsumerWidget {
                   avatarUrl: auth.avatarUrl,
                   radius: 28,
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: OideaSpace.space4),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -602,7 +602,7 @@ class _BottomArea extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: OideaSpace.space6),
             TextField(
               controller: nameController,
               decoration: const InputDecoration(
@@ -611,7 +611,7 @@ class _BottomArea extends ConsumerWidget {
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             FilledButton(
               onPressed: () async {
                 final newName = nameController.text.trim();
@@ -685,7 +685,7 @@ class _PlainButtonState extends State<_PlainButton> {
         onTap: widget.onTap,
         child: Container(
           height: 32,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 1),
           decoration: BoxDecoration(
             color: _hover ? OideaTokens.sidebarItemHover : Colors.transparent,
             borderRadius: BorderRadius.circular(7),
@@ -697,7 +697,7 @@ class _PlainButtonState extends State<_PlainButton> {
             children: [
               Icon(widget.icon, size: 16, color: OideaTokens.sidebarTextDim),
               if (!widget.collapsed) ...[
-                const SizedBox(width: 10),
+                const SizedBox(width: OideaSpace.space25),
                 Text(
                   widget.label,
                   style: const TextStyle(
@@ -749,7 +749,7 @@ class _ThemeModeRow extends ConsumerWidget {
     return Row(
       children: [
         const Icon(Icons.palette_outlined, size: 18),
-        const SizedBox(width: 8),
+        const SizedBox(width: OideaSpace.space2),
         const Text('主題', style: TextStyle(fontWeight: FontWeight.w500)),
         const Spacer(),
         SegmentedButton<ThemeMode>(

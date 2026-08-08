@@ -6,6 +6,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/meeting_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 enum _CalView { month, week, day }
 
@@ -45,7 +46,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
         appBar: AppBar(title: const Text('會議')),
         body: const Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.all(OideaSpace.space6),
             child: Text('請在頂端建立或選擇工作空間', textAlign: TextAlign.center),
           ),
         ),
@@ -69,10 +70,10 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
             onSelectionChanged: (s) => setState(() => _viewMode = s.first),
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 3),
             decoration: BoxDecoration(
               color: const Color(0xFF10B981).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
@@ -179,7 +180,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
 
     if (filtered.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.all(24),
+        padding: EdgeInsets.all(OideaSpace.space6),
         child: EmptyStateWidget(
           icon: Icons.videocam_outlined,
           title: '尚無會議',
@@ -191,7 +192,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(OideaSpace.space4),
       itemCount: filtered.length,
       itemBuilder: (context, index) {
         final meeting = filtered[index] as Map<String, dynamic>;
@@ -200,12 +201,12 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
         final status = meeting['status'] as String? ?? 'scheduled';
 
         return Card(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: OideaSpace.space3),
           child: InkWell(
             onTap: () => _openJoinPreview(meeting),
             borderRadius: BorderRadius.circular(12),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(OideaSpace.space4),
               child: Row(
                 children: [
                   Container(
@@ -220,7 +221,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: OideaSpace.space3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +230,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                           meeting['title'] ?? '',
                           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: OideaSpace.space1),
                         Text(
                           '${_formatTime(startTime)} - ${_formatTime(endTime)}',
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
@@ -289,7 +290,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 TextField(
                   controller: descController,
                   decoration: const InputDecoration(
@@ -298,9 +299,9 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                   ),
                   maxLines: 2,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: OideaSpace.space4),
                 const Text('開始時間', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
+                const SizedBox(height: OideaSpace.space15),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
                   label: Text(_formatDateTime(startTime)),
@@ -325,9 +326,9 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                     });
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 const Text('結束時間', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
+                const SizedBox(height: OideaSpace.space15),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.access_time, size: 18),
                   label: Text(_formatDateTime(endTime)),
@@ -347,7 +348,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                     setSt(() => endTime = DateTime(date.year, date.month, date.day, time.hour, time.minute));
                   },
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
                 Text(
                   '時長:${_durationLabel(endTime.difference(startTime))}',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
@@ -462,7 +463,7 @@ class _TimeGridView extends StatelessWidget {
                 final isToday = _isSameDay(d, DateTime.now());
                 return Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
                     child: Column(
                       children: [
                         Text(
@@ -474,7 +475,7 @@ class _TimeGridView extends StatelessWidget {
                             letterSpacing: 0.5,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: OideaSpace.space05),
                         Text(
                           '${d.day}',
                           style: TextStyle(
@@ -504,7 +505,7 @@ class _TimeGridView extends StatelessWidget {
                         SizedBox(
                           height: _hourHeight,
                           child: Padding(
-                            padding: const EdgeInsets.only(right: 8, top: 0),
+                            padding: const EdgeInsets.only(right: OideaSpace.space2, top: 0),
                             child: Align(
                               alignment: Alignment.topRight,
                               child: Transform.translate(
@@ -619,7 +620,7 @@ class _DayColumn extends StatelessWidget {
                 child: InkWell(
                   onTap: () => onEventTap(m),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: 3),
                     decoration: BoxDecoration(
                       color: color,
                       borderRadius: BorderRadius.circular(6),
@@ -682,7 +683,7 @@ class _FeatureGrid extends StatelessWidget {
         children: [
           for (final (label, desc) in _features)
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(OideaSpace.space3),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surface,
                 border: Border.all(color: Theme.of(context).dividerColor),
@@ -709,7 +710,7 @@ class _FeatureGrid extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: OideaSpace.space15),
                       Flexible(
                         child: Text(
                           label,
@@ -719,7 +720,7 @@ class _FeatureGrid extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: OideaSpace.space1),
                   Text(
                     desc,
                     style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
@@ -801,7 +802,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                           bottom: 16,
                           left: 16,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space1),
                             decoration: BoxDecoration(
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(16),
@@ -820,7 +821,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                         top: 16,
                         right: 16,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space1),
                           decoration: BoxDecoration(
                             color: Colors.black54,
                             borderRadius: BorderRadius.circular(16),
@@ -829,7 +830,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                             mainAxisSize: MainAxisSize.min,
                             children: const [
                               SizedBox(
-                                width: 6,
+                                width: OideaSpace.space15,
                                 height: 6,
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
@@ -838,7 +839,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                                   ),
                                 ),
                               ),
-                              SizedBox(width: 6),
+                              SizedBox(width: OideaSpace.space15),
                               Text(
                                 'WebRTC 已連線',
                                 style: TextStyle(
@@ -857,7 +858,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(OideaSpace.space5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -865,12 +866,12 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                     m['title'] as String? ?? '會議',
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: OideaSpace.space1),
                   Text(
                     'M-02 一對一 / M-03 群組會議 · 預計 $participantCount 人參與',
                     style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: OideaSpace.space4),
                   Row(
                     children: [
                       Expanded(
@@ -881,7 +882,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                           onTap: () => setState(() => _mic = !_mic),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: OideaSpace.space2),
                       Expanded(
                         child: _ToggleBtn(
                           icon: _camera ? Icons.videocam : Icons.videocam_off,
@@ -892,7 +893,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: OideaSpace.space4),
                   Row(
                     children: [
                       Expanded(
@@ -901,7 +902,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                           child: const Text('取消'),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: OideaSpace.space2),
                       Expanded(
                         flex: 2,
                         child: FilledButton(
@@ -911,9 +912,9 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: OideaSpace.space3),
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(OideaSpace.space25),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(8),
@@ -921,7 +922,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                     child: Row(
                       children: [
                         const Icon(Icons.settings_outlined, size: 14),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: OideaSpace.space15),
                         Expanded(
                           child: Text(
                             'M-07 螢幕分享 · M-08 會議錄製 · M-10 虛擬背景皆已啟用',
@@ -964,7 +965,7 @@ class _ToggleBtn extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         foregroundColor: active ? null : Colors.red,
         side: BorderSide(color: active ? Theme.of(context).dividerColor : Colors.red.withValues(alpha: 0.3)),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       ),
       onPressed: onTap,
     );

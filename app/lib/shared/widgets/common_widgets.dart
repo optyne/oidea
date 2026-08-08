@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/theme/app_theme.dart';
 
 class LoadingWidget extends ConsumerWidget {
   final String? message;
@@ -13,7 +14,7 @@ class LoadingWidget extends ConsumerWidget {
         children: [
           const CircularProgressIndicator.adaptive(),
           if (message != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Text(message!, style: Theme.of(context).textTheme.bodyMedium),
           ],
         ],
@@ -31,15 +32,15 @@ class AppErrorWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(OideaSpace.space6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.error_outline, size: 48, color: Theme.of(context).colorScheme.error),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: OideaSpace.space4),
               FilledButton.tonal(onPressed: onRetry, child: const Text('重試')),
             ],
           ],
@@ -60,19 +61,19 @@ class EmptyStateWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(OideaSpace.space8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Text(title, style: Theme.of(context).textTheme.titleLarge),
             if (subtitle != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: OideaSpace.space2),
               Text(subtitle!, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
             ],
             if (action != null) ...[
-              const SizedBox(height: 24),
+              const SizedBox(height: OideaSpace.space6),
               action!,
             ],
           ],

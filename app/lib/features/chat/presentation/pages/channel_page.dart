@@ -247,7 +247,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
       context: context,
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(OideaSpace.space4),
           child: Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -260,7 +260,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                   _toggleReaction(messageId, e, has);
                 },
                 child: Padding(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(OideaSpace.space2),
                   child: Text(e, style: const TextStyle(fontSize: 32)),
                 ),
               );
@@ -515,12 +515,12 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
         actions: [
           if (pinnedCount > 0)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: OideaSpace.space25),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () => setState(() => _showPinnedDrawer = !_showPinnedDrawer),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space1),
                   decoration: BoxDecoration(
                     color: _showPinnedDrawer
                         ? const Color(0x26F59E0B)
@@ -531,7 +531,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.push_pin, size: 14, color: Color(0xFFF59E0B)),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: OideaSpace.space1),
                       Text(
                         '$pinnedCount',
                         style: const TextStyle(
@@ -632,7 +632,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space2),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msg = messages[index] as Map<String, dynamic>;
@@ -752,7 +752,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
 
   Widget _buildInputBar(SocketService socket) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space2),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
@@ -819,7 +819,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 12, top: 2, bottom: 2),
+            padding: const EdgeInsets.only(left: OideaSpace.space3, top: OideaSpace.space05, bottom: OideaSpace.space05),
             child: DefaultTextStyle.merge(
               style: TextStyle(
                 fontSize: 10,
@@ -828,11 +828,11 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
               child: Row(
                 children: const [
                   Text('↵ 送出'),
-                  SizedBox(width: 12),
+                  SizedBox(width: OideaSpace.space3),
                   Text('⇧↵ 換行'),
-                  SizedBox(width: 12),
+                  SizedBox(width: OideaSpace.space3),
                   Text('@ 提及'),
-                  SizedBox(width: 12),
+                  SizedBox(width: OideaSpace.space3),
                   Text('/ 指令'),
                 ],
               ),
@@ -920,7 +920,7 @@ class _MessageRowState extends State<_MessageRow> {
     }
 
     final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -929,19 +929,19 @@ class _MessageRowState extends State<_MessageRow> {
             avatarUrl: sender?['avatarUrl'] as String?,
             radius: 18,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: OideaSpace.space25),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (widget.isPinned)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
+                    padding: const EdgeInsets.only(bottom: OideaSpace.space05),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: const [
                         Icon(Icons.push_pin, size: 11, color: Color(0xFFF59E0B)),
-                        SizedBox(width: 4),
+                        SizedBox(width: OideaSpace.space1),
                         Text(
                           '已置頂',
                           style: TextStyle(
@@ -956,12 +956,12 @@ class _MessageRowState extends State<_MessageRow> {
                   ),
                 if (_scheduledFor != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
+                    padding: const EdgeInsets.only(bottom: OideaSpace.space05),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.schedule, size: 11, color: OideaTokens.accent),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: OideaSpace.space1),
                         Text(
                           '排程中 · $_scheduledFor',
                           style: const TextStyle(
@@ -980,7 +980,7 @@ class _MessageRowState extends State<_MessageRow> {
                       sender?['displayName'] as String? ?? 'Unknown',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: OideaSpace.space2),
                     Text(
                       _formatTime(msg['createdAt']),
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
@@ -992,7 +992,7 @@ class _MessageRowState extends State<_MessageRow> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: OideaSpace.space05),
                 if (msg['type'] == 'text')
                   MessageBody(
                     content: content,
@@ -1020,7 +1020,7 @@ class _MessageRowState extends State<_MessageRow> {
                   ),
                 if (grouped.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: OideaSpace.space15),
                     child: Wrap(
                       spacing: 4,
                       runSpacing: 4,
@@ -1043,17 +1043,17 @@ class _MessageRowState extends State<_MessageRow> {
                   ),
                 if (hasThread)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: OideaSpace.space15),
                     child: InkWell(
                       onTap: () => widget.onOpenThread(msg),
                       borderRadius: BorderRadius.circular(6),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: OideaSpace.space1),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.forum_outlined, size: 14, color: OideaTokens.accent),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: OideaSpace.space15),
                             Text(
                               '$nReplies 則回覆',
                               style: const TextStyle(
@@ -1096,7 +1096,7 @@ class _MessageRowState extends State<_MessageRow> {
               ),
               padding: EdgeInsets.only(
                 left: widget.isPinned ? 8 : 0,
-                right: 4,
+                right: OideaSpace.space1,
               ),
               child: row,
             ),
@@ -1165,7 +1165,7 @@ class _HoverActions extends StatelessWidget {
           border: Border.all(color: theme.dividerColor),
           borderRadius: BorderRadius.circular(8),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: OideaSpace.space05),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1174,7 +1174,7 @@ class _HoverActions extends StatelessWidget {
                 borderRadius: BorderRadius.circular(5),
                 onTap: () => onQuickReact(e),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: 3),
                   child: Text(e, style: const TextStyle(fontSize: 16)),
                 ),
               ),
@@ -1227,7 +1227,7 @@ class _HoverIconButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: 5),
           child: Icon(icon, size: 14, color: color ?? Theme.of(context).iconTheme.color),
         ),
       ),
@@ -1261,7 +1261,7 @@ class _ReactionChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space05),
         decoration: BoxDecoration(
           color: bg,
           border: Border.all(color: border),
@@ -1271,7 +1271,7 @@ class _ReactionChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(emoji, style: const TextStyle(fontSize: 13)),
-            const SizedBox(width: 4),
+            const SizedBox(width: OideaSpace.space1),
             Text(
               '$count',
               style: TextStyle(
@@ -1318,7 +1318,7 @@ class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderState
     return Material(
       color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space15),
         child: Row(
           children: [
             AnimatedBuilder(
@@ -1345,7 +1345,7 @@ class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderState
                 );
               },
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: OideaSpace.space25),
             Text(
               widget.count == 1 ? '有成員正在輸入…' : '${widget.count} 人正在輸入…',
               style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
@@ -1385,7 +1385,7 @@ class _PinnedDrawer extends StatelessWidget {
           const Row(
             children: [
               Icon(Icons.push_pin, size: 12, color: Color(0xFFF59E0B)),
-              SizedBox(width: 4),
+              SizedBox(width: OideaSpace.space1),
               Text(
                 '置頂訊息 (C-13)',
                 style: TextStyle(
@@ -1397,7 +1397,7 @@ class _PinnedDrawer extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: OideaSpace.space15),
           Flexible(
             child: ListView.builder(
               shrinkWrap: true,
@@ -1467,7 +1467,7 @@ class _AutomationMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15, horizontal: OideaSpace.space1),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1482,7 +1482,7 @@ class _AutomationMessage extends StatelessWidget {
             alignment: Alignment.center,
             child: const Text('🤖', style: TextStyle(fontSize: 14)),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: OideaSpace.space25),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
@@ -1587,7 +1587,7 @@ class _ConvertToTaskDialogState extends ConsumerState<_ConvertToTaskDialog> {
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             projectsAsync.when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => Text('載入專案失敗：$e'),
@@ -1617,7 +1617,7 @@ class _ConvertToTaskDialogState extends ConsumerState<_ConvertToTaskDialog> {
                 );
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             if (_loadingColumns) const LinearProgressIndicator(),
             if (!_loadingColumns && _columns.isNotEmpty)
               DropdownButtonFormField<String>(
@@ -1695,7 +1695,7 @@ class _FileMessageTile extends StatelessWidget {
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 320),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(OideaSpace.space25),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
@@ -1704,7 +1704,7 @@ class _FileMessageTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.insert_drive_file_outlined, size: 28),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1752,7 +1752,7 @@ class _SnippetMenuItem extends StatelessWidget {
                 snippet.name,
                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: OideaSpace.space15),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
@@ -1773,7 +1773,7 @@ class _SnippetMenuItem extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: OideaSpace.space05),
           Text(
             snippet.content.replaceAll('\n', ' · '),
             maxLines: 1,
@@ -1826,7 +1826,7 @@ class _BroadcastDialogState extends ConsumerState<_BroadcastDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(OideaSpace.space25),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(8),
@@ -1839,7 +1839,7 @@ class _BroadcastDialogState extends ConsumerState<_BroadcastDialog> {
                 style: const TextStyle(fontSize: 13),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             Text(
               '選擇頻道 (${_selected.length})',
               style: TextStyle(
@@ -1849,7 +1849,7 @@ class _BroadcastDialogState extends ConsumerState<_BroadcastDialog> {
                 letterSpacing: 0.8,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: OideaSpace.space1),
             FutureBuilder<List<dynamic>>(
               future: api.getChannels(widget.workspaceId),
               builder: (_, snap) {

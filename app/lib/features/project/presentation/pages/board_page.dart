@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/network/api_client.dart';
 import '../../providers/project_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 enum _ViewMode { board, list, gantt }
 
@@ -69,7 +70,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
             mode: _viewMode,
             onChanged: (v) => setState(() => _viewMode = v),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'column') _showAddColumn(context);
@@ -138,7 +139,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('尚無欄位', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             FilledButton.tonal(
               onPressed: () => _showAddColumn(context),
               child: const Text('新增第一個欄位'),
@@ -289,7 +290,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   decoration: const InputDecoration(labelText: '標題'),
                   autofocus: true,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 DropdownButtonFormField<String>(
                   value: columnId,
                   decoration: const InputDecoration(labelText: '欄位'),
@@ -302,7 +303,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   }).toList(),
                   onChanged: (v) => setSt(() => columnId = v),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 DropdownButtonFormField<String>(
                   value: priority,
                   decoration: const InputDecoration(labelText: '優先級'),
@@ -315,7 +316,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   onChanged: (v) => setSt(() => priority = v ?? 'medium'),
                 ),
                 if (members.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: OideaSpace.space3),
                   DropdownButtonFormField<String?>(
                     value: assigneeId,
                     decoration: const InputDecoration(labelText: '負責人(選填)'),
@@ -329,7 +330,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     onChanged: (v) => setSt(() => assigneeId = v),
                   ),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
                   label: Text(dueDate != null
@@ -391,7 +392,7 @@ class _ViewModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       child: SegmentedButton<_ViewMode>(
         segments: const [
           ButtonSegment(value: _ViewMode.board, icon: Icon(Icons.view_column_outlined), label: Text('看板')),
@@ -436,7 +437,7 @@ class _BoardToolbar extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space2),
       child: Row(
         children: [
           SizedBox(
@@ -449,16 +450,16 @@ class _BoardToolbar extends StatelessWidget {
                 prefixIcon: Icon(Icons.search, size: 18),
                 isDense: true,
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space2),
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: OideaSpace.space3),
           _PriorityDropdown(
             selected: filterPriorities,
             onToggle: onTogglePriority,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           _AssigneeDropdown(
             selected: filterAssigneeIds,
             assignees: assignees,
@@ -554,7 +555,7 @@ class _ToolbarChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space15),
       decoration: BoxDecoration(
         color: active
             ? theme.colorScheme.primary.withValues(alpha: 0.1)
@@ -569,7 +570,7 @@ class _ToolbarChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: active ? theme.colorScheme.primary : null),
-          const SizedBox(width: 6),
+          const SizedBox(width: OideaSpace.space15),
           Text(
             label,
             style: TextStyle(
@@ -578,7 +579,7 @@ class _ToolbarChip extends StatelessWidget {
               color: active ? theme.colorScheme.primary : null,
             ),
           ),
-          const SizedBox(width: 2),
+          const SizedBox(width: OideaSpace.space05),
           Icon(Icons.arrow_drop_down, size: 16, color: active ? theme.colorScheme.primary : null),
         ],
       ),
@@ -607,7 +608,7 @@ class _BoardView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.builder(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(OideaSpace.space4),
       itemCount: columns.length,
       itemBuilder: (context, index) {
         final column = columns[index] as Map<String, dynamic>;
@@ -618,7 +619,7 @@ class _BoardView extends StatelessWidget {
         return SizedBox(
           width: 300,
           child: Card(
-            margin: const EdgeInsets.only(right: 12),
+            margin: const EdgeInsets.only(right: OideaSpace.space3),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -663,7 +664,7 @@ class _BoardView extends StatelessWidget {
                                       ),
                                     )
                                   : ListView.builder(
-                                      padding: const EdgeInsets.all(8),
+                                      padding: const EdgeInsets.all(OideaSpace.space2),
                                       itemCount: tasks.length,
                                       itemBuilder: (context, i) {
                                         final task = tasks[i] as Map<String, dynamic>;
@@ -728,7 +729,7 @@ class _ColumnHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final filtered = count != totalCount;
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(OideaSpace.space3),
       child: Row(
         children: [
           Container(
@@ -740,7 +741,7 @@ class _ColumnHeader extends StatelessWidget {
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Expanded(
             child: Text(
               column['name'] as String? ?? '欄位',
@@ -748,7 +749,7 @@ class _ColumnHeader extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space05),
             decoration: BoxDecoration(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(10),
@@ -785,7 +786,7 @@ class _AddTaskFooter extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         onTap: onPressed,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
           decoration: BoxDecoration(
             border: Border.all(
               color: theme.dividerColor,
@@ -798,7 +799,7 @@ class _AddTaskFooter extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.add, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
-              const SizedBox(width: 4),
+              const SizedBox(width: OideaSpace.space1),
               Text(
                 '新增任務',
                 style: TextStyle(
@@ -895,7 +896,7 @@ class TaskCard extends StatelessWidget {
     final recurring = _isRecurring(task);
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: OideaSpace.space2),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -916,7 +917,7 @@ class TaskCard extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                       ),
                       if (desc != null && desc.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: OideaSpace.space1),
                         Text(
                           desc,
                           maxLines: 2,
@@ -925,7 +926,7 @@ class TaskCard extends StatelessWidget {
                         ),
                       ],
                       if (tags.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: OideaSpace.space15),
                         Wrap(
                           spacing: 4,
                           runSpacing: 4,
@@ -934,7 +935,7 @@ class TaskCard extends StatelessWidget {
                             final color = _parseColor(tm['color'] as String?) ??
                                 Colors.blueGrey.shade100;
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                               decoration: BoxDecoration(
                                 color: color,
                                 borderRadius: BorderRadius.circular(4),
@@ -947,11 +948,11 @@ class TaskCard extends StatelessWidget {
                           }).toList(),
                         ),
                       ],
-                      const SizedBox(height: 6),
+                      const SizedBox(height: OideaSpace.space15),
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                             decoration: BoxDecoration(
                               color: priorityColor(priority).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
@@ -965,7 +966,7 @@ class TaskCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: OideaSpace.space15),
                           if (recurring)
                             const _CardBadge(icon: Icons.autorenew, label: '週期'),
                           if (subTotal > 0)
@@ -985,7 +986,7 @@ class TaskCard extends StatelessWidget {
                               size: 12,
                               color: overdue ? Colors.red : Colors.grey.shade600,
                             ),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: OideaSpace.space05),
                             Text(
                               '${dueDate.month}/${dueDate.day}',
                               style: TextStyle(
@@ -994,7 +995,7 @@ class TaskCard extends StatelessWidget {
                                 fontWeight: overdue ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: OideaSpace.space15),
                           ],
                           if (assignee != null)
                             CircleAvatar(
@@ -1039,12 +1040,12 @@ class _CardBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.only(right: OideaSpace.space15),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: Colors.grey.shade600),
-          const SizedBox(width: 2),
+          const SizedBox(width: OideaSpace.space05),
           Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
         ],
       ),
@@ -1223,7 +1224,7 @@ class _GanttView extends StatelessWidget {
                             bottom: 0,
                             width: 200,
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space2),
                               child: Text(
                                 t['title'] as String? ?? '',
                                 maxLines: 1,
@@ -1244,7 +1245,7 @@ class _GanttView extends StatelessWidget {
                                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 2)],
                               ),
                               alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15),
                               child: Text(
                                 t['title'] as String? ?? '',
                                 maxLines: 1,
@@ -1280,7 +1281,7 @@ class _GanttHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 32,
+      height: OideaSpace.space8,
       child: Row(
         children: [
           const SizedBox(width: 200),

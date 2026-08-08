@@ -68,6 +68,16 @@ class OideaTokens {
 class OideaSpace {
   OideaSpace._();
 
+  // Half steps. Not decoration: a sweep of the existing code found 6px used
+  // 62 times, 10px 38 times and 2px 33 times — tight gaps inside a control
+  // (icon to label, chip padding, hairline offsets) genuinely need a finer
+  // grain than 4px, and rounding them to 4 or 8 would have been a visual
+  // change disguised as a refactor.
+  static const space05 = 2.0;
+  static const space15 = 6.0;
+  static const space25 = 10.0;
+  static const space35 = 14.0;
+
   static const space1 = 4.0;
   static const space2 = 8.0;
   static const space3 = 12.0;

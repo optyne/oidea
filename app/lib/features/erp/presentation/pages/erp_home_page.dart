@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../workspace/providers/workspace_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class ErpHomePage extends ConsumerWidget {
   const ErpHomePage({super.key});
@@ -16,13 +17,13 @@ class ErpHomePage extends ConsumerWidget {
       body: workspaceId == null
           ? const Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: EdgeInsets.all(OideaSpace.space6),
                 child: Text('請先建立或選擇工作空間', textAlign: TextAlign.center),
               ),
             )
           : GridView.count(
               crossAxisCount: MediaQuery.sizeOf(context).width > 720 ? 3 : 2,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(OideaSpace.space4),
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
               childAspectRatio: 1.4,
@@ -77,12 +78,12 @@ class _Tile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(OideaSpace.space4),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 44, color: color),
-              const SizedBox(height: 12),
+              const SizedBox(height: OideaSpace.space3),
               Text(
                 label,
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),

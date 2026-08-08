@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../domain/formula_engine.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 試算表編輯頁 —— Excel-like 可捲動格線。
 ///
@@ -311,17 +312,17 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
         title: InkWell(
           onTap: _renameSheet,
           child: Padding(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.all(OideaSpace.space1),
             child: Text(_title.isEmpty ? '試算表' : _title),
           ),
         ),
         actions: [
           if (_saving)
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: OideaSpace.space3),
               child: Center(
                 child: SizedBox(
-                  width: 14, height: 14,
+                  width: OideaSpace.space35, height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
@@ -355,16 +356,16 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
   Widget _formulaBar() {
     final addr = _addr(_activeRow, _activeCol);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space15),
       color: Colors.grey.shade50,
       child: Row(
         children: [
           SizedBox(
-            width: 64,
+            width: OideaSpace.space16,
             child: Text(addr, style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace')),
           ),
           const Icon(Icons.functions, size: 16, color: Colors.grey),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Expanded(
             child: Focus(
               onKeyEvent: _handleFormulaKey,
@@ -532,7 +533,7 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
       child: Container(
         width: _colW,
         height: _rowH,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15),
         alignment: Alignment.centerLeft,
         decoration: BoxDecoration(
           color: selected ? Colors.blue.shade50 : Colors.white,

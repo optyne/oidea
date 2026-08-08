@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../providers/workspace_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 使用者點開 /invite/:token 時的 landing page。
 ///
@@ -119,7 +120,7 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(OideaSpace.space6),
             child: _busy && _invite == null
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null && _invite == null
@@ -152,31 +153,31 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(OideaSpace.space6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Icon(Icons.groups_rounded, size: 56, color: Color(0xFF4F46E5)),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Text(
               '你被邀請加入',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: OideaSpace.space1),
             Text(
               workspace?['name'] as String? ?? '工作空間',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             _KV(label: '角色', value: _roleLabel(role)),
             if (invitedBy != null) _KV(label: '邀請人', value: invitedBy),
-            const SizedBox(height: 20),
+            const SizedBox(height: OideaSpace.space5),
             if (_successMessage != null)
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(OideaSpace.space3),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -184,7 +185,7 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
                 child: Row(
                   children: [
                     const Icon(Icons.check_circle, color: Colors.green),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: OideaSpace.space2),
                     Expanded(child: Text(_successMessage!)),
                   ],
                 ),
@@ -198,12 +199,12 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.black54),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: OideaSpace.space3),
                   FilledButton(
                     onPressed: () => context.go('/login?redirect=/invite/${widget.token}'),
                     child: const Text('登入'),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: OideaSpace.space2),
                   OutlinedButton(
                     onPressed: () => context.go('/register?redirect=/invite/${widget.token}'),
                     child: const Text('註冊新帳號'),
@@ -215,11 +216,11 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
                 onPressed: _busy ? null : _accept,
                 icon: const Icon(Icons.check),
                 label: _busy
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(width: OideaSpace.space4, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('接受邀請並加入'),
               ),
             if (_error != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: OideaSpace.space3),
               Text(_error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
             ],
           ],
@@ -237,7 +238,7 @@ class _KV extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
       child: Row(
         children: [
           SizedBox(
@@ -259,12 +260,12 @@ class _ErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(OideaSpace.space6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             Text(message, textAlign: TextAlign.center),
           ],
         ),

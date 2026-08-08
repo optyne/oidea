@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 可重用的 @mention 自動完成輸入框。
 ///
@@ -197,7 +198,7 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
               onTap: () => _apply(m),
               child: Container(
                 color: i == _highlight ? Colors.blue.withOpacity(0.08) : null,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space15),
                 child: Row(
                   children: [
                     CircleAvatar(
@@ -205,7 +206,7 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
                       child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
                           style: const TextStyle(fontSize: 10)),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: OideaSpace.space2),
                     Expanded(
                       child: Text(
                         name,

@@ -7,6 +7,7 @@ import '../../../mentions/presentation/widgets/mention_text_field.dart';
 import '../../../../shared/widgets/message_body.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/project_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class TaskDetailPage extends ConsumerStatefulWidget {
   final String taskId;
@@ -104,7 +105,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                   decoration: const InputDecoration(labelText: '標題', border: OutlineInputBorder()),
                   autofocus: true,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 TextField(
                   controller: descController,
                   decoration: const InputDecoration(
@@ -113,7 +114,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                   ),
                   maxLines: 3,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 DropdownButtonFormField<String>(
                   value: priority,
                   decoration: const InputDecoration(labelText: '優先級', border: OutlineInputBorder()),
@@ -125,7 +126,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                   ],
                   onChanged: (v) => setSt(() => priority = v),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
                   label: Text(dueDate != null
@@ -210,7 +211,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
           final activities = (task['activities'] as List<dynamic>?) ?? [];
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(OideaSpace.space4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -225,7 +226,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                             ))
                         .toList(),
                   ),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
 
                 // Title
                 Text(
@@ -237,10 +238,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 // Description
                 if (task['description'] != null &&
                     (task['description'] as String).isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: OideaSpace.space3),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(OideaSpace.space3),
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.grey.shade200),
                       borderRadius: BorderRadius.circular(8),
@@ -249,7 +250,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                         style: theme.textTheme.bodyMedium),
                   ),
                 ],
-                const SizedBox(height: 16),
+                const SizedBox(height: OideaSpace.space4),
 
                 // Info rows
                 _buildInfoRow(
@@ -279,12 +280,12 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
 
                 // Add subtask input
                 if (_addingSubtask)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: OideaSpace.space2),
                     child: Row(
                       children: [
                         Expanded(
@@ -296,19 +297,19 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                               border: OutlineInputBorder(),
                               isDense: true,
                               contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 10),
+                                  horizontal: OideaSpace.space3, vertical: OideaSpace.space25),
                             ),
                             onSubmitted: _addSubtask,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: OideaSpace.space2),
                         FilledButton(
                           onPressed: () => _addSubtask(_subtaskController.text),
                           style: FilledButton.styleFrom(
                               minimumSize: const Size(60, 40)),
                           child: const Text('新增'),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: OideaSpace.space1),
                         TextButton(
                           onPressed: () {
                             setState(() => _addingSubtask = false);
@@ -360,7 +361,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
                 ...((task['files'] as List<dynamic>?) ?? []).map((f) {
                   final file = f as Map<String, dynamic>;
                   final name = file['fileName'] as String? ?? '';
@@ -384,7 +385,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 // Comments
                 Text('評論 (${comments.length})',
                     style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
                 if (comments.isEmpty)
                   const Text('尚無評論', style: TextStyle(color: Colors.grey)),
                 ...comments.map((c) {
@@ -399,7 +400,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                           user?['displayName'] ?? '',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: OideaSpace.space2),
                         Text(
                           _formatDate(c['createdAt']),
                           style: const TextStyle(
@@ -418,16 +419,16 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 if (activities.isNotEmpty) ...[
                   const Divider(height: 32),
                   Text('活動記錄', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: OideaSpace.space2),
                   ...activities.take(5).map((a) {
                     final user = a['user'] as Map<String, dynamic>?;
                     return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
                       child: Row(
                         children: [
                           Icon(Icons.history,
                               size: 16, color: Colors.grey.shade400),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: OideaSpace.space2),
                           Expanded(
                             child: Text(
                               '${user?['displayName'] ?? '?'} ${_actionLabel(a['action'])}',
@@ -453,7 +454,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         },
       ),
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(OideaSpace.space3),
         decoration: BoxDecoration(
           border:
               Border(top: BorderSide(color: Colors.grey.shade200)),
@@ -468,7 +469,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                   border: OutlineInputBorder(),
                   isDense: true,
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space25),
                 );
                 Future<void> submit(String v) async {
                   if (v.trim().isEmpty) return;
@@ -491,7 +492,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 );
               }),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: OideaSpace.space2),
             IconButton(
               icon: const Icon(Icons.send),
               onPressed: () async {
@@ -513,13 +514,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
       child: Row(
         children: [
           Icon(icon, size: 18, color: Colors.grey),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Text(label, style: const TextStyle(color: Colors.grey)),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
       ),

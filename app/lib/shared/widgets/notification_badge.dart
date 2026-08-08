@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/notifications/providers/notifications_provider.dart';
 import '../../features/notifications/presentation/pages/notifications_page.dart';
+import '../../core/theme/app_theme.dart';
 
 class NotificationBadge extends ConsumerWidget {
   const NotificationBadge({super.key});
@@ -30,7 +31,7 @@ class NotificationBadge extends ConsumerWidget {
             top: 4,
             child: IgnorePointer(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: OideaSpace.space05),
                 constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 decoration: BoxDecoration(
                   color: Colors.red,

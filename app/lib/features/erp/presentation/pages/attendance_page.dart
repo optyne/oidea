@@ -6,6 +6,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/erp_providers.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class AttendancePage extends ConsumerStatefulWidget {
   const AttendancePage({super.key});
@@ -31,7 +32,7 @@ class _AttendancePageState extends ConsumerState<AttendancePage> {
               DateFormat('yyyy/MM/dd HH:mm').format(DateTime.now()),
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             TextField(
               controller: noteController,
               decoration: const InputDecoration(
@@ -99,7 +100,7 @@ class _AttendancePageState extends ConsumerState<AttendancePage> {
           ref.invalidate(myAttendanceProvider(rangeKey));
         },
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(OideaSpace.space4),
           children: [
             _TodayCard(
               today: todayAsync.valueOrNull,
@@ -107,19 +108,19 @@ class _AttendancePageState extends ConsumerState<AttendancePage> {
               onCheckIn: () => _action('in', workspaceId),
               onCheckOut: () => _action('out', workspaceId),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Text(
               '本月出勤',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: OideaSpace.space2),
             monthAsync.when(
               loading: () => const LoadingWidget(),
               error: (e, _) => AppErrorWidget(message: e.toString()),
               data: (list) {
                 if (list.isEmpty) {
                   return const Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: EdgeInsets.all(OideaSpace.space6),
                     child: Center(child: Text('本月尚無打卡紀錄', style: TextStyle(color: Colors.grey))),
                   );
                 }
@@ -162,7 +163,7 @@ class _TodayCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(OideaSpace.space5),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -171,13 +172,13 @@ class _TodayCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: OideaSpace.space2),
             Text(
               DateFormat('HH:mm').format(DateTime.now()),
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w300),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Row(
               children: [
                 Expanded(
@@ -196,7 +197,7 @@ class _TodayCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Row(
               children: [
                 Expanded(
@@ -206,7 +207,7 @@ class _TodayCard extends StatelessWidget {
                     label: Text(checkedIn ? '已上班' : '上班打卡'),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: OideaSpace.space3),
                 Expanded(
                   child: FilledButton.tonalIcon(
                     onPressed: (busy || !checkedIn || checkedOut) ? null : onCheckOut,
@@ -233,7 +234,7 @@ class _StatTile extends StatelessWidget {
     return Column(
       children: [
         Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-        const SizedBox(height: 4),
+        const SizedBox(height: OideaSpace.space1),
         Text(time, style: const TextStyle(fontWeight: FontWeight.w600)),
       ],
     );

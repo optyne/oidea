@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../workspace/providers/workspace_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 提醒列表 —— 後端的 /reminders 已存在但沒有前端介面。
 /// 功能：建立、切換顯示已完成、暫停／恢復／完成／刪除、分成「逾期 / 今日 / 未來」。
@@ -191,13 +192,13 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
               _fetch();
             },
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           IconButton(
             tooltip: '重新載入',
             icon: const Icon(Icons.refresh),
             onPressed: _fetch,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
         ],
       ),
       body: _loading
@@ -221,9 +222,9 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.notifications_off_outlined, size: 64, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
+          const SizedBox(height: OideaSpace.space3),
           Text('沒有提醒', style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
-          const SizedBox(height: 8),
+          const SizedBox(height: OideaSpace.space2),
           TextButton.icon(
             icon: const Icon(Icons.add_alert_outlined),
             label: const Text('建立第一個提醒'),
@@ -244,17 +245,17 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
           if (buckets.overdue.isNotEmpty) ...[
             _sectionHeader('逾期', buckets.overdue.length, color: Colors.red.shade700),
             for (final r in buckets.overdue) _reminderTile(r, overdue: true),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
           ],
           if (buckets.today.isNotEmpty) ...[
             _sectionHeader('今天', buckets.today.length, color: Colors.orange.shade700),
             for (final r in buckets.today) _reminderTile(r),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
           ],
           if (buckets.upcoming.isNotEmpty) ...[
             _sectionHeader('未來', buckets.upcoming.length),
             for (final r in buckets.upcoming) _reminderTile(r),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
           ],
           if (_includeCompleted && buckets.completed.isNotEmpty) ...[
             _sectionHeader('已完成', buckets.completed.length, color: Colors.grey.shade600),
@@ -276,9 +277,9 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                 fontSize: 13,
                 color: color ?? Colors.grey.shade800,
               )),
-          const SizedBox(width: 6),
+          const SizedBox(width: OideaSpace.space15),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: 1),
             decoration: BoxDecoration(
               color: (color ?? Colors.grey).withOpacity(0.12),
               borderRadius: BorderRadius.circular(10),
@@ -301,7 +302,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
     final notes = r['notes'] as String?;
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
       child: ListTile(
         leading: Checkbox(
           value: completed,
@@ -326,7 +327,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                   size: 14,
                   color: overdue ? Colors.red.shade600 : Colors.grey.shade600,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: OideaSpace.space1),
                 Text(
                   when != null ? _formatWhen(when) : '未設定時間',
                   style: TextStyle(
@@ -335,18 +336,18 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                   ),
                 ),
                 if (recurrence != 'none') ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: OideaSpace.space2),
                   Icon(Icons.repeat, size: 12, color: Colors.grey.shade600),
-                  const SizedBox(width: 2),
+                  const SizedBox(width: OideaSpace.space05),
                   Text(
                     _formatRecurrence(recurrence, recurInterval),
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
                 ],
                 if (paused) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: OideaSpace.space2),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: 1),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade100,
                       borderRadius: BorderRadius.circular(4),
@@ -358,7 +359,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
             ),
             if (notes != null && notes.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.only(top: OideaSpace.space05),
                 child: Text(notes,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                     maxLines: 2,
@@ -496,7 +497,7 @@ class _NewReminderDialogState extends State<_NewReminderDialog> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             TextField(
               controller: _notesCtrl,
               maxLines: 2,
@@ -505,7 +506,7 @@ class _NewReminderDialogState extends State<_NewReminderDialog> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             InkWell(
               onTap: _pickDateTime,
               child: InputDecorator(
@@ -520,7 +521,7 @@ class _NewReminderDialogState extends State<_NewReminderDialog> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             DropdownButtonFormField<String>(
               initialValue: _recurrence,
               decoration: const InputDecoration(
@@ -537,11 +538,11 @@ class _NewReminderDialogState extends State<_NewReminderDialog> {
               onChanged: (v) => setState(() => _recurrence = v ?? 'none'),
             ),
             if (_recurrence != 'none') ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: OideaSpace.space3),
               Row(
                 children: [
                   const Text('間隔：'),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: OideaSpace.space2),
                   DropdownButton<int>(
                     value: _interval,
                     items: [1, 2, 3, 4, 6, 12]

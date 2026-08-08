@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 頁面分享對話框：切換 visibility、繼承開關、維護成員與角色的 permission 清單。
 ///
@@ -165,7 +166,7 @@ class _SharePageDialogState extends ConsumerState<SharePageDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+      insetPadding: const EdgeInsets.symmetric(horizontal: OideaSpace.space6, vertical: 36),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 540, maxHeight: 640),
         child: _loading
@@ -208,7 +209,7 @@ class _SharePageDialogState extends ConsumerState<SharePageDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const _SectionLabel('可見性'),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
                 for (final opt in _visibilityOptions)
                   _VisibilityTile(
                     label: opt.$2,
@@ -216,7 +217,7 @@ class _SharePageDialogState extends ConsumerState<SharePageDialog> {
                     selected: _visibility == opt.$1,
                     onTap: _busy ? null : () => _setVisibility(opt.$1),
                   ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   value: _inheritParentAcl,
@@ -235,10 +236,10 @@ class _SharePageDialogState extends ConsumerState<SharePageDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: OideaSpace.space1),
                 if (_permissions.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: OideaSpace.space3),
                     child: Text(
                       _visibility == 'workspace'
                           ? '目前由 "工作空間" 預設授權所有成員 edit。'
@@ -304,8 +305,8 @@ class _VisibilityTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(bottom: OideaSpace.space15),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space25),
         decoration: BoxDecoration(
           color: selected ? theme.colorScheme.primary.withValues(alpha: 0.1) : null,
           borderRadius: BorderRadius.circular(10),
@@ -319,7 +320,7 @@ class _VisibilityTile extends StatelessWidget {
               selected ? Icons.radio_button_checked : Icons.radio_button_off,
               color: selected ? theme.colorScheme.primary : theme.disabledColor,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: OideaSpace.space25),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,7 +354,7 @@ class _PermissionTile extends StatelessWidget {
     final subtitle = user != null ? '個人' : '角色';
 
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: OideaSpace.space05),
       leading: CircleAvatar(
         backgroundImage: user?['avatarUrl'] != null && (user?['avatarUrl'] as String).isNotEmpty
             ? NetworkImage(user!['avatarUrl'] as String)
@@ -418,14 +419,14 @@ class _ErrorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(OideaSpace.space6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 40),
-          const SizedBox(height: 12),
+          const SizedBox(height: OideaSpace.space3),
           Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 16),
+          const SizedBox(height: OideaSpace.space4),
           OutlinedButton(onPressed: onRetry, child: const Text('重試')),
         ],
       ),
@@ -481,7 +482,7 @@ class _AddPermissionDialogState extends State<_AddPermissionDialog> {
                 _role = null;
               }),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             if (_target == 'user')
               DropdownButtonFormField<String>(
                 value: _userId,
@@ -504,7 +505,7 @@ class _AddPermissionDialogState extends State<_AddPermissionDialog> {
                     .toList(),
                 onChanged: (v) => setState(() => _role = v),
               ),
-            const SizedBox(height: 14),
+            const SizedBox(height: OideaSpace.space35),
             DropdownButtonFormField<String>(
               value: _access,
               decoration: const InputDecoration(labelText: '存取層級', border: OutlineInputBorder()),

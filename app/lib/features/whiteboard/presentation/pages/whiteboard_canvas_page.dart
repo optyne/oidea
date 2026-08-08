@@ -12,6 +12,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/network/socket_service.dart';
 import '../../../auth/providers/auth_provider.dart';
 import '../../providers/whiteboard_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 enum DrawingTool { select, pen, line, arrow, rect, circle, text, sticky, eraser }
 
@@ -852,13 +853,13 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(controller: ctrl, autofocus: true, maxLines: 3, decoration: const InputDecoration(hintText: '便利貼內容…', border: OutlineInputBorder())),
-              const SizedBox(height: 12),
+              const SizedBox(height: OideaSpace.space3),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: _stickyColors.map((c) => GestureDetector(
                   onTap: () => setSt(() => bg = c),
                   child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space1),
                     width: 28, height: 28,
                     decoration: BoxDecoration(
                       color: c, shape: BoxShape.circle,
@@ -1031,7 +1032,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
               child: Row(
                 children: [
                   Icon(Icons.dashboard_customize_outlined, size: 18),
-                  SizedBox(width: 6),
+                  SizedBox(width: OideaSpace.space15),
                   Text('套用範本', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                 ],
               ),
@@ -1054,7 +1055,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
               subtitle: const Text('待辦 / 進行中 / 完成 × 3 張卡'),
               onTap: () => Navigator.pop(ctx, 'kanban'),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: OideaSpace.space2),
           ],
         ),
       ),
@@ -1099,7 +1100,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   loading: () => const Text('載入中...'),
                   error: (_, __) => const Text('白板'),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: OideaSpace.space25),
                 _SaveStatus(
                   saving: _saving,
                   dirty: _dirty,
@@ -1120,7 +1121,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                       onTap: _resetView,
                       borderRadius: BorderRadius.circular(6),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space1),
                         child: Text(
                           '${(_scale * 100).round()}%',
                           style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]),
@@ -1139,7 +1140,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   icon: const Icon(Icons.crop_free),
                   onPressed: _resetView,
                 ),
-                Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 6)),
+                Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space15)),
                 IconButton(
                   tooltip: '背景樣式($_gridLabel)',
                   icon: Icon(_gridIcon),
@@ -1155,7 +1156,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   icon: const Icon(Icons.file_download_outlined),
                   onPressed: _items.isEmpty ? null : _exportPng,
                 ),
-                Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 6)),
+                Container(width: 1, height: 24, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space15)),
                 IconButton(tooltip: '復原', icon: Icon(Icons.undo, color: _undoStack.isEmpty ? Colors.grey.shade300 : null), onPressed: _undoStack.isEmpty ? null : _undo),
                 IconButton(tooltip: '重做', icon: Icon(Icons.redo, color: _redoStack.isEmpty ? Colors.grey.shade300 : null), onPressed: _redoStack.isEmpty ? null : _redo),
                 IconButton(
@@ -1175,7 +1176,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: OideaSpace.space2),
               ],
             ),
           ),
@@ -1268,7 +1269,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   right: 12,
                   top: 60,
                   child: Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(OideaSpace.space2),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
@@ -1299,7 +1300,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                     right: 12,
                     bottom: 60,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space2),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
@@ -1341,7 +1342,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                 Positioned(
                   bottom: 16, right: 16,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space15),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(8),
@@ -1441,15 +1442,15 @@ class _PresenceCard extends StatelessWidget {
             height: 6,
             decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: OideaSpace.space15),
           Text(
             '線上 ${all.length}',
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           for (final u in all.take(4))
             Padding(
-              padding: const EdgeInsets.only(left: 2),
+              padding: const EdgeInsets.only(left: OideaSpace.space05),
               child: _PresenceAvatar(
                 name: u['displayName'] as String? ?? '?',
                 color: _presenceColor(u['id'] as String? ?? u['displayName'] as String? ?? 'x'),
@@ -1458,7 +1459,7 @@ class _PresenceCard extends StatelessWidget {
             ),
           if (all.length > 4)
             Padding(
-              padding: const EdgeInsets.only(left: 4),
+              padding: const EdgeInsets.only(left: OideaSpace.space1),
               child: Text('+${all.length - 4}',
                   style: const TextStyle(fontSize: 10, color: Colors.grey)),
             ),
@@ -1490,12 +1491,12 @@ class _SaveStatus extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         onTap: onRetry,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space1),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
               Icon(Icons.error_outline, size: 14, color: Color(0xFFEF4444)),
-              SizedBox(width: 4),
+              SizedBox(width: OideaSpace.space1),
               Text(
                 '儲存失敗 · 點擊重試',
                 style: TextStyle(fontSize: 11, color: Color(0xFFEF4444), fontWeight: FontWeight.w600),
@@ -1510,11 +1511,11 @@ class _SaveStatus extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: const [
           SizedBox(
-            width: 10,
+            width: OideaSpace.space25,
             height: 10,
             child: CircularProgressIndicator(strokeWidth: 1.5),
           ),
-          SizedBox(width: 4),
+          SizedBox(width: OideaSpace.space1),
           Text('儲存中…', style: TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       );
@@ -1533,7 +1534,7 @@ class _SaveStatus extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.cloud_done_outlined, size: 12, color: Color(0xFF10B981)),
-        const SizedBox(width: 4),
+        const SizedBox(width: OideaSpace.space1),
         Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
       ],
     );

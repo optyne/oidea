@@ -5,6 +5,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/project_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class ProjectHomePage extends ConsumerStatefulWidget {
   const ProjectHomePage({super.key});
@@ -37,7 +38,7 @@ class _ProjectHomePageState extends ConsumerState<ProjectHomePage> {
         appBar: AppBar(title: const Text('專案')),
         body: const Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.all(OideaSpace.space6),
             child: Text('請在頂端建立或選擇工作空間', textAlign: TextAlign.center),
           ),
         ),
@@ -67,7 +68,7 @@ class _ProjectHomePageState extends ConsumerState<ProjectHomePage> {
           }
 
           return GridView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(OideaSpace.space4),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               childAspectRatio: 1.5,
@@ -82,7 +83,7 @@ class _ProjectHomePageState extends ConsumerState<ProjectHomePage> {
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => context.go('/projects/board/${project['id']}'),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(OideaSpace.space4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -96,7 +97,7 @@ class _ProjectHomePageState extends ConsumerState<ProjectHomePage> {
                                 shape: BoxShape.circle,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: OideaSpace.space2),
                             Expanded(
                               child: Text(
                                 project['name'] ?? '',
