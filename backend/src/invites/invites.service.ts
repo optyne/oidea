@@ -138,16 +138,14 @@ export class InvitesService {
   async accept(userId: string, token: string) {
     const invite = await this.prisma.workspaceInvite.findUnique({ where: { token } });
     if (!invite) throw new NotFoundException('邀請連結不存在或已失效');
-    if (invite.consumedAt) throw new ForbiddenException('此邀請已被使用');
-    if (invite.expiresAt <= new Date()) throw new ForbiddenException('此邀請已過期');
 
+    // 已是成員：以條件式 update 消費 invite（不改 role；若別人搶先消費此 invite 就直接結束）
     const existing = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: invite.workspaceId, userId } },
     });
     if (existing) {
-      // 已是成員：標記 invite 作廢但不改 role（避免被用 invite link 降級）
-      await this.prisma.workspaceInvite.update({
-        where: { id: invite.id },
+      await this.prisma.workspaceInvite.updateMany({
+        where: { id: invite.id, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: new Date(), consumedByUserId: userId },
       });
       return {
@@ -157,20 +155,26 @@ export class InvitesService {
       };
     }
 
-    // 原子：建立 member + 消費 invite
-    const [member] = await this.prisma.$transaction([
-      this.prisma.workspaceMember.create({
+    // 非成員：atomic 搶 invite 再建 member。
+    // 關鍵在 updateMany 的 WHERE 帶 consumedAt=null + 未過期；PostgreSQL row-level lock
+    // 保證多個併發 caller 只有一人拿到 count=1，其他拿到 count=0 直接 throw。
+    // 這樣避免「同一 invite 連結被兩個不同帳號同時接受、兩人都入群」的 TOCTOU race。
+    const member = await this.prisma.$transaction(async (tx) => {
+      const upd = await tx.workspaceInvite.updateMany({
+        where: { id: invite.id, consumedAt: null, expiresAt: { gt: new Date() } },
+        data: { consumedAt: new Date(), consumedByUserId: userId },
+      });
+      if (upd.count === 0) {
+        throw new ForbiddenException('此邀請已被使用或已過期');
+      }
+      return tx.workspaceMember.create({
         data: { workspaceId: invite.workspaceId, userId, role: invite.role },
         include: {
           workspace: { select: { id: true, name: true, slug: true } },
           user: { select: { id: true, displayName: true, avatarUrl: true } },
         },
-      }),
-      this.prisma.workspaceInvite.update({
-        where: { id: invite.id },
-        data: { consumedAt: new Date(), consumedByUserId: userId },
-      }),
-    ]);
+      });
+    });
 
     await this.audit.record({
       actorId: userId,
