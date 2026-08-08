@@ -130,6 +130,12 @@ describe('WhiteboardPagesService', () => {
     await expect(service.reorderPages('u-1', 'wb-1', ['p-1'])).rejects.toThrow(NotFoundException);
   });
 
+  it('reorderPages: orderedIds 含重複 id → NotFound（拒絕非排列）', async () => {
+    prisma.whiteboardPage.findMany.mockResolvedValue([{ id: 'p-1' }, { id: 'p-2' }]);
+    await expect(service.reorderPages('u-1', 'wb-1', ['p-1', 'p-1'])).rejects.toThrow(NotFoundException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('deletePage: 軟刪除', async () => {
     prisma.whiteboardPage.findUnique.mockResolvedValue({ id: 'p-1', whiteboardId: 'wb-1', deletedAt: null });
     prisma.whiteboardPage.update.mockResolvedValue({ id: 'p-1' });

@@ -115,7 +115,9 @@ export class WhiteboardPagesService {
       select: { id: true },
     });
     const liveIds = new Set(live.map((p) => p.id));
-    const sameSize = liveIds.size === orderedIds.length;
+    const sameSize =
+      liveIds.size === orderedIds.length &&
+      new Set(orderedIds).size === orderedIds.length;
     if (!sameSize || !orderedIds.every((id) => liveIds.has(id))) {
       throw new NotFoundException('orderedIds 與現存頁面不一致');
     }
