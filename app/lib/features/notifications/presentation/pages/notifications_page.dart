@@ -5,6 +5,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../providers/notifications_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class NotificationsPage extends ConsumerWidget {
   const NotificationsPage({super.key});
@@ -67,7 +68,7 @@ class NotificationsPage extends ConsumerWidget {
                       if (createdAt != null)
                         Text(
                           timeago.format(createdAt, locale: 'zh_TW'),
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade500),
                         ),
                     ],
                   ),

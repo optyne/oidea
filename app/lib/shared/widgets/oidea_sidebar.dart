@@ -148,7 +148,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                     initials,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
+                      fontSize: OideaFontSize.size11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
                     ),
@@ -166,7 +166,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 13,
+                            fontSize: OideaFontSize.size13,
                             fontWeight: FontWeight.w600,
                             height: 1.3,
                           ),
@@ -175,7 +175,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                           'Free plan',
                           style: TextStyle(
                             color: Color(0x66FFFFFF),
-                            fontSize: 11,
+                            fontSize: OideaFontSize.size11,
                             height: 1.2,
                           ),
                         ),
@@ -224,7 +224,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
               padding: EdgeInsets.all(OideaSpace.space4),
               child: Text(
                 '切換工作空間',
-                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(color: Colors.white, fontSize: OideaFontSize.size14, fontWeight: FontWeight.w600),
               ),
             ),
             if (maps.isEmpty)
@@ -249,12 +249,12 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                     _initialsOf(wname),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 10,
+                      fontSize: OideaFontSize.size10,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                title: Text(wname, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                title: Text(wname, style: const TextStyle(color: Colors.white, fontSize: OideaFontSize.size13)),
                 trailing: selected ? const Icon(Icons.check, color: OideaTokens.accent) : null,
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -266,7 +266,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
             const Divider(color: Color(0x14FFFFFF), height: 1),
             ListTile(
               leading: const Icon(Icons.add, color: Colors.white70),
-              title: const Text('新增工作空間', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              title: const Text('新增工作空間', style: TextStyle(color: Colors.white70, fontSize: OideaFontSize.size13)),
               onTap: () {
                 Navigator.pop(ctx);
                 _showCreateWorkspaceDialog(context, ref);
@@ -413,7 +413,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: OideaFontSize.size13,
                       color: fg,
                       fontWeight: widget.active ? FontWeight.w500 : FontWeight.w400,
                     ),
@@ -507,7 +507,7 @@ class _BottomArea extends ConsumerWidget {
                           _avatarInitials(auth.displayName ?? auth.email ?? '?'),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 11,
+                            fontSize: OideaFontSize.size11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -536,7 +536,7 @@ class _BottomArea extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: OideaTokens.sidebarText,
-                          fontSize: 12,
+                          fontSize: OideaFontSize.size12,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -590,12 +590,12 @@ class _BottomArea extends ConsumerWidget {
                     children: [
                       Text(
                         auth.displayName ?? '未設定名稱',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: OideaFontSize.size16),
                       ),
                       if (auth.email != null)
                         Text(
                           auth.email!,
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13),
                         ),
                     ],
                   ),
@@ -701,7 +701,7 @@ class _PlainButtonState extends State<_PlainButton> {
                 Text(
                   widget.label,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: OideaFontSize.size13,
                     color: OideaTokens.sidebarTextDim,
                   ),
                 ),

@@ -119,7 +119,7 @@ class _ChatHomePageState extends ConsumerState<ChatHomePage> {
                               channel['topic'].toString(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                              style: TextStyle(fontSize: OideaFontSize.size13, color: Colors.grey.shade600),
                             )
                           : null,
                       onTap: () {

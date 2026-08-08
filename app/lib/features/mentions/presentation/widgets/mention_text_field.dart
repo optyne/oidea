@@ -204,7 +204,7 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
                     CircleAvatar(
                       radius: 10,
                       child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(fontSize: 10)),
+                          style: const TextStyle(fontSize: OideaFontSize.size10)),
                     ),
                     const SizedBox(width: OideaSpace.space2),
                     Expanded(
@@ -212,12 +212,12 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: OideaFontSize.size13),
                       ),
                     ),
                     if (uname.isNotEmpty)
                       Text('@$uname',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                          style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600)),
                   ],
                 ),
               ),

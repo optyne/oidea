@@ -230,10 +230,10 @@ class _UserAvatarButton extends ConsumerWidget {
                     children: [
                       Text(
                         auth.displayName ?? '未設定名稱',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: OideaFontSize.size16),
                       ),
                       if (auth.email != null)
-                        Text(auth.email!, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                        Text(auth.email!, style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13)),
                     ],
                   ),
                 ),

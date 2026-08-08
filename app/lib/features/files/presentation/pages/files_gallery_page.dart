@@ -306,7 +306,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
           child: Row(
             children: [
               const Text('資料夾',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: OideaFontSize.size14, fontWeight: FontWeight.w700)),
               const Spacer(),
               IconButton(
                 tooltip: '新增資料夾',
@@ -347,7 +347,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                   padding: const EdgeInsets.all(OideaSpace.space4),
                   child: Text(
                     '還沒有資料夾\n上傳時或點「新增資料夾」即可建立',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
                   ),
                 ),
             ],
@@ -388,7 +388,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: OideaFontSize.size13),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -472,7 +472,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
             ),
             if (_folders.isNotEmpty) ...[
               const SizedBox(height: OideaSpace.space2),
-              const Text('已存在', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              const Text('已存在', style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey)),
               const SizedBox(height: OideaSpace.space1),
               SizedBox(
                 height: 120,
@@ -484,7 +484,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                         dense: true,
                         visualDensity: VisualDensity.compact,
                         leading: const Icon(Icons.folder_outlined, size: 16),
-                        title: Text(f, style: const TextStyle(fontSize: 12)),
+                        title: Text(f, style: const TextStyle(fontSize: OideaFontSize.size12)),
                         onTap: () => Navigator.pop(ctx, f),
                       ),
                   ],
@@ -523,10 +523,10 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          const Text('檔案庫', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+          const Text('檔案庫', style: TextStyle(fontSize: OideaFontSize.size22, fontWeight: FontWeight.w700)),
           const SizedBox(width: OideaSpace.space3),
           if (_total > 0)
-            Text('共 $_total 筆', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            Text('共 $_total 筆', style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13)),
           const Spacer(),
           SizedBox(
             width: 240,
@@ -599,7 +599,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
           const SizedBox(height: OideaSpace.space3),
           Text(
             _search.isNotEmpty ? '找不到符合的檔案' : '目前還沒有檔案',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size15),
           ),
           const SizedBox(height: OideaSpace.space2),
           if (_search.isEmpty)
@@ -672,11 +672,11 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                           (item['fileName'] as String?) ?? '',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          style: const TextStyle(fontSize: OideaFontSize.size12, fontWeight: FontWeight.w500),
                         ),
                         Text(
                           _formatSize((item['fileSize'] as int?) ?? 0),
-                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                          style: TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey.shade600),
                         ),
                       ],
                     ),
@@ -737,7 +737,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
               _formatSize((item['fileSize'] as int?) ?? 0),
               if (uploader?['displayName'] != null) '上傳者：${uploader!['displayName']}',
             ].join(' · '),
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
           ),
           trailing: PopupMenuButton<String>(
             onSelected: (v) {

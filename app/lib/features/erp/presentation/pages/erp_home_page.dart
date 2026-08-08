@@ -86,7 +86,7 @@ class _Tile extends StatelessWidget {
               const SizedBox(height: OideaSpace.space3),
               Text(
                 label,
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size15),
               ),
             ],
           ),

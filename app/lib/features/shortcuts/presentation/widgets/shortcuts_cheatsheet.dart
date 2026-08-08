@@ -99,7 +99,7 @@ class _CheatsheetBody extends StatelessWidget {
             const SizedBox(width: OideaSpace.space25),
             const Text(
               '鍵盤快捷鍵',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: OideaFontSize.size18, fontWeight: FontWeight.w700),
             ),
             const Spacer(),
             IconButton(
@@ -122,7 +122,7 @@ class _CheatsheetBody extends StatelessWidget {
             Expanded(
               child: Text(
                 'macOS 請用 ⌘ 取代 Ctrl。觸控裝置上大部分操作可用長按或點擊達成。',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
               ),
             ),
           ],
@@ -168,7 +168,7 @@ class _CheatsheetBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(s.title,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+              style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w700)),
           const SizedBox(height: OideaSpace.space15),
           for (final e in s.entries) _entryRow(e),
         ],
@@ -183,13 +183,13 @@ class _CheatsheetBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Text(e.label, style: const TextStyle(fontSize: 13)),
+            child: Text(e.label, style: const TextStyle(fontSize: OideaFontSize.size13)),
           ),
           for (var i = 0; i < e.keys.length; i++) ...[
             if (i > 0)
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: OideaSpace.space1),
-                child: Text('+', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                child: Text('+', style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey)),
               ),
             _keyChip(e.keys[i]),
           ],
@@ -215,7 +215,7 @@ class _CheatsheetBody extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: OideaFontSize.size11,
               fontFamily: 'monospace',
               color: isDark ? Colors.grey.shade200 : Colors.grey.shade800,
             ),

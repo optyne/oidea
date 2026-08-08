@@ -112,7 +112,7 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
                 const Icon(Icons.forum_outlined, size: 16),
                 const SizedBox(width: OideaSpace.space15),
                 const Text('討論串',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size14)),
                 const Spacer(),
                 if (widget.onClose != null)
                   IconButton(
@@ -161,11 +161,11 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
                               Text(
                                 sender?['displayName'] as String? ?? '?',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 12),
+                                    fontWeight: FontWeight.w600, fontSize: OideaFontSize.size12),
                               ),
                               MessageBody(
                                 content: msg['content'] as String? ?? '',
-                                baseStyle: const TextStyle(fontSize: 13),
+                                baseStyle: const TextStyle(fontSize: OideaFontSize.size13),
                               ),
                             ],
                           ),
@@ -242,12 +242,12 @@ class _ParentHeader extends StatelessWidget {
           const SizedBox(height: OideaSpace.space1),
           Text(
             sender?['displayName'] as String? ?? '?',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size13),
           ),
           const SizedBox(height: OideaSpace.space05),
           MessageBody(
             content: parent['content'] as String? ?? '',
-            baseStyle: const TextStyle(fontSize: 14),
+            baseStyle: const TextStyle(fontSize: OideaFontSize.size14),
           ),
         ],
       ),

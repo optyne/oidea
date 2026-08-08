@@ -41,7 +41,7 @@ class NotificationBadge extends ConsumerWidget {
                   count > 99 ? '99+' : '$count',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 10,
+                    fontSize: OideaFontSize.size10,
                     fontWeight: FontWeight.w700,
                   ),
                   textAlign: TextAlign.center,

@@ -404,13 +404,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                         Text(
                           _formatDate(c['createdAt']),
                           style: const TextStyle(
-                              fontSize: 12, color: Colors.grey),
+                              fontSize: OideaFontSize.size12, color: Colors.grey),
                         ),
                       ],
                     ),
                     subtitle: MessageBody(
                       content: (c['content'] as String?) ?? '',
-                      baseStyle: const TextStyle(fontSize: 14),
+                      baseStyle: const TextStyle(fontSize: OideaFontSize.size14),
                     ),
                   );
                 }),
@@ -433,13 +433,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                             child: Text(
                               '${user?['displayName'] ?? '?'} ${_actionLabel(a['action'])}',
                               style: TextStyle(
-                                  fontSize: 13, color: Colors.grey.shade700),
+                                  fontSize: OideaFontSize.size13, color: Colors.grey.shade700),
                             ),
                           ),
                           Text(
                             _formatDate(a['createdAt']),
                             style: const TextStyle(
-                                fontSize: 11, color: Colors.grey),
+                                fontSize: OideaFontSize.size11, color: Colors.grey),
                           ),
                         ],
                       ),

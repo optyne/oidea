@@ -399,7 +399,7 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
               height: _headerH,
               color: Colors.grey.shade100,
               alignment: Alignment.center,
-              child: const Text('', style: TextStyle(fontSize: 11)),
+              child: const Text('', style: TextStyle(fontSize: OideaFontSize.size11)),
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -491,7 +491,7 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
       alignment: Alignment.center,
       child: Text(
         _colLabel(c),
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+        style: const TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
       ),
     );
   }
@@ -511,7 +511,7 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
       alignment: Alignment.center,
       child: Text(
         '${r + 1}',
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, fontFamily: 'monospace'),
+        style: const TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w500, fontFamily: 'monospace'),
       ),
     );
   }
@@ -565,7 +565,7 @@ class _SpreadsheetEditorPageState extends ConsumerState<SpreadsheetEditorPage> {
                 display,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: textColor),
+                style: TextStyle(fontSize: OideaFontSize.size13, color: textColor),
               ),
             ),
           ],

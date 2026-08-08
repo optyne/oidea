@@ -574,7 +574,7 @@ class _ToolbarChip extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: OideaFontSize.size12,
               fontWeight: FontWeight.w500,
               color: active ? theme.colorScheme.primary : null,
             ),
@@ -660,7 +660,7 @@ class _BoardView extends StatelessWidget {
                                       child: Text(
                                         highlight ? '放開以移入此欄' : '長按任務拖曳到另一欄',
                                         textAlign: TextAlign.center,
-                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                        style: TextStyle(fontSize: OideaFontSize.size13, color: Colors.grey.shade600),
                                       ),
                                     )
                                   : ListView.builder(
@@ -756,7 +756,7 @@ class _ColumnHeader extends StatelessWidget {
             ),
             child: Text(
               filtered ? '$count / $totalCount' : '$count',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -803,7 +803,7 @@ class _AddTaskFooter extends StatelessWidget {
               Text(
                 '新增任務',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: OideaFontSize.size12,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
@@ -914,7 +914,7 @@ class TaskCard extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size14),
                       ),
                       if (desc != null && desc.isNotEmpty) ...[
                         const SizedBox(height: OideaSpace.space1),
@@ -922,7 +922,7 @@ class TaskCard extends StatelessWidget {
                           desc,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade700),
                         ),
                       ],
                       if (tags.isNotEmpty) ...[
@@ -942,7 +942,7 @@ class TaskCard extends StatelessWidget {
                               ),
                               child: Text(
                                 tm['name'] as String? ?? '',
-                                style: const TextStyle(fontSize: 11),
+                                style: const TextStyle(fontSize: OideaFontSize.size11),
                               ),
                             );
                           }).toList(),
@@ -960,7 +960,7 @@ class TaskCard extends StatelessWidget {
                             child: Text(
                               priorityLabel(priority),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: OideaFontSize.size11,
                                 fontWeight: FontWeight.w600,
                                 color: priorityColor(priority),
                               ),
@@ -990,7 +990,7 @@ class TaskCard extends StatelessWidget {
                             Text(
                               '${dueDate.month}/${dueDate.day}',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: OideaFontSize.size11,
                                 color: overdue ? Colors.red : Colors.grey.shade600,
                                 fontWeight: overdue ? FontWeight.bold : FontWeight.normal,
                               ),
@@ -1006,7 +1006,7 @@ class TaskCard extends StatelessWidget {
                               child: (assignee['avatarUrl'] as String?) == null
                                   ? Text(
                                       (assignee['displayName'] as String? ?? '?').characters.first,
-                                      style: const TextStyle(fontSize: 10),
+                                      style: const TextStyle(fontSize: OideaFontSize.size10),
                                     )
                                   : null,
                             ),
@@ -1046,7 +1046,7 @@ class _CardBadge extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: Colors.grey.shade600),
           const SizedBox(width: OideaSpace.space05),
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+          Text(label, style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade700)),
         ],
       ),
     );
@@ -1229,7 +1229,7 @@ class _GanttView extends StatelessWidget {
                                 t['title'] as String? ?? '',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12),
+                                style: const TextStyle(fontSize: OideaFontSize.size12),
                               ),
                             ),
                           ),
@@ -1250,7 +1250,7 @@ class _GanttView extends StatelessWidget {
                                 t['title'] as String? ?? '',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11, color: Colors.white),
+                                style: const TextStyle(fontSize: OideaFontSize.size11, color: Colors.white),
                               ),
                             ),
                           ),
@@ -1294,7 +1294,7 @@ class _GanttHeader extends StatelessWidget {
                     top: 8,
                     child: Text(
                       _fmt(earliest.add(Duration(days: i))),
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: const TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey),
                     ),
                   ),
               ],

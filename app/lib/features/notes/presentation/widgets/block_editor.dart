@@ -363,10 +363,10 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         field = _textField(b, const TextStyle(fontSize: 26, fontWeight: FontWeight.w700), index: index);
         break;
       case 'h2':
-        field = _textField(b, const TextStyle(fontSize: 22, fontWeight: FontWeight.w700), index: index);
+        field = _textField(b, const TextStyle(fontSize: OideaFontSize.size22, fontWeight: FontWeight.w700), index: index);
         break;
       case 'h3':
-        field = _textField(b, const TextStyle(fontSize: 18, fontWeight: FontWeight.w600), index: index);
+        field = _textField(b, const TextStyle(fontSize: OideaFontSize.size18, fontWeight: FontWeight.w600), index: index);
         break;
       case 'todo':
         field = Row(
@@ -430,7 +430,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           ),
           child: _textField(
             b,
-            const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            const TextStyle(fontFamily: 'monospace', fontSize: OideaFontSize.size13),
             index: index,
           ),
         );
@@ -448,12 +448,12 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                 borderRadius: BorderRadius.circular(6),
                 child: Image.network(url, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image)),
               ),
-            _textField(b, const TextStyle(fontSize: 12, color: Colors.grey), index: index),
+            _textField(b, const TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey), index: index),
           ],
         );
         break;
       default:
-        field = _textField(b, const TextStyle(fontSize: 15), index: index);
+        field = _textField(b, const TextStyle(fontSize: OideaFontSize.size15), index: index);
     }
 
     return MouseRegion(
@@ -559,7 +559,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
             Expanded(
               child: _textField(
                 b,
-                const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                const TextStyle(fontSize: OideaFontSize.size15, fontWeight: FontWeight.w500),
                 index: index,
               ),
             ),
@@ -571,13 +571,13 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
             child: TextField(
               controller: b.bodyController,
               maxLines: null,
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(fontSize: OideaFontSize.size14),
               decoration: InputDecoration(
                 border: InputBorder.none,
                 isCollapsed: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
                 hintText: '空內容 —— 在此輸入',
-                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: OideaFontSize.size13),
               ),
               onChanged: (_) => _scheduleSave(),
             ),
@@ -593,7 +593,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         padding: const EdgeInsets.only(left: 44, top: OideaSpace.space1, bottom: OideaSpace.space1),
         child: Text(
           '沒有符合「$_slashQuery」的 block 類型',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          style: TextStyle(color: Colors.grey.shade500, fontSize: OideaFontSize.size12),
         ),
       );
     }
@@ -618,9 +618,9 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                       children: [
                         Icon(filtered[i].$3, size: 16, color: Colors.grey.shade700),
                         const SizedBox(width: OideaSpace.space25),
-                        Expanded(child: Text(filtered[i].$2, style: const TextStyle(fontSize: 13))),
+                        Expanded(child: Text(filtered[i].$2, style: const TextStyle(fontSize: OideaFontSize.size13))),
                         Text('/${filtered[i].$1}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontFamily: 'monospace')),
+                            style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade500, fontFamily: 'monospace')),
                       ],
                     ),
                   ),
@@ -645,7 +645,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         isCollapsed: true,
         contentPadding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
         hintText: showHint ? '輸入 / 叫出指令' : null,
-        hintStyle: showHint ? TextStyle(color: Colors.grey.shade400, fontSize: 14) : null,
+        hintStyle: showHint ? TextStyle(color: Colors.grey.shade400, fontSize: OideaFontSize.size14) : null,
       ),
       onChanged: (_) => index != null ? _onBlockTextChanged(index) : _scheduleSave(),
     );
@@ -706,7 +706,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
               children: [
                 SizedBox(width: OideaSpace.space3, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
                 SizedBox(width: OideaSpace.space15),
-                Text('儲存中…', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('儲存中…', style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey)),
               ],
             ),
           ),

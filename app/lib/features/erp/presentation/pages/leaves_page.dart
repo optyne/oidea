@@ -202,7 +202,7 @@ class _LeaveRow extends ConsumerWidget {
               _statusLabel(status),
               style: TextStyle(
                 color: _statusColor(status),
-                fontSize: 11,
+                fontSize: OideaFontSize.size11,
                 fontWeight: FontWeight.w600,
               ),
             ),

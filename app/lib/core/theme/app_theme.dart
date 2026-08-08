@@ -116,6 +116,51 @@ class OideaRadius {
   static const xlAll = BorderRadius.all(Radius.circular(xl));
 }
 
+/// Font size steps.
+///
+/// The layer below [OideaType]: raw sizes with no weight, height or colour
+/// attached. [OideaType] is built from these, and so is any one-off
+/// [TextStyle] that does not fit a named role.
+///
+/// Prefer [OideaType]. Reach for a bare size only when you need a size and
+/// nothing else — swapping a literal for a token here is safe in a way that
+/// swapping it for a full named style is not, because a named style also
+/// carries weight and line height.
+///
+/// The steps are the sizes this app actually uses, counted from the source.
+/// Two of them come with a warning:
+///
+/// - [size11] (46 uses) and [size10] (18 uses) are below what Traditional
+///   Chinese stays comfortably readable at on a normal display. They are
+///   listed so the existing call sites can be named rather than hidden, not
+///   because new code should reach for them. New metadata text should start
+///   at [size12].
+///
+/// Sizes outside this list are left as literals on purpose, so that an
+/// off-scale value stays visible in review instead of blending in.
+class OideaFontSize {
+  OideaFontSize._();
+
+  /// Too small for body text — see the class doc before using.
+  static const size10 = 10.0;
+
+  /// Too small for body text — see the class doc before using.
+  static const size11 = 11.0;
+
+  static const size12 = 12.0;
+  static const size13 = 13.0;
+  static const size14 = 14.0;
+  static const size15 = 15.0;
+  static const size16 = 16.0;
+  static const size18 = 18.0;
+  static const size20 = 20.0;
+  static const size22 = 22.0;
+  static const size24 = 24.0;
+  static const size28 = 28.0;
+  static const size32 = 32.0;
+  static const size40 = 40.0;
+}
+
 /// Type scale.
 ///
 /// Deliberately carries only size, weight, height and tracking — never a
@@ -129,7 +174,7 @@ class OideaType {
 
   /// 40 / w800 — the one-per-screen hero number or title.
   static const display = TextStyle(
-    fontSize: 40,
+    fontSize: OideaFontSize.size40,
     fontWeight: FontWeight.w800,
     height: 1.15,
     letterSpacing: -1.0,
@@ -137,7 +182,7 @@ class OideaType {
 
   /// 32 / w800 — page title.
   static const h1 = TextStyle(
-    fontSize: 32,
+    fontSize: OideaFontSize.size32,
     fontWeight: FontWeight.w800,
     height: 1.2,
     letterSpacing: -0.6,
@@ -145,7 +190,7 @@ class OideaType {
 
   /// 24 / w700 — section heading.
   static const h2 = TextStyle(
-    fontSize: 24,
+    fontSize: OideaFontSize.size24,
     fontWeight: FontWeight.w700,
     height: 1.25,
     letterSpacing: -0.3,
@@ -153,36 +198,36 @@ class OideaType {
 
   /// 20 / w700 — card or dialog heading.
   static const h3 = TextStyle(
-    fontSize: 20,
+    fontSize: OideaFontSize.size20,
     fontWeight: FontWeight.w700,
     height: 1.3,
   );
 
   /// 16 / w400 — lead paragraph.
-  static const bodyLg = TextStyle(fontSize: 16, height: 1.6);
+  static const bodyLg = TextStyle(fontSize: OideaFontSize.size16, height: 1.6);
 
   /// 14 / w400 — default body copy.
-  static const body = TextStyle(fontSize: 14, height: 1.6);
+  static const body = TextStyle(fontSize: OideaFontSize.size14, height: 1.6);
 
   /// 13 / w400 — secondary copy, timestamps, helper text.
-  static const bodySm = TextStyle(fontSize: 13, height: 1.5);
+  static const bodySm = TextStyle(fontSize: OideaFontSize.size13, height: 1.5);
 
   /// 13 / w600 — form field labels sitting above their input.
   static const label = TextStyle(
-    fontSize: 13,
+    fontSize: OideaFontSize.size13,
     fontWeight: FontWeight.w600,
     height: 1.4,
   );
 
   /// 15 / w600 — button text.
   static const button = TextStyle(
-    fontSize: 15,
+    fontSize: OideaFontSize.size15,
     fontWeight: FontWeight.w600,
     height: 1.2,
   );
 
   /// 12 / w400 — captions and metadata.
-  static const caption = TextStyle(fontSize: 12, height: 1.4);
+  static const caption = TextStyle(fontSize: OideaFontSize.size12, height: 1.4);
 }
 
 /// Elevation scale. Two steps is enough: [sm] lifts a control off its

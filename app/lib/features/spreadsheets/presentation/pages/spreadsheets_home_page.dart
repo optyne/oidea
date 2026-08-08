@@ -146,7 +146,7 @@ class _SpreadsheetsHomePageState extends ConsumerState<SpreadsheetsHomePage> {
                                 (s['description'] as String?)?.isNotEmpty == true
                                     ? s['description'] as String
                                     : '最後更新：${_formatDate(s['updatedAt'] as String?)}',
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade600),
                               ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (v) {
@@ -179,7 +179,7 @@ class _SpreadsheetsHomePageState extends ConsumerState<SpreadsheetsHomePage> {
           children: [
             Icon(Icons.grid_on, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: OideaSpace.space3),
-            Text('目前還沒有試算表', style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
+            Text('目前還沒有試算表', style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size15)),
             const SizedBox(height: OideaSpace.space2),
             TextButton.icon(
               icon: const Icon(Icons.add),

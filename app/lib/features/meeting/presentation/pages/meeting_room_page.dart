@@ -91,7 +91,7 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                                 children: [
                                   Text(
                                     user?['displayName'] ?? 'Unknown',
-                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    style: const TextStyle(color: Colors.white, fontSize: OideaFontSize.size12),
                                   ),
                                   if (participant['role'] == 'organizer') ...[
                                     const SizedBox(width: OideaSpace.space1),

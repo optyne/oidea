@@ -80,7 +80,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
             ),
             child: const Text(
               '✓ M-04 日曆整合',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
+              style: TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
             ),
           ),
           IconButton(icon: const Icon(Icons.search), onPressed: () {}),
@@ -228,16 +228,16 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                       children: [
                         Text(
                           meeting['title'] ?? '',
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size16),
                         ),
                         const SizedBox(height: OideaSpace.space1),
                         Text(
                           '${_formatTime(startTime)} - ${_formatTime(endTime)}',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13),
                         ),
                         Text(
                           '${meeting['_count']?['participants'] ?? 0} 位參與者',
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: OideaFontSize.size12),
                         ),
                       ],
                     ),
@@ -300,7 +300,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                   maxLines: 2,
                 ),
                 const SizedBox(height: OideaSpace.space4),
-                const Text('開始時間', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const Text('開始時間', style: TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size13)),
                 const SizedBox(height: OideaSpace.space15),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
@@ -327,7 +327,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                   },
                 ),
                 const SizedBox(height: OideaSpace.space3),
-                const Text('結束時間', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const Text('結束時間', style: TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size13)),
                 const SizedBox(height: OideaSpace.space15),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.access_time, size: 18),
@@ -351,7 +351,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
                 const SizedBox(height: OideaSpace.space2),
                 Text(
                   '時長:${_durationLabel(endTime.difference(startTime))}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade600),
                 ),
               ],
             ),
@@ -452,7 +452,7 @@ class _TimeGridView extends StatelessWidget {
               Text(
                 '${days.first.year}-${days.first.month.toString().padLeft(2, '0')}'
                 '${days.length > 1 ? " · 第 ${_weekOfYear(days.first)} 週" : ""}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: const TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey),
               ),
             ],
           ),
@@ -469,7 +469,7 @@ class _TimeGridView extends StatelessWidget {
                         Text(
                           weekdays[d.weekday - 1],
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: OideaFontSize.size11,
                             color: Colors.grey.shade600,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.5,
@@ -479,7 +479,7 @@ class _TimeGridView extends StatelessWidget {
                         Text(
                           '${d.day}',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: OideaFontSize.size18,
                             fontWeight: FontWeight.w700,
                             color: isToday ? const Color(0xFF4F46E5) : null,
                           ),
@@ -512,7 +512,7 @@ class _TimeGridView extends StatelessWidget {
                                 offset: const Offset(0, -6),
                                 child: Text(
                                   '$h:00',
-                                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                  style: const TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey),
                                 ),
                               ),
                             ),
@@ -635,7 +635,7 @@ class _DayColumn extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 11,
+                            fontSize: OideaFontSize.size11,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -714,7 +714,7 @@ class _FeatureGrid extends StatelessWidget {
                       Flexible(
                         child: Text(
                           label,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          style: const TextStyle(fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -723,7 +723,7 @@ class _FeatureGrid extends StatelessWidget {
                   const SizedBox(height: OideaSpace.space1),
                   Text(
                     desc,
-                    style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
+                    style: TextStyle(fontSize: OideaFontSize.size11, color: Theme.of(context).hintColor),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -790,7 +790,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                           child: const Text(
                             'YO',
                             style: TextStyle(
-                              fontSize: 28,
+                              fontSize: OideaFontSize.size28,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
@@ -811,7 +811,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                               '🎥 已關閉',
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 11,
+                                fontSize: OideaFontSize.size11,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -844,7 +844,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                                 'WebRTC 已連線',
                                 style: TextStyle(
                                   color: Colors.white,
-                                  fontSize: 10,
+                                  fontSize: OideaFontSize.size10,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -864,12 +864,12 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                 children: [
                   Text(
                     m['title'] as String? ?? '會議',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                    style: const TextStyle(fontSize: OideaFontSize.size15, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: OideaSpace.space1),
                   Text(
                     'M-02 一對一 / M-03 群組會議 · 預計 $participantCount 人參與',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                    style: TextStyle(fontSize: OideaFontSize.size12, color: Theme.of(context).hintColor),
                   ),
                   const SizedBox(height: OideaSpace.space4),
                   Row(
@@ -927,7 +927,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                           child: Text(
                             'M-07 螢幕分享 · M-08 會議錄製 · M-10 虛擬背景皆已啟用',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: OideaFontSize.size11,
                               color: Theme.of(context).hintColor,
                             ),
                           ),

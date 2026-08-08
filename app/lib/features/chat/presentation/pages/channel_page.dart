@@ -261,7 +261,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                 },
                 child: Padding(
                   padding: const EdgeInsets.all(OideaSpace.space2),
-                  child: Text(e, style: const TextStyle(fontSize: 32)),
+                  child: Text(e, style: const TextStyle(fontSize: OideaFontSize.size32)),
                 ),
               );
             }).toList(),
@@ -535,7 +535,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                       Text(
                         '$pinnedCount',
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: OideaFontSize.size12,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFFF59E0B),
                         ),
@@ -822,7 +822,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
             padding: const EdgeInsets.only(left: OideaSpace.space3, top: OideaSpace.space05, bottom: OideaSpace.space05),
             child: DefaultTextStyle.merge(
               style: TextStyle(
-                fontSize: 10,
+                fontSize: OideaFontSize.size10,
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
               ),
               child: Row(
@@ -945,7 +945,7 @@ class _MessageRowState extends State<_MessageRow> {
                         Text(
                           '已置頂',
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: OideaFontSize.size10,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFFF59E0B),
                             letterSpacing: 0.8,
@@ -965,7 +965,7 @@ class _MessageRowState extends State<_MessageRow> {
                         Text(
                           '排程中 · $_scheduledFor',
                           style: const TextStyle(
-                            fontSize: 10,
+                            fontSize: OideaFontSize.size10,
                             fontWeight: FontWeight.w700,
                             color: OideaTokens.accent,
                             letterSpacing: 0.6,
@@ -983,12 +983,12 @@ class _MessageRowState extends State<_MessageRow> {
                     const SizedBox(width: OideaSpace.space2),
                     Text(
                       _formatTime(msg['createdAt']),
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                      style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade500),
                     ),
                     if (msg['editedAt'] != null)
                       Text(
                         '（已編輯）',
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                        style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade400),
                       ),
                   ],
                 ),
@@ -1057,7 +1057,7 @@ class _MessageRowState extends State<_MessageRow> {
                             Text(
                               '$nReplies 則回覆',
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: OideaFontSize.size12,
                                 fontWeight: FontWeight.w500,
                                 color: OideaTokens.accent,
                               ),
@@ -1175,7 +1175,7 @@ class _HoverActions extends StatelessWidget {
                 onTap: () => onQuickReact(e),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: 3),
-                  child: Text(e, style: const TextStyle(fontSize: 16)),
+                  child: Text(e, style: const TextStyle(fontSize: OideaFontSize.size16)),
                 ),
               ),
             if (onAddReaction != null)
@@ -1270,12 +1270,12 @@ class _ReactionChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 13)),
+            Text(emoji, style: const TextStyle(fontSize: OideaFontSize.size13)),
             const SizedBox(width: OideaSpace.space1),
             Text(
               '$count',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: OideaFontSize.size11,
                 fontWeight: FontWeight.w600,
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.78),
               ),
@@ -1348,7 +1348,7 @@ class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderState
             const SizedBox(width: OideaSpace.space25),
             Text(
               widget.count == 1 ? '有成員正在輸入…' : '${widget.count} 人正在輸入…',
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+              style: TextStyle(fontSize: OideaFontSize.size12, color: Theme.of(context).colorScheme.onSurface),
             ),
           ],
         ),
@@ -1389,7 +1389,7 @@ class _PinnedDrawer extends StatelessWidget {
               Text(
                 '置頂訊息 (C-13)',
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: OideaFontSize.size10,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFF59E0B),
                   letterSpacing: 0.8,
@@ -1421,7 +1421,7 @@ class _PinnedDrawer extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             text: TextSpan(
-                              style: DefaultTextStyle.of(context).style.copyWith(fontSize: 12),
+                              style: DefaultTextStyle.of(context).style.copyWith(fontSize: OideaFontSize.size12),
                               children: [
                                 TextSpan(
                                   text:
@@ -1480,7 +1480,7 @@ class _AutomationMessage extends StatelessWidget {
               borderRadius: BorderRadius.circular(OideaRadius.md),
             ),
             alignment: Alignment.center,
-            child: const Text('🤖', style: TextStyle(fontSize: 14)),
+            child: const Text('🤖', style: TextStyle(fontSize: OideaFontSize.size14)),
           ),
           const SizedBox(width: OideaSpace.space25),
           Expanded(
@@ -1489,7 +1489,7 @@ class _AutomationMessage extends StatelessWidget {
               child: Text(
                 content,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: OideaFontSize.size12,
                   fontStyle: FontStyle.italic,
                   color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -1714,7 +1714,7 @@ class _FileMessageTile extends StatelessWidget {
                 if (size is int)
                   Text(
                     _formatBytes(size),
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade600),
                   ),
               ],
             ),
@@ -1750,7 +1750,7 @@ class _SnippetMenuItem extends StatelessWidget {
             children: [
               Text(
                 snippet.name,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w600),
               ),
               const SizedBox(width: OideaSpace.space15),
               Container(
@@ -1779,7 +1779,7 @@ class _SnippetMenuItem extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: OideaFontSize.size11,
               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
@@ -1836,14 +1836,14 @@ class _BroadcastDialogState extends ConsumerState<_BroadcastDialog> {
                 widget.content,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: OideaFontSize.size13),
               ),
             ),
             const SizedBox(height: OideaSpace.space3),
             Text(
               '選擇頻道 (${_selected.length})',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: OideaFontSize.size11,
                 fontWeight: FontWeight.w700,
                 color: Theme.of(context).hintColor,
                 letterSpacing: 0.8,
@@ -1868,7 +1868,7 @@ class _BroadcastDialogState extends ConsumerState<_BroadcastDialog> {
                             controlAffinity: ListTileControlAffinity.leading,
                             title: Text(
                               '# ${c['name'] ?? c['id']}',
-                              style: const TextStyle(fontSize: 13),
+                              style: const TextStyle(fontSize: OideaFontSize.size13),
                             ),
                             onChanged: (v) {
                               final id = c['id'] as String?;
@@ -1956,7 +1956,7 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
                         '${presets[i].when!.day.toString().padLeft(2, '0')} '
                         '${presets[i].when!.hour.toString().padLeft(2, '0')}:'
                         '${presets[i].when!.minute.toString().padLeft(2, '0')}',
-                        style: const TextStyle(fontSize: 11),
+                        style: const TextStyle(fontSize: OideaFontSize.size11),
                       ),
                 onChanged: (v) async {
                   if (v == null) return;

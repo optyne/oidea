@@ -158,7 +158,7 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
           children: [
             const Text(
               '輸入對方的 email 或 username（對方必須已在本站註冊）',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
+              style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.black54),
             ),
             const SizedBox(height: OideaSpace.space3),
             TextField(
@@ -189,7 +189,7 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
             ),
             if (_error != null) ...[
               const SizedBox(height: OideaSpace.space25),
-              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: OideaFontSize.size12)),
             ],
           ],
         ),
@@ -334,7 +334,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
           children: [
             const Text(
               '任何人拿到連結、登入／註冊後就能加入此工作空間。每條連結只能用一次，可隨時撤銷。',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
+              style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.black54),
             ),
             const SizedBox(height: OideaSpace.space4),
             DropdownButtonFormField<String>(
@@ -371,7 +371,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
               const SizedBox(height: OideaSpace.space5),
               const Text(
                 '邀請連結（複製給對方）',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: OideaSpace.space15),
               Container(
@@ -383,13 +383,13 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
                 ),
                 child: SelectableText(
                   _link!,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: OideaFontSize.size12),
                 ),
               ),
             ],
             if (_error != null) ...[
               const SizedBox(height: OideaSpace.space25),
-              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: OideaFontSize.size12)),
             ],
           ],
         ),

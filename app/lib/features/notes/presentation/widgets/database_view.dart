@@ -83,12 +83,12 @@ class _FinanceSummaryStrip extends ConsumerWidget {
                   children: [
                     Text(
                       label,
-                      style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: c, fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: OideaSpace.space05),
                     Text(
                       NumberFormat.currency(symbol: 'NT\$', decimalDigits: 0).format(v),
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontSize: OideaFontSize.size15, fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -103,7 +103,7 @@ class _FinanceSummaryStrip extends ConsumerWidget {
                 children: [
                   Text(
                     '$ym 月總覽',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w600),
                   ),
                   const Spacer(),
                 ],
@@ -126,7 +126,7 @@ class _FinanceSummaryStrip extends ConsumerWidget {
                       return Chip(
                         label: Text(
                           '${e.key}  ${NumberFormat('#,##0').format(e.value as num)}',
-                          style: const TextStyle(fontSize: 11),
+                          style: const TextStyle(fontSize: OideaFontSize.size11),
                         ),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,

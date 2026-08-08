@@ -30,7 +30,7 @@ class _AttendancePageState extends ConsumerState<AttendancePage> {
           children: [
             Text(
               DateFormat('yyyy/MM/dd HH:mm').format(DateTime.now()),
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size18),
             ),
             const SizedBox(height: OideaSpace.space3),
             TextField(
@@ -170,7 +170,7 @@ class _TodayCard extends StatelessWidget {
             Text(
               DateFormat('yyyy/MM/dd EEE').format(DateTime.now()),
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
+              style: const TextStyle(fontSize: OideaFontSize.size14, color: Colors.grey),
             ),
             const SizedBox(height: OideaSpace.space2),
             Text(
@@ -233,7 +233,7 @@ class _StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: OideaFontSize.size12)),
         const SizedBox(height: OideaSpace.space1),
         Text(time, style: const TextStyle(fontWeight: FontWeight.w600)),
       ],

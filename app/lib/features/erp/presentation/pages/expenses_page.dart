@@ -206,11 +206,11 @@ class _StatsStrip extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(label, style: TextStyle(color: color, fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600)),
               const SizedBox(height: OideaSpace.space1),
-              Text('$count 筆', style: const TextStyle(fontSize: 13)),
+              Text('$count 筆', style: const TextStyle(fontSize: OideaFontSize.size13)),
               if (amount != null)
-                Text('NT\$ ${_fmtAmount(amount)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('NT\$ ${_fmtAmount(amount)}', style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -287,7 +287,7 @@ class _ExpenseRow extends ConsumerWidget {
               _statusLabel(status),
               style: TextStyle(
                 color: _statusColor(status),
-                fontSize: 11,
+                fontSize: OideaFontSize.size11,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -297,11 +297,11 @@ class _ExpenseRow extends ConsumerWidget {
       subtitle: Text(
         '${submitter?['displayName'] ?? ''}'
         ' · ${createdAt != null ? DateFormat('MM/dd HH:mm').format(createdAt) : ''}',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+        style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size12),
       ),
       trailing: Text(
         'NT\$ ${NumberFormat('#,##0').format(amountNum)}',
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size15),
       ),
     );
   }
@@ -337,10 +337,10 @@ class _ExpenseDetailSheet extends ConsumerWidget {
         padding: const EdgeInsets.all(OideaSpace.space4),
         children: [
           Text(expense['title'] as String? ?? '',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              style: const TextStyle(fontSize: OideaFontSize.size18, fontWeight: FontWeight.w700)),
           const SizedBox(height: OideaSpace.space2),
           Text('NT\$ ${NumberFormat('#,##0.##').format(amountNum)}',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w300)),
+              style: const TextStyle(fontSize: OideaFontSize.size24, fontWeight: FontWeight.w300)),
           const SizedBox(height: OideaSpace.space1),
           Text(
             '由 ${submitter?['displayName'] ?? ''} 提出 · 狀態：$status',
@@ -348,7 +348,7 @@ class _ExpenseDetailSheet extends ConsumerWidget {
           ),
           if ((expense['description'] as String?)?.isNotEmpty ?? false) ...[
             const SizedBox(height: OideaSpace.space4),
-            Text(expense['description'] as String, style: const TextStyle(fontSize: 14)),
+            Text(expense['description'] as String, style: const TextStyle(fontSize: OideaFontSize.size14)),
           ],
           if (expense['rejectReason'] != null) ...[
             const SizedBox(height: OideaSpace.space4),

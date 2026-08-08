@@ -517,13 +517,13 @@ class _PageTreeRowState extends State<_PageTreeRow> {
                       )
                     : const SizedBox.shrink(),
               ),
-              Text(icon, style: const TextStyle(fontSize: 14)),
+              Text(icon, style: const TextStyle(fontSize: OideaFontSize.size14)),
               const SizedBox(width: OideaSpace.space15),
               Expanded(
                 child: Text(
                   title,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: OideaFontSize.size14),
                 ),
               ),
               _VisibilityBadge(visibility: widget.item['visibility'] as String?),
@@ -638,7 +638,7 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                 children: [
                   Text(
                     (page['icon'] as String?) ?? (kind == 'database' ? '📊' : '📄'),
-                    style: const TextStyle(fontSize: 28),
+                    style: const TextStyle(fontSize: OideaFontSize.size28),
                   ),
                   const SizedBox(width: OideaSpace.space25),
                   _VisibilityBadge(
@@ -649,7 +649,7 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                   Expanded(
                     child: TextField(
                       controller: _titleController,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontSize: OideaFontSize.size24, fontWeight: FontWeight.w700),
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         isCollapsed: true,
@@ -792,7 +792,7 @@ class _VisibilityBadge extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: OideaFontSize.size10,
               fontWeight: FontWeight.w700,
               color: color,
               letterSpacing: 0.6,

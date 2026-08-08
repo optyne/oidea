@@ -379,7 +379,7 @@ class _CanvasPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: c.displayName,
-        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+        style: TextStyle(color: Colors.white, fontSize: OideaFontSize.size10, fontWeight: FontWeight.w600),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -463,7 +463,7 @@ class _CanvasPainter extends CustomPainter {
       canvas.drawRRect(rr, Paint()..color = item.bgColor);
       canvas.drawRRect(rr, Paint()..color = item.bgColor.withOpacity(0.6)..style = PaintingStyle.stroke..strokeWidth = 1.5);
       final tp = TextPainter(
-        text: TextSpan(text: item.text, style: TextStyle(color: item.color, fontSize: 14, height: 1.4)),
+        text: TextSpan(text: item.text, style: TextStyle(color: item.color, fontSize: OideaFontSize.size14, height: 1.4)),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: StickyItem.kSize - 16);
       tp.paint(canvas, item.position + const Offset(8, 8));
@@ -905,7 +905,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             position: const Offset(200, 120),
             text: '🧠 腦力激盪',
             color: const Color(0xFF0D0D1F),
-            fontSize: 28,
+            fontSize: OideaFontSize.size28,
           ),
           RectItem(
             id: nid(),
@@ -938,7 +938,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             position: Offset(x + 12, 176),
             text: ['✅ 做得好', '⚠️ 待改進', '💡 試試看'][i],
             color: const Color(0xFF0D0D1F),
-            fontSize: 18,
+            fontSize: OideaFontSize.size18,
           ));
         }
         break;
@@ -951,7 +951,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
             position: Offset(x, 140),
             text: lanes[i],
             color: const Color(0xFF0D0D1F),
-            fontSize: 18,
+            fontSize: OideaFontSize.size18,
           ));
           for (var j = 0; j < 3; j++) {
             items.add(StickyItem(
@@ -1033,24 +1033,24 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                 children: [
                   Icon(Icons.dashboard_customize_outlined, size: 18),
                   SizedBox(width: OideaSpace.space15),
-                  Text('套用範本', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  Text('套用範本', style: TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size14)),
                 ],
               ),
             ),
             ListTile(
-              leading: const Text('🧠', style: TextStyle(fontSize: 22)),
+              leading: const Text('🧠', style: TextStyle(fontSize: OideaFontSize.size22)),
               title: const Text('腦力激盪'),
               subtitle: const Text('6 張便利貼 + 框架'),
               onTap: () => Navigator.pop(ctx, 'brainstorm'),
             ),
             ListTile(
-              leading: const Text('🔄', style: TextStyle(fontSize: 22)),
+              leading: const Text('🔄', style: TextStyle(fontSize: OideaFontSize.size22)),
               title: const Text('Sprint Retrospective'),
               subtitle: const Text('做得好 / 待改進 / 試試看'),
               onTap: () => Navigator.pop(ctx, 'retro'),
             ),
             ListTile(
-              leading: const Text('📋', style: TextStyle(fontSize: 22)),
+              leading: const Text('📋', style: TextStyle(fontSize: OideaFontSize.size22)),
               title: const Text('迷你 Kanban'),
               subtitle: const Text('待辦 / 進行中 / 完成 × 3 張卡'),
               onTap: () => Navigator.pop(ctx, 'kanban'),
@@ -1124,7 +1124,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                         padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space1),
                         child: Text(
                           '${(_scale * 100).round()}%',
-                          style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]),
+                          style: const TextStyle(fontSize: OideaFontSize.size12, fontFeatures: [FontFeature.tabularFigures()]),
                         ),
                       ),
                     ),
@@ -1309,7 +1309,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('粗細', style: TextStyle(fontSize: 11)),
+                          const Text('粗細', style: TextStyle(fontSize: OideaFontSize.size11)),
                           SizedBox(
                             width: 120,
                             child: Slider(
@@ -1349,7 +1349,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                     ),
                     child: Text(
                       _toolHint(_currentTool),
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      style: const TextStyle(color: Colors.white, fontSize: OideaFontSize.size12),
                     ),
                   ),
                 ),
@@ -1445,7 +1445,7 @@ class _PresenceCard extends StatelessWidget {
           const SizedBox(width: OideaSpace.space15),
           Text(
             '線上 ${all.length}',
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            style: const TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600),
           ),
           const SizedBox(width: OideaSpace.space2),
           for (final u in all.take(4))
@@ -1461,7 +1461,7 @@ class _PresenceCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: OideaSpace.space1),
               child: Text('+${all.length - 4}',
-                  style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  style: const TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey)),
             ),
         ],
       ),
@@ -1499,7 +1499,7 @@ class _SaveStatus extends StatelessWidget {
               SizedBox(width: OideaSpace.space1),
               Text(
                 '儲存失敗 · 點擊重試',
-                style: TextStyle(fontSize: 11, color: Color(0xFFEF4444), fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: OideaFontSize.size11, color: Color(0xFFEF4444), fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -1516,12 +1516,12 @@ class _SaveStatus extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 1.5),
           ),
           SizedBox(width: OideaSpace.space1),
-          Text('儲存中…', style: TextStyle(fontSize: 11, color: Colors.grey)),
+          Text('儲存中…', style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey)),
         ],
       );
     }
     if (dirty) {
-      return const Text('未儲存的變更', style: TextStyle(fontSize: 11, color: Colors.grey));
+      return const Text('未儲存的變更', style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey));
     }
     if (lastSavedAt == null) return const SizedBox.shrink();
     final diff = DateTime.now().difference(lastSavedAt!);
@@ -1535,7 +1535,7 @@ class _SaveStatus extends StatelessWidget {
       children: [
         const Icon(Icons.cloud_done_outlined, size: 12, color: Color(0xFF10B981)),
         const SizedBox(width: OideaSpace.space1),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        Text(label, style: const TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey)),
       ],
     );
   }
@@ -1564,7 +1564,7 @@ class _PresenceAvatar extends StatelessWidget {
           name.isNotEmpty ? name.characters.first.toUpperCase() : '?',
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 10,
+            fontSize: OideaFontSize.size10,
             fontWeight: FontWeight.w700,
           ),
         ),

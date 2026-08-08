@@ -185,7 +185,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
         title: const Text('提醒'),
         actions: [
           FilterChip(
-            label: const Text('顯示已完成', style: TextStyle(fontSize: 12)),
+            label: const Text('顯示已完成', style: TextStyle(fontSize: OideaFontSize.size12)),
             selected: _includeCompleted,
             onSelected: (v) {
               setState(() => _includeCompleted = v);
@@ -223,7 +223,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
         children: [
           Icon(Icons.notifications_off_outlined, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: OideaSpace.space3),
-          Text('沒有提醒', style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
+          Text('沒有提醒', style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size15)),
           const SizedBox(height: OideaSpace.space2),
           TextButton.icon(
             icon: const Icon(Icons.add_alert_outlined),
@@ -274,7 +274,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
           Text(label,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                fontSize: 13,
+                fontSize: OideaFontSize.size13,
                 color: color ?? Colors.grey.shade800,
               )),
           const SizedBox(width: OideaSpace.space15),
@@ -285,7 +285,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text('$n',
-                style: TextStyle(fontSize: 11, color: color ?? Colors.grey.shade700)),
+                style: TextStyle(fontSize: OideaFontSize.size11, color: color ?? Colors.grey.shade700)),
           ),
         ],
       ),
@@ -331,7 +331,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                 Text(
                   when != null ? _formatWhen(when) : '未設定時間',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: OideaFontSize.size12,
                     color: overdue ? Colors.red.shade600 : Colors.grey.shade600,
                   ),
                 ),
@@ -341,7 +341,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                   const SizedBox(width: OideaSpace.space05),
                   Text(
                     _formatRecurrence(recurrence, recurInterval),
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
                   ),
                 ],
                 if (paused) ...[
@@ -352,7 +352,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                       color: Colors.orange.shade100,
                       borderRadius: BorderRadius.circular(OideaRadius.sm),
                     ),
-                    child: Text('已暫停', style: TextStyle(fontSize: 10, color: Colors.orange.shade800)),
+                    child: Text('已暫停', style: TextStyle(fontSize: OideaFontSize.size10, color: Colors.orange.shade800)),
                   ),
                 ],
               ],
@@ -361,7 +361,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
               Padding(
                 padding: const EdgeInsets.only(top: OideaSpace.space05),
                 child: Text(notes,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade700),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis),
               ),
