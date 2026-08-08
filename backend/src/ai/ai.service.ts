@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../common/prisma.service';
@@ -23,12 +22,13 @@ export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
   private readonly enabled: boolean;
   private readonly model: string;
-  private readonly effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  private readonly baseUrl: string;
   private readonly rateLimit: number;
   private readonly mentionRegex = /(?:^|[^A-Za-z0-9_])@ai(?:$|[^A-Za-z0-9_])/i;
   private readonly systemPrompt: string;
 
-  private client: Anthropic | null = null;
+  private ready = false;
+  private apiKey = '';
   private botUserId: string | null = null;
 
   constructor(
@@ -39,8 +39,8 @@ export class AiService implements OnModuleInit {
     private readonly notifications: NotificationsService,
   ) {
     this.enabled = this.config.get<string>('AI_ENABLED', 'true') !== 'false';
-    this.model = this.config.get<string>('AI_MODEL', 'claude-opus-4-7');
-    this.effort = (this.config.get<string>('AI_EFFORT', 'high') as any) || 'high';
+    this.model = this.config.get<string>('AI_MODEL', '');
+    this.baseUrl = (this.config.get<string>('AI_BASE_URL', '') || '').replace(/\/+$/, '');
     this.rateLimit = parseInt(this.config.get<string>('AI_RATE_LIMIT_PER_HOUR', '10'), 10);
     this.systemPrompt = [
       '你是 Oidea 協作平台內建的 AI 助手（用戶名 @ai）。',
@@ -62,14 +62,14 @@ export class AiService implements OnModuleInit {
       this.logger.log('AI assistant disabled (AI_ENABLED=false)');
       return;
     }
-    const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      this.logger.warn('ANTHROPIC_API_KEY 未設定；AI 功能停用');
+    this.apiKey = this.config.get<string>('AI_API_KEY', '');
+    if (!this.baseUrl || !this.model) {
+      this.logger.warn('AI_BASE_URL / AI_MODEL 未設定；AI 功能停用');
       return;
     }
-    this.client = new Anthropic({ apiKey });
+    this.ready = true;
     this.botUserId = await this.ensureBotUser();
-    this.logger.log(`AI assistant ready (model=${this.model}, effort=${this.effort}, botUserId=${this.botUserId})`);
+    this.logger.log(`AI assistant ready (endpoint=${this.baseUrl}, model=${this.model}, botUserId=${this.botUserId})`);
   }
 
   /** Messages pipeline 呼叫此方法；不會丟例外，內部自己 log。 */
@@ -79,7 +79,7 @@ export class AiService implements OnModuleInit {
     content: string | null | undefined;
     actorId: string;
   }) {
-    if (!this.client || !this.botUserId) return;
+    if (!this.ready || !this.botUserId) return;
     if (!params.content) return;
     if (!this.mentionRegex.test(params.content)) return;
     if (params.actorId === this.botUserId) return; // 防自回
@@ -147,43 +147,46 @@ export class AiService implements OnModuleInit {
     });
     const ordered = recent.reverse();
 
-    // 轉為 Anthropic message 陣列：區分「是 bot 過去發的」→ assistant turn，否則 user turn
-    const messages: Anthropic.MessageParam[] = ordered.map((m) => {
-      const isBot = m.senderId === this.botUserId;
+    const messages = AiService.buildChatMessages(ordered, this.botUserId!);
+
+    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: 4096,
+        messages: [{ role: 'system', content: this.systemPrompt }, ...messages],
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      throw new Error(`AI endpoint ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+    const data: any = await res.json();
+    const text = (data?.choices?.[0]?.message?.content ?? '').trim();
+    return text || '（抱歉，我沒有想到要說什麼。）';
+  }
+
+  static buildChatMessages(
+    ordered: Array<{ senderId: string; content: string | null; sender?: { displayName: string } | null }>,
+    botUserId: string,
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const messages = ordered.map((m) => {
+      const isBot = m.senderId === botUserId;
       const author = m.sender?.displayName ?? 'user';
       const text = m.content ?? '';
       return {
-        role: isBot ? 'assistant' : 'user',
+        role: (isBot ? 'assistant' : 'user') as 'user' | 'assistant',
         content: isBot ? text : `${author}: ${text}`,
-      } as Anthropic.MessageParam;
+      };
     });
-
-    // 確保結尾是 user turn；若結尾是 assistant（bot 之前自己發的訊息），補一個 user note
     if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-      messages.push({ role: 'user', content: `（上面是最新對話；請回應最後一則 @ai 的訊息）` });
+      messages.push({ role: 'user', content: '（上面是最新對話；請回應最後一則 @ai 的訊息）' });
     }
-
-    const response = await this.client!.messages.create({
-      model: this.model,
-      max_tokens: 4096,
-      thinking: { type: 'adaptive' },
-      output_config: { effort: this.effort } as any,
-      system: [
-        {
-          type: 'text',
-          text: this.systemPrompt,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages,
-    });
-
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-      .trim();
-    return text || '（抱歉，我沒有想到要說什麼。）';
+    return messages;
   }
 
   private async postBotMessage(channelId: string, content: string) {
