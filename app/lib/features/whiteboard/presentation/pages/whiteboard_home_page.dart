@@ -163,7 +163,7 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
               });
               if (ctx.mounted) Navigator.pop(ctx);
               ref.invalidate(whiteboardsProvider(workspaceId));
-              if (context.mounted) context.go('/whiteboard/canvas/${board['id']}');
+              if (context.mounted) context.go('/whiteboard/pages/${board['id']}');
             },
             child: const Text('建立'),
           ),
