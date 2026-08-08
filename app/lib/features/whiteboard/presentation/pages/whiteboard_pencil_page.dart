@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -33,8 +32,13 @@ class _WhiteboardPencilPageState extends ConsumerState<WhiteboardPencilPage> {
   PencilCanvasController? _controller;
   Uint8List? _initialDrawing;
   bool _loading = true;
-  bool _dirty = false;
+  int _generation = 0; // 每一筆畫 +1
+  int _savedGeneration = 0; // 最近一次成功存檔時快照的世代
+  bool get _dirty => _generation != _savedGeneration;
+  // ignore: unused_field — 保留供未來「存檔中」UI 使用；目前只用來觸發 setState 重繪。
   bool _saving = false;
+  bool _loadFailed = false;
+  Future<bool>? _inFlight;
   bool _outOfSync = false;
   bool _fingerDrawing = false;
   Timer? _debounce;
@@ -58,29 +62,45 @@ class _WhiteboardPencilPageState extends ConsumerState<WhiteboardPencilPage> {
   }
 
   Future<void> _load() async {
+    setState(() { _loading = true; _loadFailed = false; });
     try {
       final page =
           await ref.read(apiClientProvider).getWhiteboardPage(widget.boardId, widget.pageId);
       final b64 = page['drawing'] as String?;
+      if (!mounted) return;
       setState(() {
         _initialDrawing = b64 == null ? null : base64Decode(b64);
         _loading = false;
       });
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _loadFailed = true; });
     }
   }
 
   void _onDrawingChanged() {
-    _dirty = true;
+    _generation++;
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 2), _save);
   }
 
-  Future<bool> _save() async {
+  /// Single-flight：進行中就等它完成；完成後若期間又有新筆畫，補存一輪。
+  /// 這保證 (a) 存檔中落筆不會遺失、(b) 離開頁面的強制存等的是「真正的」結果。
+  Future<bool> _save() {
+    final existing = _inFlight;
+    if (existing != null) {
+      return existing.then((ok) => _dirty ? _save() : Future<bool>.value(ok));
+    }
+    final run = _doSave().whenComplete(() => _inFlight = null);
+    _inFlight = run;
+    return run.then((ok) => _dirty ? _save() : Future<bool>.value(ok));
+  }
+
+  Future<bool> _doSave() async {
     final controller = _controller;
-    if (controller == null || !_dirty || _saving) return !_dirty;
+    if (controller == null) return !_dirty;
+    if (!_dirty) return true;
     setState(() => _saving = true);
+    final gen = _generation; // 在 getDrawing 前快照：之後落的筆只會讓 dirty 維持 true（多存，不漏存）
     try {
       final ink = await controller.getDrawing();
       final includeThumbnail =
@@ -95,16 +115,18 @@ class _WhiteboardPencilPageState extends ConsumerState<WhiteboardPencilPage> {
                 (thumbnail != null && thumbnail.isNotEmpty) ? base64Encode(thumbnail) : null,
           );
       if (includeThumbnail) _lastThumbnailAt = DateTime.now();
-      _dirty = false;
+      _savedGeneration = gen;
       _retrySeconds = 5;
       _retry?.cancel();
       if (mounted) setState(() { _saving = false; _outOfSync = false; });
-      return true;
+      return !_dirty;
     } catch (e) {
-      if (mounted) setState(() { _saving = false; _outOfSync = true; });
-      _retry?.cancel();
-      _retry = Timer(Duration(seconds: _retrySeconds), _save);
-      _retrySeconds = (_retrySeconds * 2).clamp(5, 60);
+      if (mounted) {
+        setState(() { _saving = false; _outOfSync = true; });
+        _retry?.cancel();
+        _retry = Timer(Duration(seconds: _retrySeconds), _save);
+        _retrySeconds = (_retrySeconds * 2).clamp(5, 60);
+      }
       return false;
     }
   }
@@ -130,7 +152,26 @@ class _WhiteboardPencilPageState extends ConsumerState<WhiteboardPencilPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        appBar: AppBar(title: const Text('手寫頁')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_loadFailed) {
+      // 載入失敗絕不能當成空白頁進入編輯 —— 後續自動存檔會蓋掉伺服器上的內容
+      return Scaffold(
+        appBar: AppBar(title: const Text('手寫頁')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('頁面載入失敗'),
+              const SizedBox(height: OideaSpace.space3),
+              FilledButton(onPressed: _load, child: const Text('重試')),
+            ],
+          ),
+        ),
+      );
     }
     if (!_canEdit) {
       return Scaffold(
@@ -155,11 +196,11 @@ class _WhiteboardPencilPageState extends ConsumerState<WhiteboardPencilPage> {
           title: const Text('手寫頁'),
           actions: [
             if (_outOfSync)
-              Padding(
-                padding: const EdgeInsets.only(right: OideaSpace.space2),
+              const Padding(
+                padding: EdgeInsets.only(right: OideaSpace.space2),
                 child: Chip(
                   label: Text('未同步', style: OideaType.caption),
-                  avatar: const Icon(Icons.sync_problem, size: OideaSize.iconSm),
+                  avatar: Icon(Icons.sync_problem, size: OideaSize.iconSm),
                 ),
               ),
             IconButton(
