@@ -10,6 +10,7 @@ import '../../features/workspace/providers/workspace_provider.dart';
 import '../../features/workspace/workspace_slug.dart';
 import '../../features/workspace/workspace_storage.dart';
 import '../widgets/common_widgets.dart';
+import '../../core/theme/app_theme.dart';
 
 /// 頂部工作空間列：顯示名稱、切換、建立（列表為空時）。
 class WorkspaceSwitcherBar extends ConsumerWidget {
@@ -24,13 +25,13 @@ class WorkspaceSwitcherBar extends ConsumerWidget {
       elevation: 1,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space2),
         color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         child: workspacesAsync.when(
           loading: () => const Row(
             children: [
               SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 12),
+              SizedBox(width: OideaSpace.space3),
               Text('載入工作空間…'),
             ],
           ),
@@ -65,7 +66,7 @@ class WorkspaceSwitcherBar extends ConsumerWidget {
             return Row(
               children: [
                 const Icon(Icons.business_outlined, size: 20),
-                const SizedBox(width: 8),
+                const SizedBox(width: OideaSpace.space2),
                 Expanded(
                   child: Text(
                     title,
@@ -104,7 +105,7 @@ class WorkspaceSwitcherBar extends ConsumerWidget {
                   icon: const Icon(Icons.keyboard_outlined),
                   onPressed: () => showShortcutsCheatsheet(context),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: OideaSpace.space1),
                 _UserAvatarButton(parentContext: context),
               ],
             );
@@ -222,23 +223,23 @@ class _UserAvatarButton extends ConsumerWidget {
             Row(
               children: [
                 UserAvatar(name: auth.displayName ?? '?', avatarUrl: auth.avatarUrl, radius: 28),
-                const SizedBox(width: 16),
+                const SizedBox(width: OideaSpace.space4),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         auth.displayName ?? '未設定名稱',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: OideaFontSize.size16),
                       ),
                       if (auth.email != null)
-                        Text(auth.email!, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                        Text(auth.email!, style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13)),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: OideaSpace.space6),
             // Display name update
             TextField(
               controller: nameController,
@@ -248,7 +249,7 @@ class _UserAvatarButton extends ConsumerWidget {
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             FilledButton(
               onPressed: () async {
                 final newName = nameController.text.trim();
@@ -301,7 +302,7 @@ class _ThemeModeRow extends ConsumerWidget {
     return Row(
       children: [
         const Icon(Icons.palette_outlined, size: 18),
-        const SizedBox(width: 8),
+        const SizedBox(width: OideaSpace.space2),
         const Text('主題', style: TextStyle(fontWeight: FontWeight.w500)),
         const Spacer(),
         SegmentedButton<ThemeMode>(

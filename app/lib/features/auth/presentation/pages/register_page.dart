@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import 'shared_auth_widgets.dart';
+
+/// Slightly wider than the login column: this form has five fields plus a
+/// strength meter, so it needs the extra room to avoid feeling cramped.
+const _formColumnWidth = 520.0;
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
@@ -86,7 +91,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final secondary = isDark
+        ? OideaTokens.darkTextSecondary
+        : OideaTokens.lightTextSecondary;
+    final tertiary = isDark
+        ? OideaTokens.darkTextTertiary
+        : OideaTokens.lightTextTertiary;
     final isWide = MediaQuery.sizeOf(context).width > 768;
 
     Widget form = Form(
@@ -99,26 +111,23 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
           Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                      colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)]),
-                  borderRadius: BorderRadius.circular(13),
+                width: OideaSize.controlHeight,
+                height: OideaSize.controlHeight,
+                decoration: const BoxDecoration(
+                  color: OideaTokens.accent,
+                  borderRadius: OideaRadius.mdAll,
                 ),
                 child: const Icon(Icons.hub_rounded,
-                    color: Colors.white, size: 26),
+                    color: Colors.white, size: OideaSize.iconMd + 4),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: OideaSpace.space3),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Oidea',
-                      style: theme.textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800)),
+                      style: OideaType.h3.copyWith(color: scheme.onSurface)),
                   Text('建立新帳號',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: Colors.grey.shade600)),
+                      style: OideaType.bodySm.copyWith(color: secondary)),
                 ],
               ),
               const Spacer(),
@@ -128,25 +137,23 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
               ),
             ],
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: OideaSpace.space6),
 
           // Fields
           AuthTextField(
             controller: _displayNameController,
             label: '顯示名稱',
             hint: '您希望別人怎麼稱呼您？',
-            icon: Icons.badge_outlined,
             autofillHints: const [AutofillHints.name],
             validator: (v) =>
                 v == null || v.trim().isEmpty ? '請輸入顯示名稱' : null,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: OideaSpace.space4),
 
           AuthTextField(
             controller: _usernameController,
             label: '使用者名稱',
             hint: '3-20 字元，僅英數與底線',
-            icon: Icons.alternate_email,
             autofillHints: const [AutofillHints.username],
             validator: (v) {
               if (v == null || v.trim().length < 3) return '至少 3 字元';
@@ -156,13 +163,12 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
               return null;
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: OideaSpace.space4),
 
           AuthTextField(
             controller: _emailController,
             label: '電子信箱',
             hint: 'you@example.com',
-            icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
             autofillHints: const [AutofillHints.email],
             validator: (v) {
@@ -174,12 +180,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
               return null;
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: OideaSpace.space4),
 
           AuthTextField(
             controller: _passwordController,
             label: '密碼',
-            icon: Icons.lock_outline_rounded,
             obscureText: _obscurePassword,
             autofillHints: const [AutofillHints.newPassword],
             suffixIcon: IconButton(
@@ -196,42 +201,39 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
 
           // Strength bar
           if (_passwordController.text.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: OideaSpace.space2),
             Row(
               children: [
                 Expanded(
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: OideaRadius.smAll,
                     child: LinearProgressIndicator(
                       value: _passwordStrength,
-                      backgroundColor: Colors.grey.shade200,
+                      backgroundColor: isDark ? OideaTokens.darkColBg : OideaTokens.lightColBg,
                       valueColor:
                           AlwaysStoppedAnimation<Color>(_strengthColor),
                       minHeight: 5,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: OideaSpace.space3),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: Text(
                     '強度：$_strengthLabel',
                     key: ValueKey(_strengthLabel),
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: _strengthColor,
-                        fontWeight: FontWeight.w600),
+                    style: OideaType.caption.copyWith(
+                        color: _strengthColor, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: OideaSpace.space4),
 
           AuthTextField(
             controller: _confirmPasswordController,
             label: '確認密碼',
-            icon: Icons.lock_outline_rounded,
             obscureText: _obscureConfirm,
             autofillHints: const [AutofillHints.newPassword],
             suffixIcon: IconButton(
@@ -247,26 +249,26 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
           ),
 
           if (authState.error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             AuthErrorBanner(message: authState.error!),
           ],
 
-          const SizedBox(height: 24),
+          const SizedBox(height: OideaSpace.space6),
 
-          AuthGradientButton(
+          AuthPrimaryButton(
             onPressed: authState.isLoading ? null : _submit,
             loading: authState.isLoading,
             label: '建立帳號',
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: OideaSpace.space4),
 
           Text(
             '按下「建立帳號」即表示您同意本平台的服務條款與隱私政策。',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade500, height: 1.5),
+            style: OideaType.caption.copyWith(color: tertiary),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: OideaSpace.space2),
         ],
       ),
     );
@@ -277,14 +279,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
           children: [
             Expanded(child: const AuthHeroPanel()),
             SizedBox(
-              width: 520,
+              width: _formColumnWidth,
               child: SafeArea(
                 child: Center(
                   child: FadeTransition(
                     opacity: _fadeAnim,
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 48, vertical: 32),
+                          horizontal: OideaSpace.space12, vertical: OideaSpace.space8),
                       child: form,
                     ),
                   ),
@@ -302,7 +304,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
           opacity: _fadeAnim,
           child: SingleChildScrollView(
             padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                const EdgeInsets.symmetric(
+                horizontal: OideaSpace.space6, vertical: OideaSpace.space4),
             child: form,
           ),
         ),

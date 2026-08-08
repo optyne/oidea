@@ -7,6 +7,7 @@ import '../../../../shared/widgets/notification_badge.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/channel_provider.dart';
 import 'channel_page.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class ChatHomePage extends ConsumerStatefulWidget {
   const ChatHomePage({super.key});
@@ -43,7 +44,7 @@ class _ChatHomePageState extends ConsumerState<ChatHomePage> {
         appBar: AppBar(title: const Text('聊天')),
         body: const Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.all(OideaSpace.space6),
             child: Text('請在頂端建立或選擇工作空間', textAlign: TextAlign.center),
           ),
         ),
@@ -87,7 +88,7 @@ class _ChatHomePageState extends ConsumerState<ChatHomePage> {
                   );
                 }
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3),
                   itemCount: channels.length,
                   itemBuilder: (context, index) {
                     final channel = channels[index] as Map<String, dynamic>;
@@ -118,7 +119,7 @@ class _ChatHomePageState extends ConsumerState<ChatHomePage> {
                               channel['topic'].toString(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                              style: TextStyle(fontSize: OideaFontSize.size13, color: Colors.grey.shade600),
                             )
                           : null,
                       onTap: () {

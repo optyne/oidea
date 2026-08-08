@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 簡易全螢幕圖片檢視，支援捏合縮放、雙擊快速放大。
 class ImageViewerPage extends StatelessWidget {
@@ -14,7 +15,7 @@ class ImageViewerPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(title, style: const TextStyle(fontSize: 14)),
+        title: Text(title, style: const TextStyle(fontSize: OideaFontSize.size14)),
       ),
       body: Center(
         child: InteractiveViewer(

@@ -64,10 +64,10 @@ class OideaSidebar extends ConsumerWidget {
             children: [
               _WorkspaceSwitcher(collapsed: collapsed),
               Container(height: 1, color: OideaTokens.sidebarDivider),
-              const SizedBox(height: 6),
+              const SizedBox(height: OideaSpace.space15),
               // 導覽
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
+                padding: const EdgeInsets.symmetric(vertical: OideaSpace.space05),
                 child: Column(
                   children: [
                     for (final item in _navItems)
@@ -125,15 +125,15 @@ class _WorkspaceSwitcher extends ConsumerWidget {
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: collapsed ? 8 : 14,
-        vertical: 12,
+        vertical: OideaSpace.space3,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OideaRadius.md),
           onTap: () => _showMenu(context, ref, maps, currentId),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space15),
             child: Row(
               children: [
                 Container(
@@ -141,21 +141,21 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                   height: 30,
                   decoration: BoxDecoration(
                     color: OideaTokens.accent,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(OideaRadius.md),
                   ),
                   alignment: Alignment.center,
                   child: Text(
                     initials,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
+                      fontSize: OideaFontSize.size11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
                     ),
                   ),
                 ),
                 if (!collapsed) ...[
-                  const SizedBox(width: 10),
+                  const SizedBox(width: OideaSpace.space25),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,7 +166,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 13,
+                            fontSize: OideaFontSize.size13,
                             fontWeight: FontWeight.w600,
                             height: 1.3,
                           ),
@@ -175,7 +175,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                           'Free plan',
                           style: TextStyle(
                             color: Color(0x66FFFFFF),
-                            fontSize: 11,
+                            fontSize: OideaFontSize.size11,
                             height: 1.2,
                           ),
                         ),
@@ -221,15 +221,15 @@ class _WorkspaceSwitcher extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Padding(
-              padding: EdgeInsets.all(16),
+              padding: EdgeInsets.all(OideaSpace.space4),
               child: Text(
                 '切換工作空間',
-                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(color: Colors.white, fontSize: OideaFontSize.size14, fontWeight: FontWeight.w600),
               ),
             ),
             if (maps.isEmpty)
               const Padding(
-                padding: EdgeInsets.all(16),
+                padding: EdgeInsets.all(OideaSpace.space4),
                 child: Text('尚無工作空間', style: TextStyle(color: Colors.white70)),
               ),
             ...maps.map((w) {
@@ -249,12 +249,12 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                     _initialsOf(wname),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 10,
+                      fontSize: OideaFontSize.size10,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                title: Text(wname, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                title: Text(wname, style: const TextStyle(color: Colors.white, fontSize: OideaFontSize.size13)),
                 trailing: selected ? const Icon(Icons.check, color: OideaTokens.accent) : null,
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -266,7 +266,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
             const Divider(color: Color(0x14FFFFFF), height: 1),
             ListTile(
               leading: const Icon(Icons.add, color: Colors.white70),
-              title: const Text('新增工作空間', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              title: const Text('新增工作空間', style: TextStyle(color: Colors.white70, fontSize: OideaFontSize.size13)),
               onTap: () {
                 Navigator.pop(ctx);
                 _showCreateWorkspaceDialog(context, ref);
@@ -385,7 +385,7 @@ class _SidebarItemState extends State<_SidebarItem> {
         onTap: widget.onTap,
         child: Container(
           height: 34,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 1),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(7),
@@ -406,14 +406,14 @@ class _SidebarItemState extends State<_SidebarItem> {
               SizedBox(width: widget.collapsed ? 0 : (widget.active ? 9 : 12)),
               Icon(widget.icon, size: 18, color: fg),
               if (!widget.collapsed) ...[
-                const SizedBox(width: 10),
+                const SizedBox(width: OideaSpace.space25),
                 Expanded(
                   child: Text(
                     widget.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: OideaFontSize.size13,
                       color: fg,
                       fontWeight: widget.active ? FontWeight.w500 : FontWeight.w400,
                     ),
@@ -439,7 +439,7 @@ class _BottomArea extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       child: Column(
         children: [
           // 提醒
@@ -473,7 +473,7 @@ class _BottomArea extends ConsumerWidget {
           ),
           Container(
             height: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space1),
             color: OideaTokens.sidebarDivider,
           ),
           // 使用者
@@ -482,7 +482,7 @@ class _BottomArea extends ConsumerWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: collapsed ? 0 : 14,
-                vertical: 8,
+                vertical: OideaSpace.space2,
               ),
               child: Row(
                 mainAxisAlignment:
@@ -507,7 +507,7 @@ class _BottomArea extends ConsumerWidget {
                           _avatarInitials(auth.displayName ?? auth.email ?? '?'),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 11,
+                            fontSize: OideaFontSize.size11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -528,7 +528,7 @@ class _BottomArea extends ConsumerWidget {
                     ],
                   ),
                   if (!collapsed) ...[
-                    const SizedBox(width: 10),
+                    const SizedBox(width: OideaSpace.space25),
                     Expanded(
                       child: Text(
                         auth.displayName ?? auth.email ?? 'You',
@@ -536,7 +536,7 @@ class _BottomArea extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: OideaTokens.sidebarText,
-                          fontSize: 12,
+                          fontSize: OideaFontSize.size12,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -583,26 +583,26 @@ class _BottomArea extends ConsumerWidget {
                   avatarUrl: auth.avatarUrl,
                   radius: 28,
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: OideaSpace.space4),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         auth.displayName ?? '未設定名稱',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: OideaFontSize.size16),
                       ),
                       if (auth.email != null)
                         Text(
                           auth.email!,
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13),
                         ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: OideaSpace.space6),
             TextField(
               controller: nameController,
               decoration: const InputDecoration(
@@ -611,7 +611,7 @@ class _BottomArea extends ConsumerWidget {
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             FilledButton(
               onPressed: () async {
                 final newName = nameController.text.trim();
@@ -685,7 +685,7 @@ class _PlainButtonState extends State<_PlainButton> {
         onTap: widget.onTap,
         child: Container(
           height: 32,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 1),
           decoration: BoxDecoration(
             color: _hover ? OideaTokens.sidebarItemHover : Colors.transparent,
             borderRadius: BorderRadius.circular(7),
@@ -697,11 +697,11 @@ class _PlainButtonState extends State<_PlainButton> {
             children: [
               Icon(widget.icon, size: 16, color: OideaTokens.sidebarTextDim),
               if (!widget.collapsed) ...[
-                const SizedBox(width: 10),
+                const SizedBox(width: OideaSpace.space25),
                 Text(
                   widget.label,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: OideaFontSize.size13,
                     color: OideaTokens.sidebarTextDim,
                   ),
                 ),
@@ -749,7 +749,7 @@ class _ThemeModeRow extends ConsumerWidget {
     return Row(
       children: [
         const Icon(Icons.palette_outlined, size: 18),
-        const SizedBox(width: 8),
+        const SizedBox(width: OideaSpace.space2),
         const Text('主題', style: TextStyle(fontWeight: FontWeight.w500)),
         const Spacer(),
         SegmentedButton<ThemeMode>(

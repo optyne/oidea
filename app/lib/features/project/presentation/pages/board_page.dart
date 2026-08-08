@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/network/api_client.dart';
 import '../../providers/project_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 enum _ViewMode { board, list, gantt }
 
@@ -69,7 +70,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
             mode: _viewMode,
             onChanged: (v) => setState(() => _viewMode = v),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'column') _showAddColumn(context);
@@ -138,7 +139,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('尚無欄位', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             FilledButton.tonal(
               onPressed: () => _showAddColumn(context),
               child: const Text('新增第一個欄位'),
@@ -289,7 +290,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   decoration: const InputDecoration(labelText: '標題'),
                   autofocus: true,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 DropdownButtonFormField<String>(
                   value: columnId,
                   decoration: const InputDecoration(labelText: '欄位'),
@@ -302,7 +303,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   }).toList(),
                   onChanged: (v) => setSt(() => columnId = v),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 DropdownButtonFormField<String>(
                   value: priority,
                   decoration: const InputDecoration(labelText: '優先級'),
@@ -315,7 +316,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   onChanged: (v) => setSt(() => priority = v ?? 'medium'),
                 ),
                 if (members.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: OideaSpace.space3),
                   DropdownButtonFormField<String?>(
                     value: assigneeId,
                     decoration: const InputDecoration(labelText: '負責人(選填)'),
@@ -329,7 +330,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                     onChanged: (v) => setSt(() => assigneeId = v),
                   ),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
                   label: Text(dueDate != null
@@ -391,7 +392,7 @@ class _ViewModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       child: SegmentedButton<_ViewMode>(
         segments: const [
           ButtonSegment(value: _ViewMode.board, icon: Icon(Icons.view_column_outlined), label: Text('看板')),
@@ -436,7 +437,7 @@ class _BoardToolbar extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space2),
       child: Row(
         children: [
           SizedBox(
@@ -449,16 +450,16 @@ class _BoardToolbar extends StatelessWidget {
                 prefixIcon: Icon(Icons.search, size: 18),
                 isDense: true,
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space2),
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: OideaSpace.space3),
           _PriorityDropdown(
             selected: filterPriorities,
             onToggle: onTogglePriority,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           _AssigneeDropdown(
             selected: filterAssigneeIds,
             assignees: assignees,
@@ -554,7 +555,7 @@ class _ToolbarChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space15),
       decoration: BoxDecoration(
         color: active
             ? theme.colorScheme.primary.withValues(alpha: 0.1)
@@ -569,16 +570,16 @@ class _ToolbarChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: active ? theme.colorScheme.primary : null),
-          const SizedBox(width: 6),
+          const SizedBox(width: OideaSpace.space15),
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: OideaFontSize.size12,
               fontWeight: FontWeight.w500,
               color: active ? theme.colorScheme.primary : null,
             ),
           ),
-          const SizedBox(width: 2),
+          const SizedBox(width: OideaSpace.space05),
           Icon(Icons.arrow_drop_down, size: 16, color: active ? theme.colorScheme.primary : null),
         ],
       ),
@@ -607,7 +608,7 @@ class _BoardView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.builder(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(OideaSpace.space4),
       itemCount: columns.length,
       itemBuilder: (context, index) {
         final column = columns[index] as Map<String, dynamic>;
@@ -618,7 +619,7 @@ class _BoardView extends StatelessWidget {
         return SizedBox(
           width: 300,
           child: Card(
-            margin: const EdgeInsets.only(right: 12),
+            margin: const EdgeInsets.only(right: OideaSpace.space3),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -640,7 +641,7 @@ class _BoardView extends StatelessWidget {
                         duration: const Duration(milliseconds: 120),
                         margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(OideaRadius.md),
                           border: Border.all(
                             color: highlight
                                 ? Theme.of(context).colorScheme.primary
@@ -659,11 +660,11 @@ class _BoardView extends StatelessWidget {
                                       child: Text(
                                         highlight ? '放開以移入此欄' : '長按任務拖曳到另一欄',
                                         textAlign: TextAlign.center,
-                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                        style: TextStyle(fontSize: OideaFontSize.size13, color: Colors.grey.shade600),
                                       ),
                                     )
                                   : ListView.builder(
-                                      padding: const EdgeInsets.all(8),
+                                      padding: const EdgeInsets.all(OideaSpace.space2),
                                       itemCount: tasks.length,
                                       itemBuilder: (context, i) {
                                         final task = tasks[i] as Map<String, dynamic>;
@@ -728,7 +729,7 @@ class _ColumnHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final filtered = count != totalCount;
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(OideaSpace.space3),
       child: Row(
         children: [
           Container(
@@ -740,7 +741,7 @@ class _ColumnHeader extends StatelessWidget {
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           Expanded(
             child: Text(
               column['name'] as String? ?? '欄位',
@@ -748,14 +749,14 @@ class _ColumnHeader extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space05),
             decoration: BoxDecoration(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               filtered ? '$count / $totalCount' : '$count',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -785,7 +786,7 @@ class _AddTaskFooter extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         onTap: onPressed,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
           decoration: BoxDecoration(
             border: Border.all(
               color: theme.dividerColor,
@@ -798,11 +799,11 @@ class _AddTaskFooter extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.add, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
-              const SizedBox(width: 4),
+              const SizedBox(width: OideaSpace.space1),
               Text(
                 '新增任務',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: OideaFontSize.size12,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
@@ -895,7 +896,7 @@ class TaskCard extends StatelessWidget {
     final recurring = _isRecurring(task);
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: OideaSpace.space2),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -913,19 +914,19 @@ class TaskCard extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size14),
                       ),
                       if (desc != null && desc.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: OideaSpace.space1),
                         Text(
                           desc,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade700),
                         ),
                       ],
                       if (tags.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: OideaSpace.space15),
                         Wrap(
                           spacing: 4,
                           runSpacing: 4,
@@ -934,38 +935,38 @@ class TaskCard extends StatelessWidget {
                             final color = _parseColor(tm['color'] as String?) ??
                                 Colors.blueGrey.shade100;
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                               decoration: BoxDecoration(
                                 color: color,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(OideaRadius.sm),
                               ),
                               child: Text(
                                 tm['name'] as String? ?? '',
-                                style: const TextStyle(fontSize: 11),
+                                style: const TextStyle(fontSize: OideaFontSize.size11),
                               ),
                             );
                           }).toList(),
                         ),
                       ],
-                      const SizedBox(height: 6),
+                      const SizedBox(height: OideaSpace.space15),
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                             decoration: BoxDecoration(
                               color: priorityColor(priority).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(OideaRadius.sm),
                             ),
                             child: Text(
                               priorityLabel(priority),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: OideaFontSize.size11,
                                 fontWeight: FontWeight.w600,
                                 color: priorityColor(priority),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: OideaSpace.space15),
                           if (recurring)
                             const _CardBadge(icon: Icons.autorenew, label: '週期'),
                           if (subTotal > 0)
@@ -985,16 +986,16 @@ class TaskCard extends StatelessWidget {
                               size: 12,
                               color: overdue ? Colors.red : Colors.grey.shade600,
                             ),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: OideaSpace.space05),
                             Text(
                               '${dueDate.month}/${dueDate.day}',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: OideaFontSize.size11,
                                 color: overdue ? Colors.red : Colors.grey.shade600,
                                 fontWeight: overdue ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: OideaSpace.space15),
                           ],
                           if (assignee != null)
                             CircleAvatar(
@@ -1005,7 +1006,7 @@ class TaskCard extends StatelessWidget {
                               child: (assignee['avatarUrl'] as String?) == null
                                   ? Text(
                                       (assignee['displayName'] as String? ?? '?').characters.first,
-                                      style: const TextStyle(fontSize: 10),
+                                      style: const TextStyle(fontSize: OideaFontSize.size10),
                                     )
                                   : null,
                             ),
@@ -1039,13 +1040,13 @@ class _CardBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.only(right: OideaSpace.space15),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: Colors.grey.shade600),
-          const SizedBox(width: 2),
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+          const SizedBox(width: OideaSpace.space05),
+          Text(label, style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade700)),
         ],
       ),
     );
@@ -1223,12 +1224,12 @@ class _GanttView extends StatelessWidget {
                             bottom: 0,
                             width: 200,
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space2),
                               child: Text(
                                 t['title'] as String? ?? '',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12),
+                                style: const TextStyle(fontSize: OideaFontSize.size12),
                               ),
                             ),
                           ),
@@ -1240,16 +1241,16 @@ class _GanttView extends StatelessWidget {
                             child: Container(
                               decoration: BoxDecoration(
                                 color: color.withValues(alpha: 0.8),
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(OideaRadius.sm),
                                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 2)],
                               ),
                               alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15),
                               child: Text(
                                 t['title'] as String? ?? '',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11, color: Colors.white),
+                                style: const TextStyle(fontSize: OideaFontSize.size11, color: Colors.white),
                               ),
                             ),
                           ),
@@ -1280,7 +1281,7 @@ class _GanttHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 32,
+      height: OideaSpace.space8,
       child: Row(
         children: [
           const SizedBox(width: 200),
@@ -1293,7 +1294,7 @@ class _GanttHeader extends StatelessWidget {
                     top: 8,
                     child: Text(
                       _fmt(earliest.add(Duration(days: i))),
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: const TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey),
                     ),
                   ),
               ],

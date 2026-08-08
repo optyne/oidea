@@ -6,6 +6,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/erp_providers.dart';
+import '../../../../core/theme/app_theme.dart';
 
 const Map<String, String> _roleLabels = {
   'owner': '擁有者',
@@ -157,9 +158,9 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
           children: [
             const Text(
               '輸入對方的 email 或 username（對方必須已在本站註冊）',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
+              style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.black54),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             TextField(
               controller: _controller,
               autofocus: true,
@@ -171,7 +172,7 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
               ),
               onSubmitted: (_) => _busy ? null : _submit(),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             DropdownButtonFormField<String>(
               value: _role,
               decoration: const InputDecoration(
@@ -187,8 +188,8 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
               onChanged: _busy ? null : (v) => setState(() => _role = v ?? 'member'),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+              const SizedBox(height: OideaSpace.space25),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: OideaFontSize.size12)),
             ],
           ],
         ),
@@ -201,7 +202,7 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
         FilledButton(
           onPressed: _busy ? null : _submit,
           child: _busy
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(width: OideaSpace.space4, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('邀請'),
         ),
       ],
@@ -333,9 +334,9 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
           children: [
             const Text(
               '任何人拿到連結、登入／註冊後就能加入此工作空間。每條連結只能用一次，可隨時撤銷。',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
+              style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.black54),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             DropdownButtonFormField<String>(
               value: _role,
               decoration: const InputDecoration(
@@ -350,7 +351,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
               ],
               onChanged: _busy || _link != null ? null : (v) => setState(() => _role = v ?? 'member'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: OideaSpace.space3),
             DropdownButtonFormField<int>(
               value: _days,
               decoration: const InputDecoration(
@@ -367,28 +368,28 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
               onChanged: _busy || _link != null ? null : (v) => setState(() => _days = v ?? 7),
             ),
             if (_link != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: OideaSpace.space5),
               const Text(
                 '邀請連結（複製給對方）',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: OideaSpace.space15),
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(OideaSpace.space25),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF5F5FA),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(OideaRadius.md),
                   border: Border.all(color: const Color(0x1A000000)),
                 ),
                 child: SelectableText(
                   _link!,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: OideaFontSize.size12),
                 ),
               ),
             ],
             if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+              const SizedBox(height: OideaSpace.space25),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: OideaFontSize.size12)),
             ],
           ],
         ),
@@ -403,7 +404,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
           FilledButton(
             onPressed: _busy ? null : _create,
             child: _busy
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(width: OideaSpace.space4, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Text('產生連結'),
           )
         else ...[

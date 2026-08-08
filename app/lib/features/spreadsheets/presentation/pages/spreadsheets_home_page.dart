@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../workspace/providers/workspace_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class SpreadsheetsHomePage extends ConsumerStatefulWidget {
   const SpreadsheetsHomePage({super.key});
@@ -134,7 +135,7 @@ class _SpreadsheetsHomePageState extends ConsumerState<SpreadsheetsHomePage> {
                       child: ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                         itemCount: _items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        separatorBuilder: (_, __) => const SizedBox(height: OideaSpace.space2),
                         itemBuilder: (_, i) {
                           final s = _items[i];
                           return Card(
@@ -145,7 +146,7 @@ class _SpreadsheetsHomePageState extends ConsumerState<SpreadsheetsHomePage> {
                                 (s['description'] as String?)?.isNotEmpty == true
                                     ? s['description'] as String
                                     : '最後更新：${_formatDate(s['updatedAt'] as String?)}',
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade600),
                               ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (v) {
@@ -177,9 +178,9 @@ class _SpreadsheetsHomePageState extends ConsumerState<SpreadsheetsHomePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.grid_on, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            Text('目前還沒有試算表', style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
-            const SizedBox(height: 8),
+            const SizedBox(height: OideaSpace.space3),
+            Text('目前還沒有試算表', style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size15)),
+            const SizedBox(height: OideaSpace.space2),
             TextButton.icon(
               icon: const Icon(Icons.add),
               label: const Text('建立第一張試算表'),

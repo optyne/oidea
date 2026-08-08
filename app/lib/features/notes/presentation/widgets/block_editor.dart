@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../providers/notes_providers.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 一個可變動的 block item（在 UI 端保留 id 以便 PUT 時標示對應關係；新增的 block id=null）。
 class _BlockItem {
@@ -362,10 +363,10 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         field = _textField(b, const TextStyle(fontSize: 26, fontWeight: FontWeight.w700), index: index);
         break;
       case 'h2':
-        field = _textField(b, const TextStyle(fontSize: 22, fontWeight: FontWeight.w700), index: index);
+        field = _textField(b, const TextStyle(fontSize: OideaFontSize.size22, fontWeight: FontWeight.w700), index: index);
         break;
       case 'h3':
-        field = _textField(b, const TextStyle(fontSize: 18, fontWeight: FontWeight.w600), index: index);
+        field = _textField(b, const TextStyle(fontSize: OideaFontSize.size18, fontWeight: FontWeight.w600), index: index);
         break;
       case 'todo':
         field = Row(
@@ -410,7 +411,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         break;
       case 'quote':
         field = Container(
-          padding: const EdgeInsets.only(left: 12),
+          padding: const EdgeInsets.only(left: OideaSpace.space3),
           decoration: BoxDecoration(
             border: Border(left: BorderSide(color: Colors.grey.shade400, width: 3)),
           ),
@@ -422,14 +423,14 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         break;
       case 'code':
         field = Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(OideaSpace.space2),
           decoration: BoxDecoration(
             color: Colors.grey.shade100,
             borderRadius: BorderRadius.circular(6),
           ),
           child: _textField(
             b,
-            const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            const TextStyle(fontFamily: 'monospace', fontSize: OideaFontSize.size13),
             index: index,
           ),
         );
@@ -447,17 +448,17 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                 borderRadius: BorderRadius.circular(6),
                 child: Image.network(url, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image)),
               ),
-            _textField(b, const TextStyle(fontSize: 12, color: Colors.grey), index: index),
+            _textField(b, const TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey), index: index),
           ],
         );
         break;
       default:
-        field = _textField(b, const TextStyle(fontSize: 15), index: index);
+        field = _textField(b, const TextStyle(fontSize: OideaFontSize.size15), index: index);
     }
 
     return MouseRegion(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(vertical: OideaSpace.space05),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -473,7 +474,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                     child: MouseRegion(
                       cursor: SystemMouseCursors.grab,
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.only(top: OideaSpace.space3),
                         child: Icon(
                           Icons.drag_indicator,
                           size: 16,
@@ -504,7 +505,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                     ..._menuTypes.map(
                       (t) => PopupMenuItem(
                         value: t.$1,
-                        child: Row(children: [Icon(t.$3, size: 16), const SizedBox(width: 8), Text(t.$2)]),
+                        child: Row(children: [Icon(t.$3, size: 16), const SizedBox(width: OideaSpace.space2), Text(t.$2)]),
                       ),
                     ),
                     const PopupMenuDivider(),
@@ -545,7 +546,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                 });
                 _scheduleSave();
               },
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(OideaRadius.sm),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(0, 10, 2, 0),
                 child: Icon(
@@ -558,7 +559,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
             Expanded(
               child: _textField(
                 b,
-                const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                const TextStyle(fontSize: OideaFontSize.size15, fontWeight: FontWeight.w500),
                 index: index,
               ),
             ),
@@ -566,17 +567,17 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
         ),
         if (!collapsed)
           Padding(
-            padding: const EdgeInsets.only(left: 20, top: 2, bottom: 4),
+            padding: const EdgeInsets.only(left: OideaSpace.space5, top: OideaSpace.space05, bottom: OideaSpace.space1),
             child: TextField(
               controller: b.bodyController,
               maxLines: null,
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(fontSize: OideaFontSize.size14),
               decoration: InputDecoration(
                 border: InputBorder.none,
                 isCollapsed: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                contentPadding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
                 hintText: '空內容 —— 在此輸入',
-                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: OideaFontSize.size13),
               ),
               onChanged: (_) => _scheduleSave(),
             ),
@@ -589,19 +590,19 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
     final filtered = _filteredSlashTypes();
     if (filtered.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.only(left: 44, top: 4, bottom: 4),
+        padding: const EdgeInsets.only(left: 44, top: OideaSpace.space1, bottom: OideaSpace.space1),
         child: Text(
           '沒有符合「$_slashQuery」的 block 類型',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          style: TextStyle(color: Colors.grey.shade500, fontSize: OideaFontSize.size12),
         ),
       );
     }
     final highlight = _slashHighlight.clamp(0, filtered.length - 1);
     return Padding(
-      padding: const EdgeInsets.only(left: 44, top: 2, bottom: 4),
+      padding: const EdgeInsets.only(left: 44, top: OideaSpace.space05, bottom: OideaSpace.space1),
       child: Material(
         elevation: 3,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OideaRadius.md),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 260),
           child: Column(
@@ -612,14 +613,14 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                   onTap: () => _applySlash(index, filtered[i].$1),
                   child: Container(
                     color: i == highlight ? Colors.blue.withOpacity(0.08) : null,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space15),
                     child: Row(
                       children: [
                         Icon(filtered[i].$3, size: 16, color: Colors.grey.shade700),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(filtered[i].$2, style: const TextStyle(fontSize: 13))),
+                        const SizedBox(width: OideaSpace.space25),
+                        Expanded(child: Text(filtered[i].$2, style: const TextStyle(fontSize: OideaFontSize.size13))),
                         Text('/${filtered[i].$1}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontFamily: 'monospace')),
+                            style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade500, fontFamily: 'monospace')),
                       ],
                     ),
                   ),
@@ -642,9 +643,9 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
       decoration: InputDecoration(
         border: InputBorder.none,
         isCollapsed: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
         hintText: showHint ? '輸入 / 叫出指令' : null,
-        hintStyle: showHint ? TextStyle(color: Colors.grey.shade400, fontSize: 14) : null,
+        hintStyle: showHint ? TextStyle(color: Colors.grey.shade400, fontSize: OideaFontSize.size14) : null,
       ),
       onChanged: (_) => index != null ? _onBlockTextChanged(index) : _scheduleSave(),
     );
@@ -681,7 +682,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
           itemCount: _blocks.length,
           onReorder: _onReorder,
           footer: Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.only(top: OideaSpace.space1),
             child: TextButton.icon(
               icon: const Icon(Icons.add),
               label: const Text('新增 block'),
@@ -703,9 +704,9 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
             top: 8,
             child: Row(
               children: [
-                SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                SizedBox(width: 6),
-                Text('儲存中…', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                SizedBox(width: OideaSpace.space3, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: OideaSpace.space15),
+                Text('儲存中…', style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey)),
               ],
             ),
           ),

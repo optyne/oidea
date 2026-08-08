@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
+import '../../core/theme/app_theme.dart';
 
 /// 訊息內容渲染：Markdown + @username 高亮/點擊。
 class MessageBody extends StatelessWidget {
@@ -20,7 +21,7 @@ class MessageBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = baseStyle ?? const TextStyle(fontSize: 15);
+    final style = baseStyle ?? const TextStyle(fontSize: OideaFontSize.size15);
     return MarkdownBody(
       data: content,
       selectable: true,

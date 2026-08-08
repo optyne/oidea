@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../providers/notes_providers.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class DatabaseView extends ConsumerWidget {
   final String pageId;
@@ -71,23 +72,23 @@ class _FinanceSummaryStrip extends ConsumerWidget {
 
         Widget tile(String label, double v, Color c) => Expanded(
               child: Container(
-                margin: const EdgeInsets.all(4),
-                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.all(OideaSpace.space1),
+                padding: const EdgeInsets.all(OideaSpace.space25),
                 decoration: BoxDecoration(
                   color: c.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(OideaRadius.md),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       label,
-                      style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: c, fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: OideaSpace.space05),
                     Text(
                       NumberFormat.currency(symbol: 'NT\$', decimalDigits: 0).format(v),
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontSize: OideaFontSize.size15, fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -102,12 +103,12 @@ class _FinanceSummaryStrip extends ConsumerWidget {
                 children: [
                   Text(
                     '$ym 月總覽',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w600),
                   ),
                   const Spacer(),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: OideaSpace.space1),
               Row(
                 children: [
                   tile('收入', income, Colors.green),
@@ -117,7 +118,7 @@ class _FinanceSummaryStrip extends ConsumerWidget {
               ),
               if (topCategories.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(OideaSpace.space1),
                   child: Wrap(
                     spacing: 6,
                     runSpacing: 4,
@@ -125,7 +126,7 @@ class _FinanceSummaryStrip extends ConsumerWidget {
                       return Chip(
                         label: Text(
                           '${e.key}  ${NumberFormat('#,##0').format(e.value as num)}',
-                          style: const TextStyle(fontSize: 11),
+                          style: const TextStyle(fontSize: OideaFontSize.size11),
                         ),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -199,7 +200,7 @@ class _TableViewState extends ConsumerState<_TableView> {
                     final options = (cfg['options'] as List?)?.cast<dynamic>() ?? [];
                     final currentId = values[key] as String?;
                     return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
                       child: DropdownButtonFormField<String?>(
                         value: options.any((o) => (o as Map)['id'] == currentId)
                             ? currentId
@@ -228,7 +229,7 @@ class _TableViewState extends ConsumerState<_TableView> {
                   }
                   if (type == 'date') {
                     return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
                       child: OutlinedButton(
                         onPressed: () async {
                           final raw = controllers[key]!.text;
@@ -254,7 +255,7 @@ class _TableViewState extends ConsumerState<_TableView> {
                   }
                   // text / number / currency / url / person（以 text 呈現）
                   return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
                     child: TextField(
                       controller: controllers[key],
                       keyboardType: (type == 'number' || type == 'currency')
@@ -397,7 +398,7 @@ class _TableViewState extends ConsumerState<_TableView> {
                 ),
         ),
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(OideaSpace.space3),
           child: Align(
             alignment: Alignment.centerLeft,
             child: FilledButton.icon(

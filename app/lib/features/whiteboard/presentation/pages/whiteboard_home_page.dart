@@ -5,6 +5,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/whiteboard_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class WhiteboardHomePage extends ConsumerStatefulWidget {
   const WhiteboardHomePage({super.key});
@@ -37,7 +38,7 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
         appBar: AppBar(title: const Text('白板')),
         body: const Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.all(OideaSpace.space6),
             child: Text('請在頂端建立或選擇工作空間', textAlign: TextAlign.center),
           ),
         ),
@@ -70,7 +71,7 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
           }
 
           return GridView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(OideaSpace.space4),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               childAspectRatio: 1.2,
@@ -82,17 +83,17 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
               final board = boards[index] as Map<String, dynamic>;
               return Card(
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(OideaRadius.lg),
                   onTap: () => context.go('/whiteboard/canvas/${board['id']}'),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(OideaSpace.space4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             const Icon(Icons.draw, color: Color(0xFF7C3AED)),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: OideaSpace.space2),
                             Expanded(
                               child: Text(
                                 board['title'] ?? '',
@@ -121,12 +122,12 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
                             board['description'],
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                            style: TextStyle(fontSize: OideaFontSize.size13, color: Colors.grey.shade600),
                           ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: OideaSpace.space2),
                         Text(
                           '更新於 ${_formatDate(board['updatedAt'])}',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                          style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade400),
                         ),
                       ],
                     ),
@@ -175,13 +176,13 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(OideaSpace.space4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('範本', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Wrap(
               spacing: 12,
               runSpacing: 12,

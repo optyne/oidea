@@ -6,6 +6,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/erp_providers.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class LeavesPage extends ConsumerStatefulWidget {
   const LeavesPage({super.key});
@@ -87,7 +88,7 @@ class _LeavesPageState extends ConsumerState<LeavesPage> {
                   ],
                   onChanged: (v) => setSt(() => type = v ?? 'personal'),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 OutlinedButton(
                   onPressed: () async {
                     final d = await showDatePicker(
@@ -100,7 +101,7 @@ class _LeavesPageState extends ConsumerState<LeavesPage> {
                   },
                   child: Text('起：${DateFormat('yyyy/MM/dd').format(start)}'),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: OideaSpace.space2),
                 OutlinedButton(
                   onPressed: () async {
                     final d = await showDatePicker(
@@ -113,7 +114,7 @@ class _LeavesPageState extends ConsumerState<LeavesPage> {
                   },
                   child: Text('迄：${DateFormat('yyyy/MM/dd').format(end)}'),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 TextField(
                   controller: reasonCtl,
                   maxLines: 3,
@@ -192,16 +193,16 @@ class _LeaveRow extends ConsumerWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
             decoration: BoxDecoration(
               color: _statusColor(status).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(OideaRadius.sm),
             ),
             child: Text(
               _statusLabel(status),
               style: TextStyle(
                 color: _statusColor(status),
-                fontSize: 11,
+                fontSize: OideaFontSize.size11,
                 fontWeight: FontWeight.w600,
               ),
             ),

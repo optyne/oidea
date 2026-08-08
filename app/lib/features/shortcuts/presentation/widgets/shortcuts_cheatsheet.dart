@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 鍵盤快捷鍵總覽。Ctrl/⌘+/ 觸發，也可從命令面板叫出。
 ///
@@ -8,7 +9,7 @@ Future<void> showShortcutsCheatsheet(BuildContext context) {
   return showDialog<void>(
     context: context,
     builder: (_) => const Dialog(
-      insetPadding: EdgeInsets.symmetric(horizontal: 40, vertical: 60),
+      insetPadding: EdgeInsets.symmetric(horizontal: OideaSpace.space10, vertical: 60),
       child: _CheatsheetBody(),
     ),
   );
@@ -75,7 +76,7 @@ class _CheatsheetBody extends StatelessWidget {
           const Divider(height: 1),
           Flexible(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(OideaSpace.space5),
               child: LayoutBuilder(
                 builder: (_, cons) {
                   final twoCol = cons.maxWidth > 560;
@@ -95,10 +96,10 @@ class _CheatsheetBody extends StatelessWidget {
         child: Row(
           children: [
             const Icon(Icons.keyboard_outlined, size: 20),
-            const SizedBox(width: 10),
+            const SizedBox(width: OideaSpace.space25),
             const Text(
               '鍵盤快捷鍵',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: OideaFontSize.size18, fontWeight: FontWeight.w700),
             ),
             const Spacer(),
             IconButton(
@@ -110,18 +111,18 @@ class _CheatsheetBody extends StatelessWidget {
       );
 
   Widget _footer(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space5, vertical: OideaSpace.space25),
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
         ),
         child: Row(
           children: [
             Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
-            const SizedBox(width: 6),
+            const SizedBox(width: OideaSpace.space15),
             Expanded(
               child: Text(
                 'macOS 請用 ⌘ 取代 Ctrl。觸控裝置上大部分操作可用長按或點擊達成。',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
               ),
             ),
           ],
@@ -142,7 +143,7 @@ class _CheatsheetBody extends StatelessWidget {
             children: [for (final s in left) _sectionWidget(s)],
           ),
         ),
-        const SizedBox(width: 24),
+        const SizedBox(width: OideaSpace.space6),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -162,13 +163,13 @@ class _CheatsheetBody extends StatelessWidget {
 
   Widget _sectionWidget(_Section s) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: OideaSpace.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(s.title,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
+              style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w700)),
+          const SizedBox(height: OideaSpace.space15),
           for (final e in s.entries) _entryRow(e),
         ],
       ),
@@ -182,13 +183,13 @@ class _CheatsheetBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Text(e.label, style: const TextStyle(fontSize: 13)),
+            child: Text(e.label, style: const TextStyle(fontSize: OideaFontSize.size13)),
           ),
           for (var i = 0; i < e.keys.length; i++) ...[
             if (i > 0)
               const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                child: Text('+', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                padding: EdgeInsets.symmetric(horizontal: OideaSpace.space1),
+                child: Text('+', style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey)),
               ),
             _keyChip(e.keys[i]),
           ],
@@ -202,11 +203,11 @@ class _CheatsheetBody extends StatelessWidget {
       builder: (ctx) {
         final isDark = Theme.of(ctx).brightness == Brightness.dark;
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          margin: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 3),
+          margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space05),
           decoration: BoxDecoration(
             color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(OideaRadius.sm),
             border: Border.all(
               color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
             ),
@@ -214,7 +215,7 @@ class _CheatsheetBody extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: OideaFontSize.size11,
               fontFamily: 'monospace',
               color: isDark ? Colors.grey.shade200 : Colors.grey.shade800,
             ),

@@ -8,6 +8,7 @@ import '../../providers/notes_providers.dart';
 import '../widgets/block_editor.dart';
 import '../widgets/database_view.dart';
 import '../widgets/share_page_dialog.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// Docs 路線:prototype 的角色視角切換 UI(內容渲染仍走 Notion-style block editor)。
 /// 對齊 prototype OideaDocs.jsx 的 ROLES(L8–14) —— 目前純前端狀態,未影響內容。
@@ -154,7 +155,7 @@ class _PageSidebarState extends ConsumerState<_PageSidebar> {
                   prefixIcon: const Icon(Icons.search, size: 18),
                   isDense: true,
                   border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space2),
                   suffixIcon: query.isEmpty
                       ? null
                       : IconButton(
@@ -166,7 +167,7 @@ class _PageSidebarState extends ConsumerState<_PageSidebar> {
                         ),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: OideaSpace.space15),
               SizedBox(
                 width: double.infinity,
                 child: DropdownButtonFormField<_DocRole>(
@@ -174,7 +175,7 @@ class _PageSidebarState extends ConsumerState<_PageSidebar> {
                   decoration: const InputDecoration(
                     isDense: true,
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    contentPadding: EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space15),
                   ),
                   items: [
                     for (final r in _DocRole.values)
@@ -321,7 +322,7 @@ class _PageTreeState extends ConsumerState<_PageTree> {
 
     final roots = byParent[null] ?? [];
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space1),
       children: [
         for (final item in roots) ..._buildNode(item, 0, byParent, selectedId),
       ],
@@ -501,11 +502,11 @@ class _PageTreeRowState extends State<_PageTreeRow> {
             children: [
               // 展開／收合箭頭（無 children 就留空位保持對齊）
               SizedBox(
-                width: 20,
+                width: OideaSpace.space5,
                 child: widget.hasChildren
                     ? InkWell(
                         onTap: widget.onToggleExpand,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(OideaRadius.sm),
                         child: Icon(
                           widget.expanded
                               ? Icons.keyboard_arrow_down
@@ -516,13 +517,13 @@ class _PageTreeRowState extends State<_PageTreeRow> {
                       )
                     : const SizedBox.shrink(),
               ),
-              Text(icon, style: const TextStyle(fontSize: 14)),
-              const SizedBox(width: 6),
+              Text(icon, style: const TextStyle(fontSize: OideaFontSize.size14)),
+              const SizedBox(width: OideaSpace.space15),
               Expanded(
                 child: Text(
                   title,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: OideaFontSize.size14),
                 ),
               ),
               _VisibilityBadge(visibility: widget.item['visibility'] as String?),
@@ -530,11 +531,11 @@ class _PageTreeRowState extends State<_PageTreeRow> {
               if (_hover) ...[
                 InkWell(
                   onTap: widget.onAddChild,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(OideaRadius.sm),
                   child: Tooltip(
                     message: '新增子頁面',
                     child: Padding(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(OideaSpace.space1),
                       child: Icon(Icons.add, size: 16, color: Colors.grey.shade700),
                     ),
                   ),
@@ -637,18 +638,18 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                 children: [
                   Text(
                     (page['icon'] as String?) ?? (kind == 'database' ? '📊' : '📄'),
-                    style: const TextStyle(fontSize: 28),
+                    style: const TextStyle(fontSize: OideaFontSize.size28),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: OideaSpace.space25),
                   _VisibilityBadge(
                     visibility: page['visibility'] as String?,
                     expanded: true,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: OideaSpace.space2),
                   Expanded(
                     child: TextField(
                       controller: _titleController,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontSize: OideaFontSize.size24, fontWeight: FontWeight.w700),
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         isCollapsed: true,
@@ -706,7 +707,7 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                         value: 'share',
                         child: Row(children: [
                           Icon(Icons.share_outlined, size: 18),
-                          SizedBox(width: 8),
+                          SizedBox(width: OideaSpace.space2),
                           Text('分享／權限'),
                         ]),
                       ),
@@ -714,7 +715,7 @@ class _PageDetailPaneState extends ConsumerState<_PageDetailPane> {
                         value: 'delete',
                         child: Row(children: [
                           Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                          SizedBox(width: 8),
+                          SizedBox(width: OideaSpace.space2),
                           Text('刪除頁面'),
                         ]),
                       ),
@@ -772,26 +773,26 @@ class _VisibilityBadge extends StatelessWidget {
       return Tooltip(
         message: label,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space05),
           child: Icon(icon, size: 12, color: color),
         ),
       );
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: OideaSpace.space05),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(OideaRadius.sm),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
+          const SizedBox(width: OideaSpace.space1),
           Text(
             label,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: OideaFontSize.size10,
               fontWeight: FontWeight.w700,
               color: color,
               letterSpacing: 0.6,

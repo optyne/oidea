@@ -7,6 +7,7 @@ import '../../../../shared/widgets/message_body.dart';
 import '../../../mentions/presentation/widgets/mention_text_field.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/message_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 討論串內容(無 Scaffold/AppBar)。可當作整頁(`ThreadPage`)渲染,
 /// 或在寬版 ChannelPage 作右側固定面板使用 — 對齊 prototype 的 ThreadPanel。
@@ -109,9 +110,9 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
             child: Row(
               children: [
                 const Icon(Icons.forum_outlined, size: 16),
-                const SizedBox(width: 6),
+                const SizedBox(width: OideaSpace.space15),
                 const Text('討論串',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size14)),
                 const Spacer(),
                 if (widget.onClose != null)
                   IconButton(
@@ -137,13 +138,13 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
               }
               return ListView.builder(
                 controller: _scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space35, vertical: OideaSpace.space15),
                 itemCount: replies.length,
                 itemBuilder: (context, index) {
                   final msg = replies[index] as Map<String, dynamic>;
                   final sender = msg['sender'] as Map<String, dynamic>?;
                   return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -152,7 +153,7 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
                           avatarUrl: sender?['avatarUrl'] as String?,
                           radius: 14,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: OideaSpace.space2),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,11 +161,11 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
                               Text(
                                 sender?['displayName'] as String? ?? '?',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 12),
+                                    fontWeight: FontWeight.w600, fontSize: OideaFontSize.size12),
                               ),
                               MessageBody(
                                 content: msg['content'] as String? ?? '',
-                                baseStyle: const TextStyle(fontSize: 13),
+                                baseStyle: const TextStyle(fontSize: OideaFontSize.size13),
                               ),
                             ],
                           ),
@@ -184,7 +185,7 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
 
   Widget _buildInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space2),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
@@ -230,7 +231,7 @@ class _ParentHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(OideaSpace.space3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -238,15 +239,15 @@ class _ParentHeader extends StatelessWidget {
             '根訊息',
             style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: OideaSpace.space1),
           Text(
             sender?['displayName'] as String? ?? '?',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size13),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: OideaSpace.space05),
           MessageBody(
             content: parent['content'] as String? ?? '',
-            baseStyle: const TextStyle(fontSize: 14),
+            baseStyle: const TextStyle(fontSize: OideaFontSize.size14),
           ),
         ],
       ),

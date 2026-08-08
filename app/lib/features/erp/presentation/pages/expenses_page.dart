@@ -6,6 +6,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/erp_providers.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class ExpensesPage extends ConsumerStatefulWidget {
   const ExpensesPage({super.key});
@@ -114,7 +115,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                   decoration: const InputDecoration(labelText: '標題', border: OutlineInputBorder()),
                   autofocus: true,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 TextField(
                   controller: amountController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -123,7 +124,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 DropdownButtonFormField<String>(
                   value: category,
                   decoration: const InputDecoration(labelText: '類別', border: OutlineInputBorder()),
@@ -136,7 +137,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                   ],
                   onChanged: (v) => setSt(() => category = v ?? 'other'),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: OideaSpace.space3),
                 TextField(
                   controller: descController,
                   maxLines: 3,
@@ -196,20 +197,20 @@ class _StatsStrip extends StatelessWidget {
       final amount = d?['amount'];
       return Expanded(
         child: Container(
-          margin: const EdgeInsets.all(4),
-          padding: const EdgeInsets.all(10),
+          margin: const EdgeInsets.all(OideaSpace.space1),
+          padding: const EdgeInsets.all(OideaSpace.space25),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(OideaRadius.md),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text('$count 筆', style: const TextStyle(fontSize: 13)),
+              Text(label, style: TextStyle(color: color, fontSize: OideaFontSize.size12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: OideaSpace.space1),
+              Text('$count 筆', style: const TextStyle(fontSize: OideaFontSize.size13)),
               if (amount != null)
-                Text('NT\$ ${_fmtAmount(amount)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('NT\$ ${_fmtAmount(amount)}', style: const TextStyle(fontSize: OideaFontSize.size13, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -277,16 +278,16 @@ class _ExpenseRow extends ConsumerWidget {
         children: [
           Expanded(child: Text(expense['title'] as String? ?? '')),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
             decoration: BoxDecoration(
               color: _statusColor(status).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(OideaRadius.sm),
             ),
             child: Text(
               _statusLabel(status),
               style: TextStyle(
                 color: _statusColor(status),
-                fontSize: 11,
+                fontSize: OideaFontSize.size11,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -296,11 +297,11 @@ class _ExpenseRow extends ConsumerWidget {
       subtitle: Text(
         '${submitter?['displayName'] ?? ''}'
         ' · ${createdAt != null ? DateFormat('MM/dd HH:mm').format(createdAt) : ''}',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+        style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size12),
       ),
       trailing: Text(
         'NT\$ ${NumberFormat('#,##0').format(amountNum)}',
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: OideaFontSize.size15),
       ),
     );
   }
@@ -333,26 +334,26 @@ class _ExpenseDetailSheet extends ConsumerWidget {
       expand: false,
       builder: (ctx, scrollController) => ListView(
         controller: scrollController,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(OideaSpace.space4),
         children: [
           Text(expense['title'] as String? ?? '',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
+              style: const TextStyle(fontSize: OideaFontSize.size18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: OideaSpace.space2),
           Text('NT\$ ${NumberFormat('#,##0.##').format(amountNum)}',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w300)),
-          const SizedBox(height: 4),
+              style: const TextStyle(fontSize: OideaFontSize.size24, fontWeight: FontWeight.w300)),
+          const SizedBox(height: OideaSpace.space1),
           Text(
             '由 ${submitter?['displayName'] ?? ''} 提出 · 狀態：$status',
             style: TextStyle(color: Colors.grey.shade600),
           ),
           if ((expense['description'] as String?)?.isNotEmpty ?? false) ...[
-            const SizedBox(height: 16),
-            Text(expense['description'] as String, style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: OideaSpace.space4),
+            Text(expense['description'] as String, style: const TextStyle(fontSize: OideaFontSize.size14)),
           ],
           if (expense['rejectReason'] != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(OideaSpace.space25),
               decoration: BoxDecoration(
                 color: Colors.red.shade50,
                 borderRadius: BorderRadius.circular(6),
@@ -362,7 +363,7 @@ class _ExpenseDetailSheet extends ConsumerWidget {
             ),
           ],
           if (approvals.isNotEmpty) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: OideaSpace.space4),
             const Text('審批記錄', style: TextStyle(fontWeight: FontWeight.w600)),
             ...approvals.map((a) {
               final m = a as Map<String, dynamic>;
@@ -378,7 +379,7 @@ class _ExpenseDetailSheet extends ConsumerWidget {
               );
             }),
           ],
-          const SizedBox(height: 24),
+          const SizedBox(height: OideaSpace.space6),
           _ActionButtons(expense: expense, status: status, onChanged: onChanged),
         ],
       ),

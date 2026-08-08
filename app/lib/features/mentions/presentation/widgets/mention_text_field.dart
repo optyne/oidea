@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// 可重用的 @mention 自動完成輸入框。
 ///
@@ -181,7 +182,7 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
   Widget _buildMenu() {
     return Material(
       elevation: 4,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(OideaRadius.md),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 220),
         child: ListView.builder(
@@ -197,26 +198,26 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
               onTap: () => _apply(m),
               child: Container(
                 color: i == _highlight ? Colors.blue.withOpacity(0.08) : null,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space3, vertical: OideaSpace.space15),
                 child: Row(
                   children: [
                     CircleAvatar(
                       radius: 10,
                       child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(fontSize: 10)),
+                          style: const TextStyle(fontSize: OideaFontSize.size10)),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: OideaSpace.space2),
                     Expanded(
                       child: Text(
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: OideaFontSize.size13),
                       ),
                     ),
                     if (uname.isNotEmpty)
                       Text('@$uname',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                          style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600)),
                   ],
                 ),
               ),
@@ -295,7 +296,7 @@ class MentionRichText extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 1),
               decoration: BoxDecoration(
                 color: Colors.blue.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(OideaRadius.sm),
               ),
               child: Text(
                 '@${t.name}',

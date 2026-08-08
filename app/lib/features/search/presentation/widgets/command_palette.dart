@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../workspace/providers/workspace_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// Notion / Linear 風格的命令面板：
 /// - Ctrl / ⌘ + K 叫出
@@ -19,7 +20,7 @@ Future<void> showCommandPalette(BuildContext context) {
     barrierColor: Colors.black.withOpacity(0.5),
     builder: (_) => const Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 80),
+      insetPadding: EdgeInsets.symmetric(horizontal: OideaSpace.space6, vertical: 80),
       elevation: 0,
       child: _CommandPaletteBody(),
     ),
@@ -218,7 +219,7 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
     return Focus(
       onKeyEvent: _handleKey,
       child: Material(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(OideaRadius.lg),
         elevation: 8,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640, maxHeight: 500),
@@ -230,7 +231,7 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
                 child: Row(
                   children: [
                     const Icon(Icons.search, size: 20, color: Colors.grey),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: OideaSpace.space25),
                     Expanded(
                       child: TextField(
                         controller: _ctrl,
@@ -245,17 +246,17 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
                     ),
                     if (_loading)
                       const SizedBox(
-                        width: 14, height: 14,
+                        width: OideaSpace.space35, height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: OideaSpace.space1),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(OideaRadius.sm),
                       ),
-                      child: const Text('Esc', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      child: const Text('Esc', style: TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey)),
                     ),
                   ],
                 ),
@@ -272,34 +273,34 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
   Widget _results() {
     if (_error != null) {
       return Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(OideaSpace.space5),
         child: Text(_error!, style: const TextStyle(color: Colors.red)),
       );
     }
     if (_query.trim().isEmpty) {
       return Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(OideaSpace.space5),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('開始打字以跨類別搜尋', style: TextStyle(color: Colors.grey.shade600)),
-            const SizedBox(height: 8),
+            const SizedBox(height: OideaSpace.space2),
             Text('提示：Ctrl/⌘ + K 隨處叫出本面板',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                style: TextStyle(color: Colors.grey.shade500, fontSize: OideaFontSize.size12)),
           ],
         ),
       );
     }
     if (_hits.isEmpty && !_loading) {
       return Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(OideaSpace.space5),
         child: Text('沒有符合「$_query」的結果', style: TextStyle(color: Colors.grey.shade600)),
       );
     }
     final hl = _highlight.clamp(0, _hits.isEmpty ? 0 : _hits.length - 1);
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: OideaSpace.space2),
       shrinkWrap: true,
       itemCount: _hits.length,
       itemBuilder: (_, i) {
@@ -312,11 +313,11 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
           },
           child: Container(
             color: selected ? Colors.blue.withOpacity(0.08) : null,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space25),
             child: Row(
               children: [
                 Icon(h.icon, size: 18, color: h.iconColor),
-                const SizedBox(width: 12),
+                const SizedBox(width: OideaSpace.space3),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,7 +329,7 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
                           overflow: TextOverflow.ellipsis),
                       if (h.subtitle != null && h.subtitle!.isNotEmpty)
                         Text(h.subtitle!,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            style: TextStyle(fontSize: OideaFontSize.size12, color: Colors.grey.shade600),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis),
                     ],
@@ -336,12 +337,12 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
                 ),
                 if (selected)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(OideaRadius.sm),
                     ),
-                    child: const Text('↵', style: TextStyle(fontSize: 11)),
+                    child: const Text('↵', style: TextStyle(fontSize: OideaFontSize.size11)),
                   ),
               ],
             ),

@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import 'image_viewer_page.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// Notion/Affine 風格的工作空間檔案庫。按類別篩選、關鍵字搜尋、網格或清單檢視，
 /// 點圖片開全螢幕預覽、點其他檔案走 OS 處理器。
@@ -258,7 +259,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
         _buildFilterStrip(),
         if (_error != null)
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(OideaSpace.space4),
             child: Text(_error!, style: const TextStyle(color: Colors.red)),
           ),
         Expanded(
@@ -287,7 +288,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
         onPressed: _uploading ? null : _uploadFile,
         icon: _uploading
             ? const SizedBox(
-                width: 16,
+                width: OideaSpace.space4,
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               )
@@ -305,7 +306,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
           child: Row(
             children: [
               const Text('資料夾',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: OideaFontSize.size14, fontWeight: FontWeight.w700)),
               const Spacer(),
               IconButton(
                 tooltip: '新增資料夾',
@@ -318,7 +319,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
         ),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15),
             children: [
               _folderTile(
                 label: '全部檔案',
@@ -343,10 +344,10 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                 ),
               if (_folders.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(OideaSpace.space4),
                   child: Text(
                     '還沒有資料夾\n上傳時或點「新增資料夾」即可建立',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
                   ),
                 ),
             ],
@@ -383,11 +384,11 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
         child: Row(
           children: [
             Icon(icon, size: 16, color: Colors.grey.shade700),
-            const SizedBox(width: 8),
+            const SizedBox(width: OideaSpace.space2),
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: OideaFontSize.size13),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -470,9 +471,9 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
               ),
             ),
             if (_folders.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              const Text('已存在', style: TextStyle(fontSize: 11, color: Colors.grey)),
-              const SizedBox(height: 4),
+              const SizedBox(height: OideaSpace.space2),
+              const Text('已存在', style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey)),
+              const SizedBox(height: OideaSpace.space1),
               SizedBox(
                 height: 120,
                 child: ListView(
@@ -483,7 +484,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                         dense: true,
                         visualDensity: VisualDensity.compact,
                         leading: const Icon(Icons.folder_outlined, size: 16),
-                        title: Text(f, style: const TextStyle(fontSize: 12)),
+                        title: Text(f, style: const TextStyle(fontSize: OideaFontSize.size12)),
                         onTap: () => Navigator.pop(ctx, f),
                       ),
                   ],
@@ -522,10 +523,10 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          const Text('檔案庫', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 12),
+          const Text('檔案庫', style: TextStyle(fontSize: OideaFontSize.size22, fontWeight: FontWeight.w700)),
+          const SizedBox(width: OideaSpace.space3),
           if (_total > 0)
-            Text('共 $_total 筆', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            Text('共 $_total 筆', style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size13)),
           const Spacer(),
           SizedBox(
             width: 240,
@@ -534,13 +535,13 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                 hintText: '搜尋檔名…',
                 prefixIcon: const Icon(Icons.search, size: 18),
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.symmetric(vertical: OideaSpace.space25),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(OideaRadius.md)),
               ),
               onChanged: _onSearchChanged,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: OideaSpace.space2),
           IconButton(
             tooltip: _view == _ViewMode.grid ? '清單檢視' : '網格檢視',
             icon: Icon(_view == _ViewMode.grid ? Icons.view_list : Icons.grid_view),
@@ -567,14 +568,14 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
       _FileKind.other: '其它',
     };
     return SizedBox(
-      height: 40,
+      height: OideaSpace.space10,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4),
         children: [
           for (final k in _FileKind.values)
             Padding(
-              padding: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(right: OideaSpace.space15),
               child: ChoiceChip(
                 label: Text(labels[k]!),
                 selected: _kind == k,
@@ -595,12 +596,12 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.folder_open_outlined, size: 64, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
+          const SizedBox(height: OideaSpace.space3),
           Text(
             _search.isNotEmpty ? '找不到符合的檔案' : '目前還沒有檔案',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: OideaFontSize.size15),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: OideaSpace.space2),
           if (_search.isEmpty)
             TextButton.icon(
               icon: const Icon(Icons.upload_file),
@@ -632,11 +633,11 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
     final url = _resolveUrl((item['url'] as String?) ?? '');
     return InkWell(
       onTap: () => _openFile(item),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(OideaRadius.md),
       child: Container(
         decoration: BoxDecoration(
           border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OideaRadius.md),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -671,11 +672,11 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                           (item['fileName'] as String?) ?? '',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          style: const TextStyle(fontSize: OideaFontSize.size12, fontWeight: FontWeight.w500),
                         ),
                         Text(
                           _formatSize((item['fileSize'] as int?) ?? 0),
-                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                          style: TextStyle(fontSize: OideaFontSize.size10, color: Colors.grey.shade600),
                         ),
                       ],
                     ),
@@ -722,7 +723,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
             height: 40,
             decoration: BoxDecoration(
               color: _colorFor(mime).withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(OideaRadius.md),
             ),
             child: Icon(_iconFor(mime), color: _colorFor(mime)),
           ),
@@ -736,7 +737,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
               _formatSize((item['fileSize'] as int?) ?? 0),
               if (uploader?['displayName'] != null) '上傳者：${uploader!['displayName']}',
             ].join(' · '),
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: OideaFontSize.size11, color: Colors.grey.shade600),
           ),
           trailing: PopupMenuButton<String>(
             onSelected: (v) {

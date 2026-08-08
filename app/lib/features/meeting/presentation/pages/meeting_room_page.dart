@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../providers/meeting_provider.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class MeetingRoomPage extends ConsumerStatefulWidget {
   final String meetingId;
@@ -45,7 +46,7 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                 final participants = (meeting['participants'] as List<dynamic>?) ?? [];
 
                 return GridView.builder(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(OideaSpace.space2),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     mainAxisSpacing: 8,
@@ -59,7 +60,7 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                     return Container(
                       decoration: BoxDecoration(
                         color: Colors.grey.shade800,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(OideaRadius.lg),
                       ),
                       child: Stack(
                         children: [
@@ -80,20 +81,20 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                             bottom: 8,
                             left: 8,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space1),
                               decoration: BoxDecoration(
                                 color: Colors.black54,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(OideaRadius.sm),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     user?['displayName'] ?? 'Unknown',
-                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    style: const TextStyle(color: Colors.white, fontSize: OideaFontSize.size12),
                                   ),
                                   if (participant['role'] == 'organizer') ...[
-                                    const SizedBox(width: 4),
+                                    const SizedBox(width: OideaSpace.space1),
                                     const Icon(Icons.star, size: 12, color: Colors.amber),
                                   ],
                                 ],
@@ -109,7 +110,7 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space4, vertical: OideaSpace.space3),
             color: Colors.grey.shade900,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -119,19 +120,19 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                   isActive: _isMuted,
                   onTap: () => setState(() => _isMuted = !_isMuted),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: OideaSpace.space4),
                 _ControlButton(
                   icon: _isCameraOn ? Icons.videocam : Icons.videocam_off,
                   isActive: !_isCameraOn,
                   onTap: () => setState(() => _isCameraOn = !_isCameraOn),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: OideaSpace.space4),
                 _ControlButton(
                   icon: _isScreenSharing ? Icons.stop_screen_share : Icons.screen_share,
                   isActive: _isScreenSharing,
                   onTap: () => setState(() => _isScreenSharing = !_isScreenSharing),
                 ),
-                const SizedBox(width: 32),
+                const SizedBox(width: OideaSpace.space8),
                 _ControlButton(
                   icon: Icons.call_end,
                   isActive: true,
