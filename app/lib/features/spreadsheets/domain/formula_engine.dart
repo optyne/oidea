@@ -181,7 +181,6 @@ List<_Tok> _lex(String src) {
   bool isDigit(int c) => c >= 0x30 && c <= 0x39;
   bool isAlpha(int c) =>
       (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) || c == 0x5F;
-  bool isAlnum(int c) => isDigit(c) || isAlpha(c);
 
   while (i < n) {
     final ch = src.codeUnitAt(i);

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (NestJS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # npm ci (not npm install) so a dependency that is in package.json but
+      # missing from the lockfile fails here instead of silently on someone's
+      # laptop — that is how @nestjs/schedule went missing locally.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Unit tests
+        run: npm test
+
+      # nest build type-checks every file under src/, including the ones no
+      # test reaches. Without it, ts-jest only compiles the test-reachable
+      # subset and type errors elsewhere ship undetected.
+      - name: Build
+        run: npm run build
+
+  flutter:
+    name: Flutter (app)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.2
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # --no-fatal-infos: the 88 existing infos (deprecated withOpacity,
+      # prefer_const) are tracked separately. Errors and warnings still fail.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Tests
+        run: flutter test

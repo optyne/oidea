@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { PrismaService } from '../common/prisma.service';
 import { AutomationEngine } from '../automation/automation.engine';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type PrismaMock = {
   project: { findUnique: jest.Mock };
@@ -34,6 +35,7 @@ describe('TasksService — P-14 循環任務', () => {
   let service: TasksService;
   let prisma: PrismaMock;
   let automation: { onTaskCompleted: jest.Mock };
+  let notifications: { create: jest.Mock };
 
   const USER_ID = 'u-1';
   const TASK_ID = 't-1';
@@ -41,11 +43,13 @@ describe('TasksService — P-14 循環任務', () => {
   beforeEach(async () => {
     prisma = buildMock();
     automation = { onTaskCompleted: jest.fn().mockResolvedValue(0) };
+    notifications = { create: jest.fn().mockResolvedValue({}) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TasksService,
         { provide: PrismaService, useValue: prisma },
         { provide: AutomationEngine, useValue: automation },
+        { provide: NotificationsService, useValue: notifications },
       ],
     }).compile();
     service = module.get(TasksService);
