@@ -506,6 +506,7 @@ model Whiteboard {
   project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   sessions WhiteboardSession[]
+  pages    WhiteboardPage[]
 
   @@map("whiteboards")
 }
@@ -520,6 +521,22 @@ model WhiteboardSession {
   whiteboard Whiteboard @relation(fields: [whiteboardId], references: [id], onDelete: Cascade)
 
   @@map("whiteboard_sessions")
+}
+
+model WhiteboardPage {
+  id           String    @id @default(uuid())
+  whiteboardId String
+  position     Int
+  drawing      Bytes? // PKDrawing dataRepresentation（Apple 原生格式，server 不解析）
+  thumbnailId  String? // File.id → MinIO PNG，非 iOS 平台唯讀檢視用
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  whiteboard Whiteboard @relation(fields: [whiteboardId], references: [id], onDelete: Cascade)
+
+  @@index([whiteboardId, deletedAt])
+  @@map("whiteboard_pages")
 }
 
 // ============================================================
