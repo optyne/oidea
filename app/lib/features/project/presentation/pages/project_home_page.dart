@@ -80,7 +80,7 @@ class _ProjectHomePageState extends ConsumerState<ProjectHomePage> {
               final project = projects[index] as Map<String, dynamic>;
               return Card(
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(OideaRadius.lg),
                   onTap: () => context.go('/projects/board/${project['id']}'),
                   child: Padding(
                     padding: const EdgeInsets.all(OideaSpace.space4),

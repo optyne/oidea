@@ -1228,7 +1228,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(OideaRadius.lg),
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
                     ),
                     child: Column(
@@ -1272,7 +1272,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                     padding: const EdgeInsets.all(OideaSpace.space2),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(OideaRadius.lg),
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
                     ),
                     child: Wrap(
@@ -1303,7 +1303,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                       padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space2),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(OideaRadius.lg),
                         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
                       ),
                       child: Column(
@@ -1345,7 +1345,7 @@ class _WhiteboardCanvasPageState extends ConsumerState<WhiteboardCanvasPage> {
                     padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space15),
                     decoration: BoxDecoration(
                       color: Colors.black54,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(OideaRadius.md),
                     ),
                     child: Text(
                       _toolHint(_currentTool),

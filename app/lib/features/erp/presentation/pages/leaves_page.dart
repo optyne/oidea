@@ -196,7 +196,7 @@ class _LeaveRow extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
             decoration: BoxDecoration(
               color: _statusColor(status).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(OideaRadius.sm),
             ),
             child: Text(
               _statusLabel(status),

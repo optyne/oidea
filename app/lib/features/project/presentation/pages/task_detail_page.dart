@@ -244,7 +244,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                     padding: const EdgeInsets.all(OideaSpace.space3),
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.grey.shade200),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(OideaRadius.md),
                     ),
                     child: Text(task['description'],
                         style: theme.textTheme.bodyMedium),

@@ -546,7 +546,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
                 });
                 _scheduleSave();
               },
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(OideaRadius.sm),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(0, 10, 2, 0),
                 child: Icon(
@@ -602,7 +602,7 @@ class _BlockEditorState extends ConsumerState<BlockEditor> {
       padding: const EdgeInsets.only(left: 44, top: OideaSpace.space05, bottom: OideaSpace.space1),
       child: Material(
         elevation: 3,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OideaRadius.md),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 260),
           child: Column(

@@ -350,7 +350,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
                     padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: 1),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade100,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(OideaRadius.sm),
                     ),
                     child: Text('已暫停', style: TextStyle(fontSize: 10, color: Colors.orange.shade800)),
                   ),

@@ -204,7 +204,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
           margin: const EdgeInsets.only(bottom: OideaSpace.space3),
           child: InkWell(
             onTap: () => _openJoinPreview(meeting),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(OideaRadius.lg),
             child: Padding(
               padding: const EdgeInsets.all(OideaSpace.space4),
               child: Row(
@@ -755,7 +755,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
     final m = widget.meeting;
     final participantCount = m['_count']?['participants'] ?? 0;
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(OideaRadius.xl)),
       child: SizedBox(
         width: 460,
         child: Column(
@@ -805,7 +805,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                             padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space1),
                             decoration: BoxDecoration(
                               color: Colors.black54,
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(OideaRadius.xl),
                             ),
                             child: const Text(
                               '🎥 已關閉',
@@ -824,7 +824,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                           padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space1),
                           decoration: BoxDecoration(
                             color: Colors.black54,
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(OideaRadius.xl),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -917,7 +917,7 @@ class _JoinPreviewModalState extends State<_JoinPreviewModal> {
                     padding: const EdgeInsets.all(OideaSpace.space25),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(OideaRadius.md),
                     ),
                     child: Row(
                       children: [

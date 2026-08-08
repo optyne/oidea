@@ -641,7 +641,7 @@ class _BoardView extends StatelessWidget {
                         duration: const Duration(milliseconds: 120),
                         margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(OideaRadius.md),
                           border: Border.all(
                             color: highlight
                                 ? Theme.of(context).colorScheme.primary
@@ -938,7 +938,7 @@ class TaskCard extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                               decoration: BoxDecoration(
                                 color: color,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(OideaRadius.sm),
                               ),
                               child: Text(
                                 tm['name'] as String? ?? '',
@@ -955,7 +955,7 @@ class TaskCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                             decoration: BoxDecoration(
                               color: priorityColor(priority).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(OideaRadius.sm),
                             ),
                             child: Text(
                               priorityLabel(priority),
@@ -1241,7 +1241,7 @@ class _GanttView extends StatelessWidget {
                             child: Container(
                               decoration: BoxDecoration(
                                 color: color.withValues(alpha: 0.8),
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(OideaRadius.sm),
                                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 2)],
                               ),
                               alignment: Alignment.centerLeft,

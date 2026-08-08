@@ -130,7 +130,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OideaRadius.md),
           onTap: () => _showMenu(context, ref, maps, currentId),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space15),
@@ -141,7 +141,7 @@ class _WorkspaceSwitcher extends ConsumerWidget {
                   height: 30,
                   decoration: BoxDecoration(
                     color: OideaTokens.accent,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(OideaRadius.md),
                   ),
                   alignment: Alignment.center,
                   child: Text(

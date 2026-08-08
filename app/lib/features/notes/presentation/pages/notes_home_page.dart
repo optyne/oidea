@@ -506,7 +506,7 @@ class _PageTreeRowState extends State<_PageTreeRow> {
                 child: widget.hasChildren
                     ? InkWell(
                         onTap: widget.onToggleExpand,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(OideaRadius.sm),
                         child: Icon(
                           widget.expanded
                               ? Icons.keyboard_arrow_down
@@ -531,7 +531,7 @@ class _PageTreeRowState extends State<_PageTreeRow> {
               if (_hover) ...[
                 InkWell(
                   onTap: widget.onAddChild,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(OideaRadius.sm),
                   child: Tooltip(
                     message: '新增子頁面',
                     child: Padding(
@@ -782,7 +782,7 @@ class _VisibilityBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: OideaSpace.space05),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(OideaRadius.sm),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

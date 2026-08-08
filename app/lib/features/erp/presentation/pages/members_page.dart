@@ -378,7 +378,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
                 padding: const EdgeInsets.all(OideaSpace.space25),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF5F5FA),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(OideaRadius.md),
                   border: Border.all(color: const Color(0x1A000000)),
                 ),
                 child: SelectableText(

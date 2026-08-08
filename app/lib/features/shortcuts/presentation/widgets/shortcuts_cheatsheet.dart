@@ -207,7 +207,7 @@ class _CheatsheetBody extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space05),
           decoration: BoxDecoration(
             color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(OideaRadius.sm),
             border: Border.all(
               color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
             ),

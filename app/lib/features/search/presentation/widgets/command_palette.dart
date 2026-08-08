@@ -219,7 +219,7 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
     return Focus(
       onKeyEvent: _handleKey,
       child: Material(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(OideaRadius.lg),
         elevation: 8,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640, maxHeight: 500),
@@ -254,7 +254,7 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
                       padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(OideaRadius.sm),
                       ),
                       child: const Text('Esc', style: TextStyle(fontSize: 10, color: Colors.grey)),
                     ),
@@ -340,7 +340,7 @@ class _CommandPaletteBodyState extends ConsumerState<_CommandPaletteBody> {
                     padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(OideaRadius.sm),
                     ),
                     child: const Text('↵', style: TextStyle(fontSize: 11)),
                   ),

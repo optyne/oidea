@@ -180,7 +180,7 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
                 padding: const EdgeInsets.all(OideaSpace.space3),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(OideaRadius.md),
                 ),
                 child: Row(
                   children: [

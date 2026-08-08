@@ -201,7 +201,7 @@ class _StatsStrip extends StatelessWidget {
           padding: const EdgeInsets.all(OideaSpace.space25),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(OideaRadius.md),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,7 +281,7 @@ class _ExpenseRow extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space15, vertical: OideaSpace.space05),
             decoration: BoxDecoration(
               color: _statusColor(status).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(OideaRadius.sm),
             ),
             child: Text(
               _statusLabel(status),

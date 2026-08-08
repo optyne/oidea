@@ -96,13 +96,18 @@ class OideaSpace {
 /// interchangeably, which is why surfaces never looked like a set. Four steps
 /// plus [full] cover everything: [sm] for chips and badges, [md] for inputs
 /// and buttons, [lg] for cards, [xl] for panels and sheets.
+///
+/// The steps sit on the same 4px grid as [OideaSpace], which is not an
+/// aesthetic preference — a count of the existing call sites found 8px used
+/// 25 times, 4px 15 times, 12px 13 times and 16px 5 times. The grid was
+/// already there; this only names it.
 class OideaRadius {
   OideaRadius._();
 
-  static const sm = 6.0;
-  static const md = 10.0;
-  static const lg = 14.0;
-  static const xl = 20.0;
+  static const sm = 4.0;
+  static const md = 8.0;
+  static const lg = 12.0;
+  static const xl = 16.0;
   static const full = 999.0;
 
   static const smAll = BorderRadius.all(Radius.circular(sm));

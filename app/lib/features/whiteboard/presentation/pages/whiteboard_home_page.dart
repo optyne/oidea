@@ -83,7 +83,7 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
               final board = boards[index] as Map<String, dynamic>;
               return Card(
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(OideaRadius.lg),
                   onTap: () => context.go('/whiteboard/canvas/${board['id']}'),
                   child: Padding(
                     padding: const EdgeInsets.all(OideaSpace.space4),

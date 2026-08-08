@@ -182,7 +182,7 @@ class _MentionTextFieldState extends ConsumerState<MentionTextField> {
   Widget _buildMenu() {
     return Material(
       elevation: 4,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(OideaRadius.md),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 220),
         child: ListView.builder(
@@ -296,7 +296,7 @@ class MentionRichText extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 1),
               decoration: BoxDecoration(
                 color: Colors.blue.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(OideaRadius.sm),
               ),
               child: Text(
                 '@${t.name}',

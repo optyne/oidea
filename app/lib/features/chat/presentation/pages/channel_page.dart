@@ -517,7 +517,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: OideaSpace.space25),
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(OideaRadius.lg),
                 onTap: () => setState(() => _showPinnedDrawer = !_showPinnedDrawer),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space25, vertical: OideaSpace.space1),
@@ -525,7 +525,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
                     color: _showPinnedDrawer
                         ? const Color(0x26F59E0B)
                         : const Color(0x14F59E0B),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(OideaRadius.lg),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1010,7 +1010,7 @@ class _MessageRowState extends State<_MessageRow> {
                   ),
                 if (msg['type'] == 'image')
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(OideaRadius.md),
                     child: Image.network(
                       (msg['metadata'] as Map?)?['url'] as String? ?? '',
                       height: 200,
@@ -1159,11 +1159,11 @@ class _HoverActions extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surface,
       elevation: 2,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(OideaRadius.md),
       child: Container(
         decoration: BoxDecoration(
           border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OideaRadius.md),
         ),
         padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space1, vertical: OideaSpace.space05),
         child: Row(
@@ -1258,14 +1258,14 @@ class _ReactionChip extends StatelessWidget {
         ? const Color(0xFF4F46E5).withValues(alpha: 0.15)
         : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05);
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(OideaRadius.lg),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space05),
         decoration: BoxDecoration(
           color: bg,
           border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(OideaRadius.lg),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1477,7 +1477,7 @@ class _AutomationMessage extends StatelessWidget {
             decoration: BoxDecoration(
               color: OideaTokens.accent.withValues(alpha: 0.1),
               border: Border.all(color: OideaTokens.accent, style: BorderStyle.solid),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(OideaRadius.md),
             ),
             alignment: Alignment.center,
             child: const Text('🤖', style: TextStyle(fontSize: 14)),
@@ -1683,7 +1683,7 @@ class _FileMessageTile extends StatelessWidget {
 
     if (_isImage && url.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OideaRadius.md),
         child: Image.network(
           url,
           height: 200,
@@ -1698,7 +1698,7 @@ class _FileMessageTile extends StatelessWidget {
       padding: const EdgeInsets.all(OideaSpace.space25),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OideaRadius.md),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1829,7 +1829,7 @@ class _BroadcastDialogState extends ConsumerState<_BroadcastDialog> {
               padding: const EdgeInsets.all(OideaSpace.space25),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(OideaRadius.md),
                 border: Border.all(color: Theme.of(context).dividerColor),
               ),
               child: Text(

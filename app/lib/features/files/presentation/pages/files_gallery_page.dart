@@ -536,7 +536,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
                 prefixIcon: const Icon(Icons.search, size: 18),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: OideaSpace.space25),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(OideaRadius.md)),
               ),
               onChanged: _onSearchChanged,
             ),
@@ -633,11 +633,11 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
     final url = _resolveUrl((item['url'] as String?) ?? '');
     return InkWell(
       onTap: () => _openFile(item),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(OideaRadius.md),
       child: Container(
         decoration: BoxDecoration(
           border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OideaRadius.md),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -723,7 +723,7 @@ class _FilesGalleryPageState extends ConsumerState<FilesGalleryPage> {
             height: 40,
             decoration: BoxDecoration(
               color: _colorFor(mime).withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(OideaRadius.md),
             ),
             child: Icon(_iconFor(mime), color: _colorFor(mime)),
           ),

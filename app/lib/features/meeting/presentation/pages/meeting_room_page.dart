@@ -60,7 +60,7 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                     return Container(
                       decoration: BoxDecoration(
                         color: Colors.grey.shade800,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(OideaRadius.lg),
                       ),
                       child: Stack(
                         children: [
@@ -84,7 +84,7 @@ class _MeetingRoomPageState extends ConsumerState<MeetingRoomPage> {
                               padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: OideaSpace.space1),
                               decoration: BoxDecoration(
                                 color: Colors.black54,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(OideaRadius.sm),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
