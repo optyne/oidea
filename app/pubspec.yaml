@@ -32,6 +32,8 @@ dependencies:
   json_annotation: ^4.9.0
   freezed_annotation: ^2.4.4
   path_provider: ^2.1.5
+  pencil_canvas:
+    path: packages/pencil_canvas
 
 dev_dependencies:
   flutter_test:
