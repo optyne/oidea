@@ -17,6 +17,7 @@ export default function App() {
   const initRef = useRef<BridgeInit | null>(null);
   const loopRef = useRef<SaveLoop | null>(null);
   const lastThumbAtRef = useRef(0);
+  const firstChangeSeenRef = useRef(false);
   const [phase, setPhase] = useState<'waiting' | 'loading' | 'ready' | 'loadFailed'>('waiting');
   const [initialData, setInitialData] = useState<any>(null);
   const [stylusOnly, setStylusOnly] = useState(false);
@@ -29,6 +30,7 @@ export default function App() {
       const page = await getPage(init);
       let scene: any = { elements: [] };
       if (page.drawing) scene = JSON.parse(fromBase64(page.drawing));
+      firstChangeSeenRef.current = false; // 重試載入也要重置：下一次掛載 initialData 仍會有一次無筆畫的 onChange
       setInitialData({ elements: scene.elements ?? [] });
       setPhase('ready');
     } catch {
@@ -89,6 +91,7 @@ export default function App() {
     return () => {
       window.removeEventListener('pagehide', forceSave);
       document.removeEventListener('visibilitychange', onVisibility);
+      loopRef.current?.dispose();
     };
   }, []);
 
@@ -133,7 +136,13 @@ export default function App() {
         <Excalidraw
           excalidrawAPI={(api) => (apiRef.current = api)}
           initialData={initialData}
-          onChange={() => loopRef.current?.markDirty()}
+          onChange={() => {
+            if (!firstChangeSeenRef.current) {
+              firstChangeSeenRef.current = true; // Excalidraw 掛載 initialData 的首次 onChange 不算筆畫
+              return;
+            }
+            loopRef.current?.markDirty();
+          }}
         />
       </div>
     </div>
