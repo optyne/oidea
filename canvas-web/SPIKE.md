@@ -157,18 +157,22 @@ App 端 log：
 
 ## 觀察與建議（給 Task 4）
 
-1. **CSS import 是硬性必要項**，不是可有可無的美化——沒它 Excalidraw 是完全不能用
+1. **token 傳遞（重要）**：`spike-host.html` 以 URL query 帶 token 僅限本機模擬
+   宿主（靜態檔、拋棄式帳號、無伺服器記錄）。正式宿主（Task 4/6）的 token 交遞
+   **只准走 postMessage / JS bridge 握手，絕不進 URL** —— 上線頁面的 URL 會進
+   瀏覽器歷史與 WebView 記錄。
+2. **CSS import 是硬性必要項**，不是可有可無的美化——沒它 Excalidraw 是完全不能用
    的殘破畫面，務必在 Task 4 的正式元件保留。
-2. **縮圖尺寸建議明確控制 `exportScale`**，否則不同裝置 DPR 會產出大小不一致的縮圖，
+3. **縮圖尺寸建議明確控制 `exportScale`**，否則不同裝置 DPR 會產出大小不一致的縮圖，
    影響 MinIO 儲存量體與頁面列表載入速度。
-3. **CORS**：目前後端開發環境 `CORS_ORIGIN` 未設定時允許任意 origin（`main.ts`
+4. **CORS**：目前後端開發環境 `CORS_ORIGIN` 未設定時允許任意 origin（`main.ts`
    `corsOrigin ? ... : true`）。正式部署 canvas-web 到 `/canvas/`（與 Flutter Web
    同源）理論上不需要 CORS（同源請求），但若後續改為獨立網域或子網域，需要記得
    收斂 `CORS_ORIGIN` 白名單，不能依賴目前這個「開發環境允許全部」的預設值。
-4. **thumbnail 上傳失敗不連坐筆跡存檔**（見
+5. **thumbnail 上傳失敗不連坐筆跡存檔**（見
    `backend/src/whiteboard/whiteboard-pages.service.ts` 的既有設計）——這與
    PencilKit 頁面的既有行為一致，Task 4 的 Excalidraw 頁不需要改變這個容錯策略。
-5. **iframe 橋協定本身沒有版本協商**：`{type:'ready'}` / `{type:'init'}` 是裸
+6. **iframe 橋協定本身沒有版本協商**：`{type:'ready'}` / `{type:'init'}` 是裸
    type 判斷，沒有 schema version 欄位。Task 4 若預期未來會迭代橋協定，建議现在就加
    一個 `version` 欄位，避免以後 Flutter WebView 端與 canvas-web 端版本不同步時
    互相看不懂訊息卻沒有任何錯誤訊號。
