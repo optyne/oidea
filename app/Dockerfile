@@ -8,6 +8,7 @@ WORKDIR /app
 
 # 先拷 pubspec 吃 layer cache
 COPY pubspec.yaml pubspec.lock ./
+COPY packages/pencil_canvas/pubspec.yaml packages/pencil_canvas/
 RUN flutter pub get
 
 COPY . .
