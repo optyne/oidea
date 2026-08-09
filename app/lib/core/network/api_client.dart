@@ -110,6 +110,19 @@ class ApiClient {
 
   final Dio _dio;
 
+  /// 給 Excalidraw 宿主的橋接握手用；回傳目前的 access token（未登入為 null）。
+  ///
+  /// 讀取與 [AuthInterceptor] 完全相同的 storage 實例與鍵名，確保橋接拿到的
+  /// token 與後續 API 呼叫（由攔截器附加 Authorization header）一致。
+  Future<String?> currentAccessToken() =>
+      AuthInterceptor._storage.read(key: AuthInterceptor._tokenKey);
+
+  /// 橋接用：REST base（含 /api，無尾斜線）。
+  String get baseUrlForBridge {
+    final b = _dio.options.baseUrl;
+    return b.endsWith('/') ? b.substring(0, b.length - 1) : b;
+  }
+
   Future<Map<String, dynamic>> register(Map<String, dynamic> body) async {
     final res = await _dio.post<Map<String, dynamic>>('auth/register', data: body);
     return res.data!;
