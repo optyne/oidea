@@ -15,6 +15,7 @@ import '../../features/whiteboard/presentation/pages/whiteboard_home_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_canvas_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_pages_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_pencil_page.dart';
+import '../../features/whiteboard/presentation/pages/whiteboard_excalidraw_page.dart';
 import '../../features/erp/presentation/pages/erp_home_page.dart';
 import '../../features/erp/presentation/pages/attendance_page.dart';
 import '../../features/erp/presentation/pages/expenses_page.dart';
@@ -137,6 +138,13 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'pencil/:boardId/:pageId',
                 builder: (context, state) => WhiteboardPencilPage(
+                  boardId: state.pathParameters['boardId']!,
+                  pageId: state.pathParameters['pageId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'excalidraw/:boardId/:pageId',
+                builder: (context, state) => WhiteboardExcalidrawPage(
                   boardId: state.pathParameters['boardId']!,
                   pageId: state.pathParameters['pageId']!,
                 ),

@@ -350,8 +350,11 @@ class ApiClient {
     return res.data ?? {};
   }
 
-  Future<Map<String, dynamic>> createWhiteboardPage(String boardId) async {
-    final res = await _dio.post<Map<String, dynamic>>('whiteboard/$boardId/pages');
+  Future<Map<String, dynamic>> createWhiteboardPage(String boardId, {String? format}) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'whiteboard/$boardId/pages',
+      data: {if (format != null) 'format': format},
+    );
     return res.data ?? {};
   }
 
