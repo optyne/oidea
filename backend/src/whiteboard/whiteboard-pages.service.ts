@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { FilesService } from '../files/files.service';
 
@@ -8,6 +8,8 @@ import { FilesService } from '../files/files.service';
  */
 @Injectable()
 export class WhiteboardPagesService {
+  private readonly logger = new Logger(WhiteboardPagesService.name);
+
   constructor(
     private prisma: PrismaService,
     private files: FilesService,
@@ -88,14 +90,19 @@ export class WhiteboardPagesService {
 
     let thumbnailId: string | undefined;
     if (thumbnailPngBase64) {
-      const buf = Buffer.from(thumbnailPngBase64, 'base64');
-      const uploaded = await this.files.upload(userId, board.workspaceId, {
-        originalname: `whiteboard-page-${pageId}.png`,
-        mimetype: 'image/png',
-        size: buf.length,
-        buffer: buf,
-      } as Express.Multer.File);
-      thumbnailId = uploaded.id;
+      try {
+        const buf = Buffer.from(thumbnailPngBase64, 'base64');
+        const uploaded = await this.files.upload(userId, board.workspaceId, {
+          originalname: `whiteboard-page-${pageId}.png`,
+          mimetype: 'image/png',
+          size: buf.length,
+          buffer: buf,
+        } as Express.Multer.File);
+        thumbnailId = uploaded.id;
+      } catch (err) {
+        // 縮圖上傳失敗不得連坐筆跡存檔：筆跡是唯一真跡，縮圖只是唯讀檢視用的衍生物。
+        this.logger.warn(`縮圖上傳失敗（頁 ${pageId}），筆跡仍會存檔：${err}`);
+      }
     }
 
     return this.prisma.whiteboardPage.update({

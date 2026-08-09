@@ -114,6 +114,24 @@ describe('WhiteboardPagesService', () => {
     expect(updateArg.data.thumbnailId).toBeUndefined();
   });
 
+  it('savePage: 縮圖上傳失敗 → 不連坐，筆跡仍存檔且不含 thumbnailId', async () => {
+    prisma.whiteboardPage.findUnique.mockResolvedValue({ id: 'p-1', whiteboardId: 'wb-1', deletedAt: null });
+    prisma.whiteboardPage.update.mockResolvedValue({ id: 'p-1', updatedAt: new Date() });
+    files.upload.mockRejectedValue(new Error('MinIO 掛了'));
+
+    const out = await service.savePage(
+      'u-1', 'wb-1', 'p-1',
+      Buffer.from('INK').toString('base64'),
+      Buffer.from('PNG').toString('base64'),
+    );
+
+    expect(prisma.whiteboardPage.update).toHaveBeenCalled();
+    const updateArg = prisma.whiteboardPage.update.mock.calls[0][0];
+    expect(updateArg.data).not.toHaveProperty('thumbnailId');
+    expect(updateArg.data.drawing).toEqual(Buffer.from('INK'));
+    expect(out).toEqual({ id: 'p-1', updatedAt: expect.any(Date) });
+  });
+
   it('reorderPages: 依 orderedIds 重寫 position（transaction 全量）', async () => {
     prisma.whiteboardPage.findMany.mockResolvedValue([
       { id: 'p-1' }, { id: 'p-2' }, { id: 'p-3' },

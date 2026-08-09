@@ -18,10 +18,20 @@ class WhiteboardPagesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final boardAsync = ref.watch(whiteboardProvider(boardId));
     final pagesAsync = ref.watch(whiteboardPagesProvider(boardId));
+    final legacyItems =
+        ((boardAsync.value?['data'] as Map<String, dynamic>?)?['canvasItems'] as List?) ?? [];
 
     return Scaffold(
       appBar: AppBar(
         title: Text(boardAsync.value?['title'] as String? ?? '筆記本'),
+        actions: [
+          if (legacyItems.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: '開啟舊畫布',
+              onPressed: () => context.go('/whiteboard/canvas/$boardId'),
+            ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
@@ -41,8 +51,6 @@ class WhiteboardPagesPage extends ConsumerWidget {
           onRetry: () => ref.invalidate(whiteboardPagesProvider(boardId)),
         ),
         data: (pages) {
-          final legacyItems =
-              ((boardAsync.value?['data'] as Map<String, dynamic>?)?['canvasItems'] as List?) ?? [];
           if (pages.isEmpty && legacyItems.isNotEmpty) {
             return _LegacyBoardNotice(boardId: boardId);
           }

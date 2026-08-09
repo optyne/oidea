@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { WhiteboardPagesService } from './whiteboard-pages.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -43,7 +43,8 @@ export class WhiteboardPagesController {
     @Param('pageId') pageId: string,
     @Body() body: { drawing: string; thumbnail?: string },
   ) {
-    return this.pages.savePage(req.user.userId, boardId, pageId, body?.drawing ?? '', body?.thumbnail);
+    if (!body?.drawing) throw new BadRequestException('drawing 必填');
+    return this.pages.savePage(req.user.userId, boardId, pageId, body.drawing, body?.thumbnail);
   }
 
   @Delete(':pageId')

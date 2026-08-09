@@ -88,14 +88,15 @@ class _WhiteboardPencilPageState extends ConsumerState<WhiteboardPencilPage> {
   Future<bool> _save() {
     final existing = _inFlight;
     if (existing != null) {
-      return existing.then((ok) => _dirty ? _save() : Future<bool>.value(ok));
+      return existing.then((ok) => (_dirty && mounted) ? _save() : Future<bool>.value(ok));
     }
     final run = _doSave().whenComplete(() => _inFlight = null);
     _inFlight = run;
-    return run.then((ok) => _dirty ? _save() : Future<bool>.value(ok));
+    return run.then((ok) => (_dirty && mounted) ? _save() : Future<bool>.value(ok));
   }
 
   Future<bool> _doSave() async {
+    if (!mounted) return false;
     final controller = _controller;
     if (controller == null) return !_dirty;
     if (!_dirty) return true;
