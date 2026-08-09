@@ -20,26 +20,31 @@ class ExcalidrawWebHost extends ConsumerStatefulWidget {
 }
 
 class _ExcalidrawWebHostState extends ConsumerState<ExcalidrawWebHost> {
-  static bool _registered = false;
+  static int _instanceCounter = 0;
+  late final String _viewType;
   web.HTMLIFrameElement? _iframe;
   JSFunction? _listener;
 
   @override
   void initState() {
     super.initState();
-    if (!_registered) {
-      _registered = true;
-      ui_web.platformViewRegistry.registerViewFactory('oidea-canvas-iframe', (int viewId) {
-        final el = web.HTMLIFrameElement()
-          ..src = kCanvasUrl
-          ..style.border = 'none'
-          ..style.width = '100%'
-          ..style.height = '100%';
-        _iframe = el;
-        return el;
-      });
-    }
+    // 每個 instance 用獨一無二的 viewType 註冊自己的 factory：若沿用固定
+    // viewType，第二次進頁時舊 closure 仍綁著第一個（已 dispose）instance，
+    // 新 instance 的 _iframe 永遠是 null，_sendInit 會永久 no-op。
+    // registry 條目隨導覽緩慢累積屬可接受的取捨。
+    _viewType = 'oidea-canvas-iframe-${_instanceCounter++}';
+    ui_web.platformViewRegistry.registerViewFactory(_viewType, (int viewId) {
+      final el = web.HTMLIFrameElement()
+        ..src = kCanvasUrl
+        ..style.border = 'none'
+        ..style.width = '100%'
+        ..style.height = '100%';
+      _iframe = el;
+      return el;
+    });
     _listener = ((web.MessageEvent e) {
+      // wrapper 是同源部署（同一個 nginx）；非同源訊息一律丟棄，不回 token。
+      if (e.origin != web.window.location.origin) return;
       final raw = (e.data as JSString?)?.toDart;
       if (raw == null) return;
       Map<String, dynamic> msg;
@@ -80,7 +85,7 @@ class _ExcalidrawWebHostState extends ConsumerState<ExcalidrawWebHost> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('畫布頁')),
-      body: const HtmlElementView(viewType: 'oidea-canvas-iframe'),
+      body: HtmlElementView(viewType: _viewType),
     );
   }
 }
