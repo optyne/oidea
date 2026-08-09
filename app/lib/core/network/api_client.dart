@@ -325,6 +325,43 @@ class ApiClient {
     await _dio.put('whiteboard/$boardId/canvas', data: {'items': items});
   }
 
+  // ── 白板筆記本頁面（PencilKit）────────────────────────────────
+
+  Future<List<dynamic>> getWhiteboardPages(String boardId) async {
+    final res = await _dio.get<List<dynamic>>('whiteboard/$boardId/pages');
+    return res.data ?? [];
+  }
+
+  Future<Map<String, dynamic>> getWhiteboardPage(String boardId, String pageId) async {
+    final res = await _dio.get<Map<String, dynamic>>('whiteboard/$boardId/pages/$pageId');
+    return res.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> createWhiteboardPage(String boardId) async {
+    final res = await _dio.post<Map<String, dynamic>>('whiteboard/$boardId/pages');
+    return res.data ?? {};
+  }
+
+  Future<void> saveWhiteboardPage(
+    String boardId,
+    String pageId, {
+    required String drawingBase64,
+    String? thumbnailBase64,
+  }) async {
+    await _dio.put('whiteboard/$boardId/pages/$pageId', data: {
+      'drawing': drawingBase64,
+      if (thumbnailBase64 != null) 'thumbnail': thumbnailBase64,
+    });
+  }
+
+  Future<void> reorderWhiteboardPages(String boardId, List<String> orderedIds) async {
+    await _dio.patch('whiteboard/$boardId/pages/reorder', data: {'orderedIds': orderedIds});
+  }
+
+  Future<void> deleteWhiteboardPage(String boardId, String pageId) async {
+    await _dio.delete('whiteboard/$boardId/pages/$pageId');
+  }
+
   Future<List<dynamic>> getWorkspaces() async {
     final res = await _dio.get<List<dynamic>>('workspaces');
     return res.data ?? [];

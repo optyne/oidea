@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { json } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(json({ limit: '20mb' })); // 白板筆跡 base64 上限（spec: >10MB 警告，20mb 留 buffer）
 
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());

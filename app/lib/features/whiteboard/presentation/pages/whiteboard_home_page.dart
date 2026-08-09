@@ -84,7 +84,7 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
               return Card(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(OideaRadius.lg),
-                  onTap: () => context.go('/whiteboard/canvas/${board['id']}'),
+                  onTap: () => context.go('/whiteboard/pages/${board['id']}'),
                   child: Padding(
                     padding: const EdgeInsets.all(OideaSpace.space4),
                     child: Column(
@@ -163,7 +163,7 @@ class _WhiteboardHomePageState extends ConsumerState<WhiteboardHomePage> {
               });
               if (ctx.mounted) Navigator.pop(ctx);
               ref.invalidate(whiteboardsProvider(workspaceId));
-              if (context.mounted) context.go('/whiteboard/canvas/${board['id']}');
+              if (context.mounted) context.go('/whiteboard/pages/${board['id']}');
             },
             child: const Text('建立'),
           ),

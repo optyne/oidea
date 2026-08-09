@@ -136,13 +136,20 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 | W-04 | 文字工具             | 文字方塊新增與編輯                   | `[x]`  |
 | W-05 | 便利貼               | 彩色便利貼筆記                       | `[x]`  |
 | W-06 | 連線工具             | 物件之間的連接線                     | `[ ]`  |
-| W-07 | 選取與拖曳           | 物件選取、移動、縮放、旋轉           | `[ ]`  |
+| W-07 | 選取與拖曳           | 物件選取、移動、縮放、旋轉（PencilKit 套索：現階段驗證移動；縮放/旋轉未驗） | `[x]`  |
 | W-08 | CRDT 協作            | 多人即時同步編輯 (Yjs)               | `[ ]`  |
-| W-09 | 顏色面板             | 填充色、邊框色、文字色               | `[ ]`  |
+| W-09 | 顏色面板             | 填充色、邊框色、文字色               | `[x]`  |
 | W-10 | 匯出                 | PNG / SVG / PDF 匯出                 | `[ ]`  |
 | W-11 | 範本系統             | 預設白板範本 (腦力激盪、流程圖等)    | `[ ]`  |
-| W-12 | 復原/重做            | Undo / Redo 歷史操作                 | `[ ]`  |
+| W-12 | 復原/重做            | Undo / Redo 歷史操作                 | `[x]`  |
 | W-13 | 嵌入連結             | 白板內嵌入聊天/任務連結              | `[ ]`  |
+
+> 2026-08-09 起：白板採「筆記本→頁」結構（WhiteboardPage + PencilKit）。W-07/09/12
+> 由 iPad 原生 PencilKit 提供，僅 iOS/iPadOS 可編輯；其他平台唯讀縮圖。
+> 舊單張畫布白板仍可開啟（不遷移）。驗收：套索/undo/存檔閉環已於部署環境通過；
+> web 縮圖格 UI 通過；縮圖影像顯示待 MinIO 公開 URL 決策；筆壓與防手掌
+> （PencilKit 系統行為）待實機 Pencil 補驗。
+> 詳見 docs/superpowers/specs/2026-08-09-whiteboard-goodnotes-design.md。
 
 ### P5 — 文件與結構化資料模組 (Docs & Database)
 
@@ -217,3 +224,4 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 | 2026-04-21 | 修正 ERP 自我核准漏洞、補 migration SQL；KnowledgePage 每頁 ACL + 16 單元測試         |
 | 2026-04-21 | Audit log（12 種事件、admin 讀取 API）、rate limiting (@nestjs/throttler)             |
 | 2026-04-21 | Dokploy-ready Dockerfile（開機自動 migrate）、/api/health 端點、部署指南              |
+| 2026-08-09 | 白板筆記本化：WhiteboardPage model + 6 端點 + PencilKit 畫布（W-07/09/12 完成）       |

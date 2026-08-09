@@ -10,3 +10,8 @@ final whiteboardProvider = FutureProvider.family<Map<String, dynamic>, String>((
   final api = ref.watch(apiClientProvider);
   return api.getWhiteboard(boardId);
 });
+
+final whiteboardPagesProvider = FutureProvider.family<List<dynamic>, String>((ref, boardId) async {
+  final api = ref.watch(apiClientProvider);
+  return api.getWhiteboardPages(boardId);
+});

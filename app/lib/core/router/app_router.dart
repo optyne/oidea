@@ -13,6 +13,8 @@ import '../../features/meeting/presentation/pages/meeting_home_page.dart';
 import '../../features/meeting/presentation/pages/meeting_room_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_home_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_canvas_page.dart';
+import '../../features/whiteboard/presentation/pages/whiteboard_pages_page.dart';
+import '../../features/whiteboard/presentation/pages/whiteboard_pencil_page.dart';
 import '../../features/erp/presentation/pages/erp_home_page.dart';
 import '../../features/erp/presentation/pages/attendance_page.dart';
 import '../../features/erp/presentation/pages/expenses_page.dart';
@@ -124,6 +126,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'canvas/:boardId',
                 builder: (context, state) => WhiteboardCanvasPage(
                   boardId: state.pathParameters['boardId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'pages/:boardId',
+                builder: (context, state) => WhiteboardPagesPage(
+                  boardId: state.pathParameters['boardId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'pencil/:boardId/:pageId',
+                builder: (context, state) => WhiteboardPencilPage(
+                  boardId: state.pathParameters['boardId']!,
+                  pageId: state.pathParameters['pageId']!,
                 ),
               ),
             ],
