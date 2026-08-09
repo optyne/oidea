@@ -1,0 +1,29 @@
+# Repo-root .dockerignore — build context for app/Dockerfile is the repo root
+# (needed so the web image's canvas-builder stage can COPY canvas-web/).
+# Docker only reads .dockerignore at the context root, so app/.dockerignore
+# (below, migrated with an app/ prefix) no longer applies on its own.
+
+.git
+.claude
+.github
+.superpowers
+docs
+backend
+canvas-web/node_modules
+canvas-web/dist
+
+# migrated from app/.dockerignore
+app/build/
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/.pub-cache/
+app/.pub/
+app/ios/
+app/macos/
+app/linux/
+app/windows/
+app/android/
+app/test/
+app/**/*.g.dart

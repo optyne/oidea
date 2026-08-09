@@ -34,6 +34,8 @@ dependencies:
   path_provider: ^2.1.5
   pencil_canvas:
     path: packages/pencil_canvas
+  webview_flutter: ^4.14.1
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

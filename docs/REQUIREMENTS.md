@@ -130,7 +130,7 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 
 | ID   | 功能                 | 描述                                 | 狀態   |
 | ---- | -------------------- | ------------------------------------ | ------ |
-| W-01 | 無限畫布             | 平移、縮放、小地圖導航               | `[~]`  |
+| W-01 | 無限畫布             | 平移、縮放、小地圖導航（excalidraw 頁由 Excalidraw 提供） | `[x]`  |
 | W-02 | 畫筆工具             | 自由手繪、多種粗細與顏色             | `[x]`  |
 | W-03 | 形狀工具             | 矩形、圓形、三角形、直線、箭頭       | `[x]`  |
 | W-04 | 文字工具             | 文字方塊新增與編輯                   | `[x]`  |
@@ -150,6 +150,14 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 > web 縮圖格 UI 通過；縮圖影像顯示待 MinIO 公開 URL 決策；筆壓與防手掌
 > （PencilKit 系統行為）待實機 Pencil 補驗。
 > 詳見 docs/superpowers/specs/2026-08-09-whiteboard-goodnotes-design.md。
+
+> 2026-08-09 起：頁面雙格式 —— `excalidraw` 頁（Excalidraw 微前端，獨立 Vite+React
+> 小 App 同源服務於 `/canvas/`）全平台可編輯；`pencilkit` 頁維持 iPad 手感專屬。
+> 建頁依裝置預設（非 iOS → excalidraw；iOS → pencilkit，長按 FAB 可改選），頁面格
+> 依 format 分流並標「所有裝置可編」徽章。W-01 無限畫布於 excalidraw 頁達成 `[x]`。
+> 已部署驗證：`/canvas/` 回 Excalidraw SPA、`POST pages {format}` 走通；待實機驗收
+> Android 筆壓/防手掌與各平台殺頁重開存檔閉環。
+> 詳見 docs/superpowers/specs/2026-08-09-crossplatform-whiteboard-design.md。
 
 ### P5 — 文件與結構化資料模組 (Docs & Database)
 
@@ -225,3 +233,4 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 | 2026-04-21 | Audit log（12 種事件、admin 讀取 API）、rate limiting (@nestjs/throttler)             |
 | 2026-04-21 | Dokploy-ready Dockerfile（開機自動 migrate）、/api/health 端點、部署指南              |
 | 2026-08-09 | 白板筆記本化：WhiteboardPage model + 6 端點 + PencilKit 畫布（W-07/09/12 完成）       |
+| 2026-08-09 | 跨平台白板：頁面 format 欄 + Excalidraw 微前端（canvas-web @ `/canvas/`）+ 各平台宿主；W-01 完成 |

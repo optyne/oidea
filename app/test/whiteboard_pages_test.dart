@@ -7,9 +7,13 @@ import 'package:oidea/features/whiteboard/presentation/pages/whiteboard_pages_pa
 class _FakeApi extends Fake implements ApiClient {
   @override
   Future<List<dynamic>> getWhiteboardPages(String boardId) async => [
-        {'id': 'p-1', 'position': 0, 'thumbnailUrl': null, 'updatedAt': '2026-08-09'},
-        {'id': 'p-2', 'position': 1, 'thumbnailUrl': null, 'updatedAt': '2026-08-09'},
+        {'id': 'p-1', 'position': 0, 'format': 'excalidraw', 'thumbnailUrl': null, 'updatedAt': '2026-08-09'},
+        {'id': 'p-2', 'position': 1, 'format': 'pencilkit', 'thumbnailUrl': null, 'updatedAt': '2026-08-09'},
       ];
+
+  @override
+  Future<Map<String, dynamic>> createWhiteboardPage(String boardId, {String? format}) async =>
+      {'id': 'p-new', 'format': format ?? 'pencilkit'};
 
   @override
   Future<Map<String, dynamic>> getWhiteboard(String id) async =>
@@ -30,6 +34,7 @@ void main() {
     expect(find.text('第 1 頁'), findsOneWidget);
     expect(find.text('第 2 頁'), findsOneWidget);
     expect(find.text('新增頁'), findsOneWidget);
+    expect(find.byIcon(Icons.devices), findsOneWidget); // 只有 excalidraw 頁有徽章
   });
 
   testWidgets('空筆記本：顯示引導文案', (tester) async {

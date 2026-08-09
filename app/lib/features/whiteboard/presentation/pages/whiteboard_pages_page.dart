@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -33,16 +34,42 @@ class WhiteboardPagesPage extends ConsumerWidget {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('新增頁'),
-        onPressed: () async {
-          final page = await ref.read(apiClientProvider).createWhiteboardPage(boardId);
-          ref.invalidate(whiteboardPagesProvider(boardId));
-          if (context.mounted && page['id'] != null) {
-            context.go('/whiteboard/pencil/$boardId/${page['id']}');
-          }
+      floatingActionButton: GestureDetector(
+        onLongPress: () async {
+          if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+          final pick = await showModalBottomSheet<String>(
+            context: context,
+            builder: (context) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                      leading: const Icon(Icons.draw),
+                      title: const Text('手寫頁（Apple Pencil）'),
+                      onTap: () => Navigator.pop(context, 'pencilkit')),
+                  ListTile(
+                      leading: const Icon(Icons.devices),
+                      title: const Text('通用頁（所有裝置可編）'),
+                      onTap: () => Navigator.pop(context, 'excalidraw')),
+                ],
+              ),
+            ),
+          );
+          if (!context.mounted || pick == null) return;
+          await _createPage(context, ref, boardId, pick);
         },
+        child: FloatingActionButton.extended(
+          icon: const Icon(Icons.add),
+          label: const Text('新增頁'),
+          onPressed: () => _createPage(
+            context,
+            ref,
+            boardId,
+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
+                ? 'pencilkit'
+                : 'excalidraw',
+          ),
+        ),
       ),
       body: pagesAsync.when(
         loading: () => const LoadingWidget(),
@@ -77,6 +104,15 @@ class WhiteboardPagesPage extends ConsumerWidget {
   }
 }
 
+Future<void> _createPage(BuildContext context, WidgetRef ref, String boardId, String format) async {
+  final page = await ref.read(apiClientProvider).createWhiteboardPage(boardId, format: format);
+  ref.invalidate(whiteboardPagesProvider(boardId));
+  if (context.mounted && page['id'] != null) {
+    final route = format == 'excalidraw' ? 'excalidraw' : 'pencil';
+    context.go('/whiteboard/$route/$boardId/${page['id']}');
+  }
+}
+
 class _PageCard extends ConsumerWidget {
   const _PageCard({required this.boardId, required this.page, required this.index});
 
@@ -87,9 +123,13 @@ class _PageCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final thumbnailUrl = page['thumbnailUrl'] as String?;
+    final isExcalidraw = (page['format'] as String? ?? 'pencilkit') == 'excalidraw';
     return InkWell(
       borderRadius: OideaRadius.lgAll,
-      onTap: () => context.go('/whiteboard/pencil/$boardId/${page['id']}'),
+      onTap: () {
+        final route = isExcalidraw ? 'excalidraw' : 'pencil';
+        context.go('/whiteboard/$route/$boardId/${page['id']}');
+      },
       onLongPress: () => _showActions(context, ref),
       child: Ink(
         decoration: BoxDecoration(
@@ -101,13 +141,29 @@ class _PageCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(OideaRadius.lg)),
-                child: thumbnailUrl == null
-                    ? const Center(child: Icon(Icons.draw_outlined, size: OideaSpace.space8))
-                    : Image.network(thumbnailUrl, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const Center(child: Icon(Icons.broken_image_outlined))),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(OideaRadius.lg)),
+                    child: thumbnailUrl == null
+                        ? const Center(child: Icon(Icons.draw_outlined, size: OideaSpace.space8))
+                        : Image.network(thumbnailUrl, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const Center(child: Icon(Icons.broken_image_outlined))),
+                  ),
+                  if (isExcalidraw)
+                    Positioned(
+                      top: OideaSpace.space1,
+                      right: OideaSpace.space1,
+                      child: Tooltip(
+                        message: '所有裝置皆可編輯',
+                        child: Icon(Icons.devices,
+                            size: OideaSize.iconSm,
+                            color: Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+                ],
               ),
             ),
             Padding(

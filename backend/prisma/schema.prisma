@@ -527,6 +527,7 @@ model WhiteboardPage {
   id           String    @id @default(uuid())
   whiteboardId String
   position     Int
+  format       String    @default("pencilkit") // 'pencilkit' | 'excalidraw'（drawing bytes 的語意）
   drawing      Bytes? // PKDrawing dataRepresentation（Apple 原生格式，server 不解析）
   thumbnailId  String? // File.id → MinIO PNG，非 iOS 平台唯讀檢視用
   createdAt    DateTime  @default(now())
