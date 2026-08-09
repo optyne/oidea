@@ -1318,7 +1318,7 @@ void main() {
 - [ ] **Step 4: 驗證 + commit**
 
 ```bash
-cd app && flutter pub add webview_flutter && flutter pub get
+cd app && flutter pub add webview_flutter web && flutter pub get
 flutter analyze --no-fatal-infos && flutter test    # 31 passed
 git add pubspec.yaml pubspec.lock lib test/excalidraw_host_test.dart
 git commit -m "feat(whiteboard): excalidraw hosts — iframe, WebView, desktop hand-off
