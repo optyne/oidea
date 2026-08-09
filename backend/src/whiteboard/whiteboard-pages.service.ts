@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { FilesService } from '../files/files.service';
+
+const PAGE_FORMATS = new Set(['pencilkit', 'excalidraw']);
 
 /**
  * 筆記本的「頁」：drawing 是 PKDrawing dataRepresentation（不透明 bytes），
@@ -41,7 +43,7 @@ export class WhiteboardPagesService {
     const pages = await this.prisma.whiteboardPage.findMany({
       where: { whiteboardId, deletedAt: null },
       orderBy: { position: 'asc' },
-      select: { id: true, position: true, thumbnailId: true, updatedAt: true },
+      select: { id: true, position: true, format: true, thumbnailId: true, updatedAt: true },
     });
     const thumbIds = pages.map((p) => p.thumbnailId).filter((x): x is string => !!x);
     const thumbs = thumbIds.length
@@ -60,22 +62,25 @@ export class WhiteboardPagesService {
     return {
       id: page.id,
       position: page.position,
+      format: page.format,
       drawing: page.drawing ? Buffer.from(page.drawing).toString('base64') : null,
     };
   }
 
-  async createPage(userId: string, whiteboardId: string) {
+  async createPage(userId: string, whiteboardId: string, format = 'pencilkit') {
+    if (!PAGE_FORMATS.has(format)) {
+      throw new BadRequestException(`format 必須是 ${[...PAGE_FORMATS].join(' | ')}`);
+    }
     await this.assertAccess(userId, whiteboardId);
     const agg = await this.prisma.whiteboardPage.aggregate({
       where: { whiteboardId, deletedAt: null },
       _max: { position: true },
     });
     const position = (agg._max.position ?? -1) + 1;
-    const page = await this.prisma.whiteboardPage.create({
-      data: { whiteboardId, position },
-      select: { id: true, position: true },
+    return this.prisma.whiteboardPage.create({
+      data: { whiteboardId, position, format },
+      select: { id: true, position: true, format: true },
     });
-    return page;
   }
 
   async savePage(

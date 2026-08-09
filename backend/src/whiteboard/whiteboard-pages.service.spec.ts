@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WhiteboardPagesService } from './whiteboard-pages.service';
 import { PrismaService } from '../common/prisma.service';
 import { FilesService } from '../files/files.service';
@@ -82,6 +82,44 @@ describe('WhiteboardPagesService', () => {
       expect.objectContaining({ data: expect.objectContaining({ position: 3 }) }),
     );
     expect(out.position).toBe(3);
+  });
+
+  it('createPage: 未指定 format → 預設 pencilkit', async () => {
+    prisma.whiteboardPage.aggregate.mockResolvedValue({ _max: { position: null } });
+    prisma.whiteboardPage.create.mockResolvedValue({ id: 'p-1', position: 0, format: 'pencilkit' });
+    await service.createPage('u-1', 'wb-1');
+    expect(prisma.whiteboardPage.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ format: 'pencilkit' }) }),
+    );
+  });
+
+  it('createPage: format=excalidraw 被寫入', async () => {
+    prisma.whiteboardPage.aggregate.mockResolvedValue({ _max: { position: null } });
+    prisma.whiteboardPage.create.mockResolvedValue({ id: 'p-1', position: 0, format: 'excalidraw' });
+    await service.createPage('u-1', 'wb-1', 'excalidraw');
+    expect(prisma.whiteboardPage.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ format: 'excalidraw' }) }),
+    );
+  });
+
+  it('createPage: 非法 format → BadRequest', async () => {
+    await expect(service.createPage('u-1', 'wb-1', 'tldraw')).rejects.toThrow(BadRequestException);
+    expect(prisma.whiteboardPage.create).not.toHaveBeenCalled();
+  });
+
+  it('listPages / getPage: 回傳含 format', async () => {
+    prisma.whiteboardPage.findMany.mockResolvedValue([
+      { id: 'p-1', position: 0, format: 'excalidraw', thumbnailId: null, updatedAt: new Date() },
+    ]);
+    const out = await service.listPages('u-1', 'wb-1');
+    expect(out[0].format).toBe('excalidraw');
+
+    prisma.whiteboardPage.findUnique.mockResolvedValue({
+      id: 'p-1', whiteboardId: 'wb-1', position: 0, format: 'excalidraw',
+      drawing: null, deletedAt: null,
+    });
+    const page = await service.getPage('u-1', 'wb-1', 'p-1');
+    expect(page.format).toBe('excalidraw');
   });
 
   it('savePage: base64 → Buffer 存入；帶縮圖時經 FilesService 上傳並記 thumbnailId', async () => {

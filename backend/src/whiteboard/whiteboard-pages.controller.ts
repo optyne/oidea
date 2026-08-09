@@ -30,9 +30,13 @@ export class WhiteboardPagesController {
   }
 
   @Post()
-  @ApiOperation({ summary: '新增頁（接在最後）' })
-  create(@Req() req: any, @Param('boardId') boardId: string) {
-    return this.pages.createPage(req.user.userId, boardId);
+  @ApiOperation({ summary: '新增頁（接在最後；format 預設 pencilkit）' })
+  create(
+    @Req() req: any,
+    @Param('boardId') boardId: string,
+    @Body() body: { format?: string },
+  ) {
+    return this.pages.createPage(req.user.userId, boardId, body?.format ?? 'pencilkit');
   }
 
   @Put(':pageId')
