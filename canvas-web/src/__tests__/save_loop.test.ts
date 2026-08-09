@@ -65,4 +65,41 @@ describe('SaveLoop（存檔閉環：debounce、單飛、世代、退避）', () 
     expect(await loop.flush()).toBe(true); // flush 直接觸發，不等 debounce
     expect(save).toHaveBeenCalledTimes(1);
   });
+
+  it('曾經失敗後：成功且期間又落筆 → 立即補存（不等 debounce）', async () => {
+    vi.useFakeTimers();
+    let resolveThird!: (v: boolean) => void;
+    const save = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(() => new Promise<boolean>((r) => (resolveThird = r)))
+      .mockResolvedValue(true);
+    const loop = new SaveLoop({ save, debounceMs: 2000 });
+    loop.markDirty();
+    await vi.advanceTimersByTimeAsync(2000); // #1 失敗 → 排退避 5s
+    await vi.advanceTimersByTimeAsync(5000); // #2 退避重試成功
+    expect(loop.dirty).toBe(false);
+    loop.markDirty();
+    await vi.advanceTimersByTimeAsync(2000); // #3 開始，進行中
+    loop.markDirty();                        // 存檔中落筆
+    resolveThird(true);
+    await vi.advanceTimersByTimeAsync(0);    // 只讓 microtask 跑，不給 debounce 機會
+    expect(save).toHaveBeenCalledTimes(4);   // 立即補存
+    vi.useRealTimers();
+  });
+
+  it('注入的 setTimer/clearTimer 被實際使用', () => {
+    const setT = vi.fn().mockReturnValue(1 as any);
+    const clrT = vi.fn();
+    const loop = new SaveLoop({
+      save: vi.fn().mockResolvedValue(true),
+      debounceMs: 5,
+      setTimer: setT as any,
+      clearTimer: clrT as any,
+    });
+    loop.markDirty();
+    expect(setT).toHaveBeenCalled();
+    loop.dispose();
+    expect(clrT).toHaveBeenCalled();
+  });
 });

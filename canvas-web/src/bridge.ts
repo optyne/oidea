@@ -16,6 +16,8 @@ declare global {
 export function initBridge(onInit: (init: BridgeInit) => void): void {
   let received = false;
   window.addEventListener('message', (e: MessageEvent) => {
+    // 只接受同源宿主（iframe 生產情境）或 WebView 合成事件（origin 為空字串）
+    if (e.origin !== '' && e.origin !== window.location.origin) return;
     let d: any;
     try {
       d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;

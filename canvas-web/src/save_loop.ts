@@ -14,6 +14,7 @@ export class SaveLoop {
   private retryId: ReturnType<typeof setTimeout> | null = null;
   private retryMs = 5000;
   private disposed = false;
+  private lastAttemptFailed = false;
 
   onState?: (s: SaveState) => void;
 
@@ -49,14 +50,14 @@ export class SaveLoop {
     const existing = this.inFlight;
     if (existing) {
       return existing.then((ok) => {
-        if (!ok && this.retryId) return ok; // failed, retry timer pending
+        if (this.lastAttemptFailed) return ok; // failed, retry timer pending
         return this.dirty && !this.disposed ? this.run() : ok;
       });
     }
     const attempt = this.doSave().finally(() => (this.inFlight = null));
     this.inFlight = attempt;
     return attempt.then((ok) => {
-      if (!ok && this.retryId) return ok; // failed, retry timer pending
+      if (this.lastAttemptFailed) return ok; // failed, retry timer pending
       return this.dirty && !this.disposed ? this.run() : ok;
     });
   }
@@ -75,11 +76,14 @@ export class SaveLoop {
     if (ok) {
       this.savedGeneration = gen;
       this.retryMs = 5000;
+      this.lastAttemptFailed = false;
       if (this.retryId) (this.opts.clearTimer || clearTimeout)(this.retryId);
+      this.retryId = null;
       this.onState?.(this.dirty ? 'dirty' : 'saved');
       return !this.dirty;
     }
     this.onState?.('error');
+    this.lastAttemptFailed = true;
     if (this.retryId) (this.opts.clearTimer || clearTimeout)(this.retryId);
     this.retryId = (this.opts.setTimer || setTimeout)(() => void this.run(), this.retryMs);
     this.retryMs = Math.min(this.retryMs * 2, 60000);
@@ -89,6 +93,8 @@ export class SaveLoop {
   dispose(): void {
     this.disposed = true;
     if (this.debounceId) (this.opts.clearTimer || clearTimeout)(this.debounceId);
+    this.debounceId = null;
     if (this.retryId) (this.opts.clearTimer || clearTimeout)(this.retryId);
+    this.retryId = null;
   }
 }

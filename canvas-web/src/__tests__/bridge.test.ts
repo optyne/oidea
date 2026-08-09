@@ -29,4 +29,15 @@ describe('bridge（iframe postMessage 傳輸）', () => {
     expect(parentPost).toHaveBeenCalledWith(JSON.stringify({ type: 'saved' }), '*');
     expect(channel.postMessage).toHaveBeenCalledWith(JSON.stringify({ type: 'saved' }));
   });
+
+  it('拒絕跨來源的 init', () => {
+    vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
+    const onInit = vi.fn();
+    initBridge(onInit);
+    window.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'init', token: 't', boardId: 'b', pageId: 'p', apiBase: '/api' }),
+      origin: 'https://evil.example',
+    }));
+    expect(onInit).not.toHaveBeenCalled();
+  });
 });
