@@ -9,7 +9,7 @@ import '../../features/chat/presentation/pages/thread_page.dart';
 import '../../features/project/presentation/pages/project_home_page.dart';
 import '../../features/project/presentation/pages/board_page.dart';
 import '../../features/project/presentation/pages/task_detail_page.dart';
-import '../../features/meeting/presentation/pages/meeting_home_page.dart';
+import '../../features/meeting/presentation/pages/calendar_page.dart';
 import '../../features/meeting/presentation/pages/meeting_room_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_home_page.dart';
 import '../../features/whiteboard/presentation/pages/whiteboard_canvas_page.dart';
@@ -107,16 +107,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
           GoRoute(
-            path: '/meetings',
-            builder: (context, state) => const MeetingHomePage(),
-            routes: [
-              GoRoute(
-                path: 'room/:meetingId',
-                builder: (context, state) => MeetingRoomPage(
-                  meetingId: state.pathParameters['meetingId']!,
-                ),
-              ),
-            ],
+            path: '/calendar',
+            builder: (context, state) => const CalendarPage(),
+          ),
+          GoRoute(
+            path: '/meetings/room/:meetingId',
+            builder: (context, state) => MeetingRoomPage(
+              meetingId: state.pathParameters['meetingId']!,
+            ),
           ),
           GoRoute(
             path: '/whiteboard',

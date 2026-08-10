@@ -139,7 +139,7 @@ class _CompactShell extends ConsumerWidget {
           const routes = [
             '/chat',
             '/projects',
-            '/meetings',
+            '/calendar',
             '/whiteboard',
             '/notes',
             '/files',
@@ -160,9 +160,9 @@ class _CompactShell extends ConsumerWidget {
             label: '專案',
           ),
           NavigationDestination(
-            icon: Icon(Icons.videocam_outlined),
-            selectedIcon: Icon(Icons.videocam),
-            label: '會議',
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: '行事曆',
           ),
           NavigationDestination(
             icon: Icon(Icons.draw_outlined),

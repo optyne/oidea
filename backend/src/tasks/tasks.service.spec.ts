@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { PrismaService } from '../common/prisma.service';
 import { AutomationEngine } from '../automation/automation.engine';
@@ -16,6 +16,7 @@ type PrismaMock = {
     count: jest.Mock;
   };
   taskActivity: { create: jest.Mock };
+  user: { findFirst: jest.Mock };
 };
 
 const buildMock = (): PrismaMock => ({
@@ -25,10 +26,11 @@ const buildMock = (): PrismaMock => ({
     create: jest.fn().mockResolvedValue({ id: 'spawned' }),
     findUnique: jest.fn(),
     findMany: jest.fn(),
-    update: jest.fn(),
+    update: jest.fn().mockResolvedValue({}),
     count: jest.fn().mockResolvedValue(0),
   },
   taskActivity: { create: jest.fn().mockResolvedValue({}) },
+  user: { findFirst: jest.fn() },
 });
 
 describe('TasksService — P-14 循環任務', () => {
@@ -237,6 +239,90 @@ describe('TasksService — P-14 循環任務', () => {
       );
       await service.update(USER_ID, TASK_ID, { completed: true });
       expect(automation.onTaskCompleted).not.toHaveBeenCalled();
+    });
+
+    it('reschedule：改 dueDate 並寫 rescheduled activity', async () => {
+      prisma.task.findUnique.mockResolvedValueOnce({
+        id: TASK_ID, projectId: 'p-1', dueDate: new Date('2026-08-09T00:00:00Z'),
+        project: { workspaceId: 'w-1' },
+      });
+      prisma.user.findFirst.mockResolvedValueOnce({ id: USER_ID });
+      prisma.task.findUnique.mockResolvedValueOnce({ id: TASK_ID, dueDate: new Date('2026-08-11') });
+
+      await service.reschedule(USER_ID, TASK_ID, { dueDate: '2026-08-11T00:00:00Z' });
+
+      expect(prisma.task.update).toHaveBeenCalledWith({
+        where: { id: TASK_ID },
+        data: { dueDate: new Date('2026-08-11T00:00:00Z') },
+      });
+      expect(prisma.taskActivity.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ taskId: TASK_ID, userId: USER_ID, action: 'rescheduled' }),
+      });
+    });
+
+    it('reschedule：dueDate 為 null 清除日期', async () => {
+      prisma.task.findUnique.mockResolvedValueOnce({
+        id: TASK_ID, dueDate: new Date('2026-08-09T00:00:00Z'),
+        project: { workspaceId: 'w-1' },
+      });
+      prisma.user.findFirst.mockResolvedValueOnce({ id: USER_ID });
+      prisma.task.findUnique.mockResolvedValueOnce({ id: TASK_ID, dueDate: null });
+
+      await service.reschedule(USER_ID, TASK_ID, {});
+
+      expect(prisma.task.update).toHaveBeenCalledWith({
+        where: { id: TASK_ID },
+        data: { dueDate: null },
+      });
+    });
+
+    it('reschedule：跨工作區拒絕（ForbiddenException）', async () => {
+      prisma.task.findUnique.mockResolvedValueOnce({
+        id: TASK_ID, project: { workspaceId: 'w-other' },
+      });
+      prisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.reschedule(USER_ID, TASK_ID, { dueDate: '2026-08-11' }))
+        .rejects.toThrow(ForbiddenException);
+      expect(prisma.task.update).not.toHaveBeenCalled();
+    });
+
+    it('findCalendar：回傳該 workspace 有 dueDate 的任務（跨專案、含 projectName/completed）', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce({ id: USER_ID });
+      prisma.task.findMany.mockResolvedValueOnce([
+        { id: 't-a', title: 'A', dueDate: new Date('2026-08-10'), priority: 'high', completedAt: null, assigneeId: USER_ID, projectId: 'p-1', columnId: 'c1', project: { id: 'p-1', name: 'P1' } },
+      ]);
+
+      const rows = await service.findCalendar(USER_ID, 'w-1');
+
+      expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          project: { workspaceId: 'w-1', deletedAt: null },
+          deletedAt: null,
+          dueDate: { not: null },
+          OR: [{ assigneeId: USER_ID }, { assigneeId: null }],
+        }),
+      }));
+      expect(rows[0]).toMatchObject({ id: 't-a', projectName: 'P1', completed: false });
+    });
+
+    it('findCalendar：from/to 縮窗', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce({ id: USER_ID });
+      prisma.task.findMany.mockResolvedValueOnce([]);
+
+      await service.findCalendar(USER_ID, 'w-1', new Date('2026-08-01'), new Date('2026-09-01'));
+
+      expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          dueDate: { gte: new Date('2026-08-01'), lt: new Date('2026-09-01') },
+        }),
+      }));
+    });
+
+    it('findCalendar：跨工作區拒絕（ForbiddenException）', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(null);
+      await expect(service.findCalendar(USER_ID, 'w-other')).rejects.toThrow(ForbiddenException);
+      expect(prisma.task.findMany).not.toHaveBeenCalled();
     });
   });
 });

@@ -32,7 +32,7 @@ class _NavItem {
 const _navItems = <_NavItem>[
   _NavItem('通訊', Icons.chat_bubble_outline, '/chat', 0),
   _NavItem('專案', Icons.dashboard_outlined, '/projects', 1),
-  _NavItem('會議', Icons.videocam_outlined, '/meetings', 2),
+  _NavItem('行事曆', Icons.calendar_month_outlined, '/calendar', 2),
   _NavItem('白板', Icons.draw_outlined, '/whiteboard', 3),
   _NavItem('筆記', Icons.article_outlined, '/notes', 4),
   _NavItem('檔案', Icons.folder_outlined, '/files', 5),

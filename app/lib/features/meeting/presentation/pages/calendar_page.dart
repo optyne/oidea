@@ -5,23 +5,26 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
+import '../../providers/calendar_provider.dart';
 import '../../providers/meeting_provider.dart';
 import '../../../../core/theme/app_theme.dart';
 
 enum _CalView { month, week, day }
 
-class MeetingHomePage extends ConsumerStatefulWidget {
-  const MeetingHomePage({super.key});
+class CalendarPage extends ConsumerStatefulWidget {
+  const CalendarPage({super.key});
 
   @override
-  ConsumerState<MeetingHomePage> createState() => _MeetingHomePageState();
+  ConsumerState<CalendarPage> createState() => _CalendarPageState();
 }
 
-class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
+class _CalendarPageState extends ConsumerState<CalendarPage> {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   _CalView _viewMode = _CalView.month;
+  bool _showTasks = true;
+  bool _showMeetings = true;
 
   @override
   Widget build(BuildContext context) {
@@ -30,20 +33,20 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
 
     if (workspacesAsync.isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('會議')),
+        appBar: AppBar(title: const Text('行事曆')),
         body: const LoadingWidget(),
       );
     }
     final list = workspacesAsync.value ?? [];
     if (list.isNotEmpty && workspaceId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('會議')),
+        appBar: AppBar(title: const Text('行事曆')),
         body: const LoadingWidget(),
       );
     }
     if (workspaceId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('會議')),
+        appBar: AppBar(title: const Text('行事曆')),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(OideaSpace.space6),
@@ -54,10 +57,34 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
     }
 
     final meetingsAsync = ref.watch(meetingsProvider(workspaceId));
+    final tasksAsync = ref.watch(calendarTasksProvider(workspaceId));
+
+    final meetings = meetingsAsync.valueOrNull ?? const [];
+    final tasks = tasksAsync.valueOrNull ?? const [];
+    if (meetingsAsync.isLoading || tasksAsync.isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('行事曆')),
+        body: const LoadingWidget(),
+      );
+    }
+    if (meetingsAsync.hasError || tasksAsync.hasError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('行事曆')),
+        body: AppErrorWidget(
+          message: (meetingsAsync.error ?? tasksAsync.error).toString(),
+          onRetry: () {
+            ref.invalidate(meetingsProvider(workspaceId));
+            ref.invalidate(calendarTasksProvider(workspaceId));
+          },
+        ),
+      );
+    }
+    final visibleMeetings = _showMeetings ? meetings : const [];
+    final visibleTasks = _showTasks ? tasks : const [];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('會議'),
+        title: const Text('行事曆'),
         actions: [
           SegmentedButton<_CalView>(
             segments: const [
@@ -71,52 +98,49 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
           ),
           const SizedBox(width: OideaSpace.space2),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2),
-            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              '✓ M-04 日曆整合',
-              style: TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
-            ),
+          IconButton(
+            tooltip: '顯示任務',
+            onPressed: () => setState(() => _showTasks = !_showTasks),
+            icon: Icon(Icons.check_circle,
+                color: _showTasks ? Theme.of(context).colorScheme.primary : null),
+          ),
+          IconButton(
+            tooltip: '顯示會議',
+            onPressed: () => setState(() => _showMeetings = !_showMeetings),
+            icon: Icon(Icons.videocam,
+                color: _showMeetings ? Theme.of(context).colorScheme.primary : null),
           ),
           IconButton(icon: const Icon(Icons.search), onPressed: () {}),
         ],
       ),
-      body: meetingsAsync.when(
-        loading: () => const LoadingWidget(),
-        error: (e, _) => AppErrorWidget(message: e.toString()),
-        data: (meetings) {
-          return Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _buildCalendar(context, meetings),
-                      const Divider(height: 1),
-                      _buildList(context, meetings),
-                      const Divider(height: 1),
-                      const _FeatureGrid(),
-                    ],
-                  ),
-                ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildCalendar(context, visibleMeetings, visibleTasks),
+                  const Divider(height: 1),
+                  _buildList(context, [...visibleTasks, ...visibleMeetings]),
+                  const Divider(height: 1),
+                  const _FeatureGrid(),
+                ],
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateMeeting(context, workspaceId),
-        child: const Icon(Icons.add),
+      floatingActionButton: GestureDetector(
+        onLongPress: () => _showCreateMeeting(context, workspaceId),
+        child: FloatingActionButton(
+          onPressed: () => _showCreateTask(context, workspaceId, _selectedDay ?? _focusedDay),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
 
-  Widget _buildCalendar(BuildContext context, List<dynamic> meetings) {
+  Widget _buildCalendar(BuildContext context, List<dynamic> meetings, List<dynamic> tasks) {
     switch (_viewMode) {
       case _CalView.month:
         return TableCalendar(
@@ -133,12 +157,55 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
           },
           onFormatChanged: (format) => setState(() => _calendarFormat = format),
           onPageChanged: (focusedDay) => _focusedDay = focusedDay,
-          eventLoader: (day) {
-            return meetings.where((m) {
-              final start = DateTime.tryParse(m['startTime'] ?? '');
-              return start != null && isSameDay(start, day);
-            }).toList();
+          onDayLongPressed: (day, _) {
+            final wid = ref.read(currentWorkspaceIdProvider);
+            if (wid != null) _showCreateTask(context, wid, day);
           },
+          eventLoader: (day) {
+            final t = tasks.where((x) {
+              final d = DateTime.tryParse(x['dueDate'] ?? '');
+              return d != null && isSameDay(d, day);
+            });
+            final m = meetings.where((x) {
+              final s = DateTime.tryParse(x['startTime'] ?? '');
+              return s != null && isSameDay(s, day);
+            });
+            return [...t, ...m];
+          },
+          calendarBuilders: CalendarBuilders(
+            markerBuilder: (ctx, day, events) {
+              if (events.isEmpty) return const SizedBox.shrink();
+              final taskEvents = events
+                  .whereType<Map<String, dynamic>>()
+                  .where((e) => e['dueDate'] != null)
+                  .toList();
+              final meets = events
+                  .whereType<Map<String, dynamic>>()
+                  .where((e) => e['startTime'] != null)
+                  .toList();
+              return Positioned(
+                bottom: 4,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ...taskEvents.take(3).map((e) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 1),
+                          child: Icon(Icons.circle,
+                              size: 6,
+                              color: _priorityColor(e['priority'] as String? ?? 'medium')),
+                        )),
+                    if (meets.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 2),
+                        child: Icon(Icons.square, size: 6, color: Color(0xFF4F46E5)),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
           calendarStyle: const CalendarStyle(
             todayDecoration: BoxDecoration(color: Color(0xFF4F46E5), shape: BoxShape.circle),
             selectedDecoration: BoxDecoration(color: Color(0xFF7C3AED), shape: BoxShape.circle),
@@ -147,8 +214,11 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
       case _CalView.week:
         return _TimeGridView(
           meetings: meetings,
+          tasks: tasks,
           days: _daysInWeek(_focusedDay),
           onEventTap: (m) => _openJoinPreview(m),
+          onTaskTap: (t) => _openTaskDetail(t),
+          onReschedule: (t, day) => _rescheduleTask(t, day),
           onPrev: () => setState(() => _focusedDay = _focusedDay.subtract(const Duration(days: 7))),
           onNext: () => setState(() => _focusedDay = _focusedDay.add(const Duration(days: 7))),
           onToday: () => setState(() => _focusedDay = DateTime.now()),
@@ -156,12 +226,53 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
       case _CalView.day:
         return _TimeGridView(
           meetings: meetings,
+          tasks: tasks,
           days: [DateTime(_focusedDay.year, _focusedDay.month, _focusedDay.day)],
           onEventTap: (m) => _openJoinPreview(m),
+          onTaskTap: (t) => _openTaskDetail(t),
+          onReschedule: (t, day) => _rescheduleTask(t, day),
           onPrev: () => setState(() => _focusedDay = _focusedDay.subtract(const Duration(days: 1))),
           onNext: () => setState(() => _focusedDay = _focusedDay.add(const Duration(days: 1))),
           onToday: () => setState(() => _focusedDay = DateTime.now()),
         );
+    }
+  }
+
+  void _openTaskDetail(Map<String, dynamic> task) {
+    final projectId = task['projectId'] as String?;
+    final taskId = task['id'] as String?;
+    if (projectId != null && taskId != null) {
+      context.go('/projects/board/$projectId/task/$taskId');
+    }
+  }
+
+  Future<void> _rescheduleTask(Map<String, dynamic> task, DateTime newDay) async {
+    final taskId = task['id'] as String?;
+    if (taskId == null) return;
+    final newDue = DateTime(newDay.year, newDay.month, newDay.day, 12);
+    final workspaceId = ref.read(currentWorkspaceIdProvider);
+    try {
+      await ref.read(apiClientProvider).rescheduleTask(taskId, dueDate: newDue.toIso8601String());
+      if (workspaceId != null) {
+        ref.invalidate(calendarTasksProvider(workspaceId));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('改期失敗：$e')));
+      }
+    }
+  }
+
+  Color _priorityColor(String p) {
+    switch (p) {
+      case 'urgent':
+        return const Color(0xFFEF4444);
+      case 'high':
+        return const Color(0xFFF59E0B);
+      case 'low':
+        return Colors.grey;
+      default:
+        return const Color(0xFF3B82F6); // medium
     }
   }
 
@@ -170,13 +281,15 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
     return List.generate(5, (i) => DateTime(monday.year, monday.month, monday.day + i));
   }
 
-  Widget _buildList(BuildContext context, List<dynamic> meetings) {
+  Widget _buildList(BuildContext context, List<dynamic> items) {
     final filtered = _selectedDay != null && _viewMode == _CalView.month
-        ? meetings.where((m) {
-            final start = DateTime.tryParse(m['startTime'] ?? '');
-            return start != null && isSameDay(start, _selectedDay);
+        ? items.where((m) {
+            final isTask = m['dueDate'] != null;
+            final key = isTask ? m['dueDate'] : m['startTime'];
+            final d = DateTime.tryParse(key ?? '');
+            return d != null && isSameDay(d, _selectedDay);
           }).toList()
-        : meetings;
+        : items;
 
     if (filtered.isEmpty) {
       return const Padding(
@@ -195,7 +308,50 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
       padding: const EdgeInsets.all(OideaSpace.space4),
       itemCount: filtered.length,
       itemBuilder: (context, index) {
-        final meeting = filtered[index] as Map<String, dynamic>;
+        final item = filtered[index] as Map<String, dynamic>;
+
+        final isTask = item['dueDate'] != null;
+        if (isTask) {
+          final completed = item['completed'] == true;
+          return Card(
+            margin: const EdgeInsets.only(bottom: OideaSpace.space3),
+            child: InkWell(
+              onTap: () => _openTaskDetail(item),
+              borderRadius: BorderRadius.circular(OideaRadius.lg),
+              child: Padding(
+                padding: const EdgeInsets.all(OideaSpace.space4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _priorityColor(item['priority'] as String? ?? 'medium'),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: OideaSpace.space3),
+                    Expanded(
+                      child: Text(
+                        item['title'] ?? '',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          decoration: completed ? TextDecoration.lineThrough : TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      item['projectName'] ?? '',
+                      style: const TextStyle(color: Colors.grey, fontSize: OideaFontSize.size12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        final meeting = item;
         final startTime = DateTime.tryParse(meeting['startTime'] ?? '') ?? DateTime.now();
         final endTime = DateTime.tryParse(meeting['endTime'] ?? '') ?? DateTime.now();
         final status = meeting['status'] as String? ?? 'scheduled';
@@ -264,6 +420,94 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
     if (result == true && mounted) {
       context.go('/meetings/room/${meeting['id']}');
     }
+  }
+
+  void _showCreateTask(BuildContext context, String workspaceId, DateTime dueDate) {
+    final titleController = TextEditingController();
+    final projects = <Map<String, dynamic>>[];
+    Map<String, dynamic>? projectDetail;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('新增任務'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: titleController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '任務標題 *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: OideaSpace.space2),
+                FutureBuilder<List<dynamic>>(
+                  future: ref.read(apiClientProvider).getProjects(workspaceId),
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) {
+                      return const Padding(padding: EdgeInsets.all(8), child: Text('載入專案…'));
+                    }
+                    if (projects.isEmpty) {
+                      projects.addAll(snap.data!.whereType<Map<String, dynamic>>());
+                    }
+                    return DropdownButton<String>(
+                      value: projectDetail?['id'] as String?,
+                      hint: const Text('選擇專案 *'),
+                      items: projects
+                          .map((p) => DropdownMenuItem(
+                                value: p['id'] as String,
+                                child: Text(p['name'] ?? ''),
+                              ))
+                          .toList(),
+                      onChanged: (id) async {
+                        if (id == null) return;
+                        final full = await ref.read(apiClientProvider).getProject(id);
+                        setSt(() => projectDetail = full);
+                      },
+                    );
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: OideaSpace.space1),
+                  child: Text(
+                    '到期：${dueDate.year}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+              onPressed: () async {
+                final title = titleController.text.trim();
+                final cols = (projectDetail?['columns'] as List?) ?? const [];
+                if (title.isEmpty || projectDetail == null || cols.isEmpty) return;
+                Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await ref.read(apiClientProvider).createTask({
+                    'projectId': projectDetail!['id'],
+                    'columnId': (cols.first as Map<String, dynamic>)['id'],
+                    'title': title,
+                    'dueDate': dueDate.toIso8601String(),
+                  });
+                  ref.invalidate(calendarTasksProvider(workspaceId));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('建立失敗：$e')));
+                }
+              },
+              child: const Text('建立'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showCreateMeeting(BuildContext context, String workspaceId) {
@@ -416,16 +660,22 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
 
 class _TimeGridView extends StatelessWidget {
   final List<dynamic> meetings;
+  final List<dynamic> tasks;
   final List<DateTime> days;
   final void Function(Map<String, dynamic>) onEventTap;
+  final void Function(Map<String, dynamic>) onTaskTap;
+  final void Function(Map<String, dynamic>, DateTime) onReschedule;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onToday;
 
   const _TimeGridView({
     required this.meetings,
+    required this.tasks,
     required this.days,
     required this.onEventTap,
+    required this.onTaskTap,
+    required this.onReschedule,
     required this.onPrev,
     required this.onNext,
     required this.onToday,
@@ -462,29 +712,32 @@ class _TimeGridView extends StatelessWidget {
               ...days.map((d) {
                 final isToday = _isSameDay(d, DateTime.now());
                 return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
-                    child: Column(
-                      children: [
-                        Text(
-                          weekdays[d.weekday - 1],
-                          style: TextStyle(
-                            fontSize: OideaFontSize.size11,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
+                  child: DragTarget<Map<String, dynamic>>(
+                    onAcceptWithDetails: (details) => onReschedule(details.data, d),
+                    builder: (ctx, candidate, rejected) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
+                      child: Column(
+                        children: [
+                          Text(
+                            weekdays[d.weekday - 1],
+                            style: TextStyle(
+                              fontSize: OideaFontSize.size11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: OideaSpace.space05),
-                        Text(
-                          '${d.day}',
-                          style: TextStyle(
-                            fontSize: OideaFontSize.size18,
-                            fontWeight: FontWeight.w700,
-                            color: isToday ? const Color(0xFF4F46E5) : null,
+                          const SizedBox(height: OideaSpace.space05),
+                          Text(
+                            '${d.day}',
+                            style: TextStyle(
+                              fontSize: OideaFontSize.size18,
+                              fontWeight: FontWeight.w700,
+                              color: isToday ? const Color(0xFF4F46E5) : null,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -492,6 +745,21 @@ class _TimeGridView extends StatelessWidget {
             ],
           ),
           const Divider(height: 1),
+          if (tasks.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 56),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2),
+                children: days
+                    .expand((d) => tasks.where((t) {
+                          final due = DateTime.tryParse(t['dueDate'] ?? '');
+                          return due != null && isSameDay(due, d);
+                        }).map((t) => _TaskChip(task: t, onTap: () => onTaskTap(t))))
+                    .map((w) => w as Widget)
+                    .toList(),
+              ),
+            ),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -968,6 +1236,60 @@ class _ToggleBtn extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: OideaSpace.space2),
       ),
       onPressed: onTap,
+    );
+  }
+}
+
+// ─────────────────────────── all-day task chip ───────────────────────────
+
+class _TaskChip extends StatelessWidget {
+  final Map<String, dynamic> task;
+  final VoidCallback onTap;
+  const _TaskChip({required this.task, required this.onTap});
+
+  Color _color(String p) => switch (p) {
+        'urgent' => const Color(0xFFEF4444),
+        'high' => const Color(0xFFF59E0B),
+        'low' => Colors.grey,
+        _ => const Color(0xFF3B82F6),
+      };
+
+  Widget _chipInner() {
+    final completed = task['completed'] == true;
+    final c = _color(task['priority'] as String? ?? 'medium');
+    return Container(
+      margin: const EdgeInsets.only(right: OideaSpace.space2, top: OideaSpace.space1),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(OideaRadius.md),
+        border: Border.all(color: c),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(completed ? Icons.check_circle_outline : Icons.circle_outlined, size: 14),
+          const SizedBox(width: 4),
+          Text(
+            task['title'] ?? '',
+            style: TextStyle(
+              fontSize: OideaFontSize.size12,
+              decoration: completed ? TextDecoration.lineThrough : TextDecoration.none,
+              color: completed ? Colors.grey : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LongPressDraggable<Map<String, dynamic>>(
+      data: task,
+      feedback: Material(color: Colors.transparent, child: _chipInner()),
+      childWhenDragging: Opacity(opacity: 0.4, child: _chipInner()),
+      child: GestureDetector(onTap: onTap, child: _chipInner()),
     );
   }
 }

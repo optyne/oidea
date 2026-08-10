@@ -4,6 +4,7 @@ import { addRecurrence, RecurrenceRule } from '../common/recurrence';
 import { AutomationEngine } from '../automation/automation.engine';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { RescheduleTaskDto } from './dto/reschedule-task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { extractMentionTokens, stripMentionTokensForPreview } from '../common/mentions.util';
 
@@ -70,6 +71,34 @@ export class TasksService {
       },
       orderBy: { position: 'asc' },
     });
+  }
+
+  async findCalendar(userId: string, workspaceId: string, from?: Date, to?: Date) {
+    const member = await this.prisma.user.findFirst({
+      where: { id: userId, workspaceMembers: { some: { workspaceId } } },
+    });
+    if (!member) throw new ForbiddenException();
+
+    const dueWhere = from && to ? { gte: from, lt: to } : { not: null };
+    const rows = await this.prisma.task.findMany({
+      where: {
+        project: { workspaceId, deletedAt: null },
+        deletedAt: null,
+        dueDate: dueWhere,
+        OR: [{ assigneeId: userId }, { assigneeId: null }],
+      },
+      select: {
+        id: true, title: true, dueDate: true, priority: true,
+        projectId: true, columnId: true, completedAt: true, assigneeId: true,
+        project: { select: { id: true, name: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+    return rows.map((t) => ({
+      id: t.id, title: t.title, dueDate: t.dueDate, priority: t.priority,
+      projectId: t.projectId, projectName: t.project.name,
+      columnId: t.columnId, completed: t.completedAt !== null,
+    }));
   }
 
   async findById(userId: string, id: string) {
@@ -249,6 +278,35 @@ export class TasksService {
     ]);
 
     await this.logActivity(id, userId, 'moved', { columnId, position });
+
+    return this.prisma.task.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        tags: true,
+      },
+    });
+  }
+
+  async reschedule(userId: string, id: string, dto: RescheduleTaskDto) {
+    const task = await this.prisma.task.findUnique({
+      where: { id },
+      include: { project: { select: { workspaceId: true } } },
+    });
+    if (!task) throw new NotFoundException('任務不存在');
+
+    const member = await this.prisma.user.findFirst({
+      where: { id: userId, workspaceMembers: { some: { workspaceId: task.project.workspaceId } } },
+    });
+    if (!member) throw new ForbiddenException();
+
+    const oldDue = task.dueDate;
+    const newDue = dto.dueDate ? new Date(dto.dueDate) : null;
+    await this.prisma.task.update({
+      where: { id },
+      data: { dueDate: newDue },
+    });
+    await this.logActivity(id, userId, 'rescheduled', { from: oldDue, to: newDue });
 
     return this.prisma.task.findUnique({
       where: { id },
