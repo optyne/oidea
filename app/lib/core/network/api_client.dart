@@ -417,6 +417,25 @@ class ApiClient {
     await _dio.put('tasks/$taskId/move', data: {'columnId': columnId, 'position': position});
   }
 
+  Future<List<dynamic>> getCalendarTasks(
+    String workspaceId, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final res = await _dio.get<List<dynamic>>('tasks/calendar', queryParameters: {
+      'workspaceId': workspaceId,
+      if (from != null) 'from': from.toIso8601String(),
+      if (to != null) 'to': to.toIso8601String(),
+    });
+    return res.data ?? [];
+  }
+
+  Future<void> rescheduleTask(String taskId, {String? dueDate}) async {
+    await _dio.put('tasks/$taskId/reschedule', data: {
+      if (dueDate != null) 'dueDate': dueDate,
+    });
+  }
+
   Future<Map<String, dynamic>> addProjectColumn(String projectId, Map<String, dynamic> body) async {
     final res = await _dio.post<Map<String, dynamic>>('projects/$projectId/columns', data: body);
     return res.data!;
