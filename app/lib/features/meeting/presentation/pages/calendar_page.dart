@@ -121,7 +121,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 children: [
                   _buildCalendar(context, visibleMeetings, visibleTasks),
                   const Divider(height: 1),
-                  _buildList(context, visibleMeetings),
+                  _buildList(context, [...visibleTasks, ...visibleMeetings]),
                   const Divider(height: 1),
                   const _FeatureGrid(),
                 ],
@@ -130,9 +130,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateMeeting(context, workspaceId),
-        child: const Icon(Icons.add),
+      floatingActionButton: GestureDetector(
+        onLongPress: () => _showCreateMeeting(context, workspaceId),
+        child: FloatingActionButton(
+          onPressed: () => _showCreateTask(context, workspaceId, _selectedDay ?? _focusedDay),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -154,6 +157,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           },
           onFormatChanged: (format) => setState(() => _calendarFormat = format),
           onPageChanged: (focusedDay) => _focusedDay = focusedDay,
+          onDayLongPressed: (day, _) {
+            final wid = ref.read(currentWorkspaceIdProvider);
+            if (wid != null) _showCreateTask(context, wid, day);
+          },
           eventLoader: (day) {
             final t = tasks.where((x) {
               final d = DateTime.tryParse(x['dueDate'] ?? '');
@@ -211,6 +218,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           days: _daysInWeek(_focusedDay),
           onEventTap: (m) => _openJoinPreview(m),
           onTaskTap: (t) => _openTaskDetail(t),
+          onReschedule: (t, day) => _rescheduleTask(t, day),
           onPrev: () => setState(() => _focusedDay = _focusedDay.subtract(const Duration(days: 7))),
           onNext: () => setState(() => _focusedDay = _focusedDay.add(const Duration(days: 7))),
           onToday: () => setState(() => _focusedDay = DateTime.now()),
@@ -222,6 +230,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           days: [DateTime(_focusedDay.year, _focusedDay.month, _focusedDay.day)],
           onEventTap: (m) => _openJoinPreview(m),
           onTaskTap: (t) => _openTaskDetail(t),
+          onReschedule: (t, day) => _rescheduleTask(t, day),
           onPrev: () => setState(() => _focusedDay = _focusedDay.subtract(const Duration(days: 1))),
           onNext: () => setState(() => _focusedDay = _focusedDay.add(const Duration(days: 1))),
           onToday: () => setState(() => _focusedDay = DateTime.now()),
@@ -234,6 +243,23 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     final taskId = task['id'] as String?;
     if (projectId != null && taskId != null) {
       context.go('/projects/board/$projectId/task/$taskId');
+    }
+  }
+
+  Future<void> _rescheduleTask(Map<String, dynamic> task, DateTime newDay) async {
+    final taskId = task['id'] as String?;
+    if (taskId == null) return;
+    final newDue = DateTime(newDay.year, newDay.month, newDay.day, 12);
+    final workspaceId = ref.read(currentWorkspaceIdProvider);
+    try {
+      await ref.read(apiClientProvider).rescheduleTask(taskId, dueDate: newDue.toIso8601String());
+      if (workspaceId != null) {
+        ref.invalidate(calendarTasksProvider(workspaceId));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('改期失敗：$e')));
+      }
     }
   }
 
@@ -255,13 +281,15 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     return List.generate(5, (i) => DateTime(monday.year, monday.month, monday.day + i));
   }
 
-  Widget _buildList(BuildContext context, List<dynamic> meetings) {
+  Widget _buildList(BuildContext context, List<dynamic> items) {
     final filtered = _selectedDay != null && _viewMode == _CalView.month
-        ? meetings.where((m) {
-            final start = DateTime.tryParse(m['startTime'] ?? '');
-            return start != null && isSameDay(start, _selectedDay);
+        ? items.where((m) {
+            final isTask = m['dueDate'] != null;
+            final key = isTask ? m['dueDate'] : m['startTime'];
+            final d = DateTime.tryParse(key ?? '');
+            return d != null && isSameDay(d, _selectedDay);
           }).toList()
-        : meetings;
+        : items;
 
     if (filtered.isEmpty) {
       return const Padding(
@@ -280,7 +308,50 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       padding: const EdgeInsets.all(OideaSpace.space4),
       itemCount: filtered.length,
       itemBuilder: (context, index) {
-        final meeting = filtered[index] as Map<String, dynamic>;
+        final item = filtered[index] as Map<String, dynamic>;
+
+        final isTask = item['dueDate'] != null;
+        if (isTask) {
+          final completed = item['completed'] == true;
+          return Card(
+            margin: const EdgeInsets.only(bottom: OideaSpace.space3),
+            child: InkWell(
+              onTap: () => _openTaskDetail(item),
+              borderRadius: BorderRadius.circular(OideaRadius.lg),
+              child: Padding(
+                padding: const EdgeInsets.all(OideaSpace.space4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _priorityColor(item['priority'] as String? ?? 'medium'),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: OideaSpace.space3),
+                    Expanded(
+                      child: Text(
+                        item['title'] ?? '',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          decoration: completed ? TextDecoration.lineThrough : TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      item['projectName'] ?? '',
+                      style: const TextStyle(color: Colors.grey, fontSize: OideaFontSize.size12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        final meeting = item;
         final startTime = DateTime.tryParse(meeting['startTime'] ?? '') ?? DateTime.now();
         final endTime = DateTime.tryParse(meeting['endTime'] ?? '') ?? DateTime.now();
         final status = meeting['status'] as String? ?? 'scheduled';
@@ -349,6 +420,94 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     if (result == true && mounted) {
       context.go('/meetings/room/${meeting['id']}');
     }
+  }
+
+  void _showCreateTask(BuildContext context, String workspaceId, DateTime dueDate) {
+    final titleController = TextEditingController();
+    final projects = <Map<String, dynamic>>[];
+    Map<String, dynamic>? projectDetail;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('新增任務'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: titleController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '任務標題 *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: OideaSpace.space2),
+                FutureBuilder<List<dynamic>>(
+                  future: ref.read(apiClientProvider).getProjects(workspaceId),
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) {
+                      return const Padding(padding: EdgeInsets.all(8), child: Text('載入專案…'));
+                    }
+                    if (projects.isEmpty) {
+                      projects.addAll(snap.data!.whereType<Map<String, dynamic>>());
+                    }
+                    return DropdownButton<String>(
+                      value: projectDetail?['id'] as String?,
+                      hint: const Text('選擇專案 *'),
+                      items: projects
+                          .map((p) => DropdownMenuItem(
+                                value: p['id'] as String,
+                                child: Text(p['name'] ?? ''),
+                              ))
+                          .toList(),
+                      onChanged: (id) async {
+                        if (id == null) return;
+                        final full = await ref.read(apiClientProvider).getProject(id);
+                        setSt(() => projectDetail = full);
+                      },
+                    );
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: OideaSpace.space1),
+                  child: Text(
+                    '到期：${dueDate.year}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+              onPressed: () async {
+                final title = titleController.text.trim();
+                final cols = (projectDetail?['columns'] as List?) ?? const [];
+                if (title.isEmpty || projectDetail == null || cols.isEmpty) return;
+                Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await ref.read(apiClientProvider).createTask({
+                    'projectId': projectDetail!['id'],
+                    'columnId': (cols.first as Map<String, dynamic>)['id'],
+                    'title': title,
+                    'dueDate': dueDate.toIso8601String(),
+                  });
+                  ref.invalidate(calendarTasksProvider(workspaceId));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('建立失敗：$e')));
+                }
+              },
+              child: const Text('建立'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showCreateMeeting(BuildContext context, String workspaceId) {
@@ -505,6 +664,7 @@ class _TimeGridView extends StatelessWidget {
   final List<DateTime> days;
   final void Function(Map<String, dynamic>) onEventTap;
   final void Function(Map<String, dynamic>) onTaskTap;
+  final void Function(Map<String, dynamic>, DateTime) onReschedule;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onToday;
@@ -515,6 +675,7 @@ class _TimeGridView extends StatelessWidget {
     required this.days,
     required this.onEventTap,
     required this.onTaskTap,
+    required this.onReschedule,
     required this.onPrev,
     required this.onNext,
     required this.onToday,
@@ -551,29 +712,32 @@ class _TimeGridView extends StatelessWidget {
               ...days.map((d) {
                 final isToday = _isSameDay(d, DateTime.now());
                 return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
-                    child: Column(
-                      children: [
-                        Text(
-                          weekdays[d.weekday - 1],
-                          style: TextStyle(
-                            fontSize: OideaFontSize.size11,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
+                  child: DragTarget<Map<String, dynamic>>(
+                    onAcceptWithDetails: (details) => onReschedule(details.data, d),
+                    builder: (ctx, candidate, rejected) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: OideaSpace.space15),
+                      child: Column(
+                        children: [
+                          Text(
+                            weekdays[d.weekday - 1],
+                            style: TextStyle(
+                              fontSize: OideaFontSize.size11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: OideaSpace.space05),
-                        Text(
-                          '${d.day}',
-                          style: TextStyle(
-                            fontSize: OideaFontSize.size18,
-                            fontWeight: FontWeight.w700,
-                            color: isToday ? const Color(0xFF4F46E5) : null,
+                          const SizedBox(height: OideaSpace.space05),
+                          Text(
+                            '${d.day}',
+                            style: TextStyle(
+                              fontSize: OideaFontSize.size18,
+                              fontWeight: FontWeight.w700,
+                              color: isToday ? const Color(0xFF4F46E5) : null,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -1121,6 +1285,11 @@ class _TaskChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(onTap: onTap, child: _chipInner());
+    return LongPressDraggable<Map<String, dynamic>>(
+      data: task,
+      feedback: Material(color: Colors.transparent, child: _chipInner()),
+      childWhenDragging: Opacity(opacity: 0.4, child: _chipInner()),
+      child: GestureDetector(onTap: onTap, child: _chipInner()),
+    );
   }
 }
