@@ -5,6 +5,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
 import '../../../workspace/providers/workspace_provider.dart';
+import '../../providers/calendar_provider.dart';
 import '../../providers/meeting_provider.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -22,6 +23,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   _CalView _viewMode = _CalView.month;
+  bool _showTasks = true;
+  bool _showMeetings = true;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +57,30 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     }
 
     final meetingsAsync = ref.watch(meetingsProvider(workspaceId));
+    final tasksAsync = ref.watch(calendarTasksProvider(workspaceId));
+
+    final meetings = meetingsAsync.valueOrNull ?? const [];
+    final tasks = tasksAsync.valueOrNull ?? const [];
+    if (meetingsAsync.isLoading || tasksAsync.isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('行事曆')),
+        body: const LoadingWidget(),
+      );
+    }
+    if (meetingsAsync.hasError || tasksAsync.hasError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('行事曆')),
+        body: AppErrorWidget(
+          message: (meetingsAsync.error ?? tasksAsync.error).toString(),
+          onRetry: () {
+            ref.invalidate(meetingsProvider(workspaceId));
+            ref.invalidate(calendarTasksProvider(workspaceId));
+          },
+        ),
+      );
+    }
+    final visibleMeetings = _showMeetings ? meetings : const [];
+    final visibleTasks = _showTasks ? tasks : const [];
 
     return Scaffold(
       appBar: AppBar(
@@ -71,43 +98,37 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
           ),
           const SizedBox(width: OideaSpace.space2),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: OideaSpace.space2),
-            padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              '✓ M-04 日曆整合',
-              style: TextStyle(fontSize: OideaFontSize.size11, fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
-            ),
+          IconButton(
+            tooltip: '顯示任務',
+            onPressed: () => setState(() => _showTasks = !_showTasks),
+            icon: Icon(Icons.check_circle,
+                color: _showTasks ? Theme.of(context).colorScheme.primary : null),
+          ),
+          IconButton(
+            tooltip: '顯示會議',
+            onPressed: () => setState(() => _showMeetings = !_showMeetings),
+            icon: Icon(Icons.videocam,
+                color: _showMeetings ? Theme.of(context).colorScheme.primary : null),
           ),
           IconButton(icon: const Icon(Icons.search), onPressed: () {}),
         ],
       ),
-      body: meetingsAsync.when(
-        loading: () => const LoadingWidget(),
-        error: (e, _) => AppErrorWidget(message: e.toString()),
-        data: (meetings) {
-          return Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _buildCalendar(context, meetings),
-                      const Divider(height: 1),
-                      _buildList(context, meetings),
-                      const Divider(height: 1),
-                      const _FeatureGrid(),
-                    ],
-                  ),
-                ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildCalendar(context, visibleMeetings, visibleTasks),
+                  const Divider(height: 1),
+                  _buildList(context, visibleMeetings),
+                  const Divider(height: 1),
+                  const _FeatureGrid(),
+                ],
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showCreateMeeting(context, workspaceId),
@@ -116,7 +137,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     );
   }
 
-  Widget _buildCalendar(BuildContext context, List<dynamic> meetings) {
+  Widget _buildCalendar(BuildContext context, List<dynamic> meetings, List<dynamic> tasks) {
     switch (_viewMode) {
       case _CalView.month:
         return TableCalendar(
@@ -134,11 +155,50 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           onFormatChanged: (format) => setState(() => _calendarFormat = format),
           onPageChanged: (focusedDay) => _focusedDay = focusedDay,
           eventLoader: (day) {
-            return meetings.where((m) {
-              final start = DateTime.tryParse(m['startTime'] ?? '');
-              return start != null && isSameDay(start, day);
-            }).toList();
+            final t = tasks.where((x) {
+              final d = DateTime.tryParse(x['dueDate'] ?? '');
+              return d != null && isSameDay(d, day);
+            });
+            final m = meetings.where((x) {
+              final s = DateTime.tryParse(x['startTime'] ?? '');
+              return s != null && isSameDay(s, day);
+            });
+            return [...t, ...m];
           },
+          calendarBuilders: CalendarBuilders(
+            markerBuilder: (ctx, day, events) {
+              if (events.isEmpty) return const SizedBox.shrink();
+              final taskEvents = events
+                  .whereType<Map<String, dynamic>>()
+                  .where((e) => e['dueDate'] != null)
+                  .toList();
+              final meets = events
+                  .whereType<Map<String, dynamic>>()
+                  .where((e) => e['startTime'] != null)
+                  .toList();
+              return Positioned(
+                bottom: 4,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ...taskEvents.take(3).map((e) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 1),
+                          child: Icon(Icons.circle,
+                              size: 6,
+                              color: _priorityColor(e['priority'] as String? ?? 'medium')),
+                        )),
+                    if (meets.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 2),
+                        child: Icon(Icons.square, size: 6, color: Color(0xFF4F46E5)),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
           calendarStyle: const CalendarStyle(
             todayDecoration: BoxDecoration(color: Color(0xFF4F46E5), shape: BoxShape.circle),
             selectedDecoration: BoxDecoration(color: Color(0xFF7C3AED), shape: BoxShape.circle),
@@ -147,8 +207,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       case _CalView.week:
         return _TimeGridView(
           meetings: meetings,
+          tasks: tasks,
           days: _daysInWeek(_focusedDay),
           onEventTap: (m) => _openJoinPreview(m),
+          onTaskTap: (t) => _openTaskDetail(t),
           onPrev: () => setState(() => _focusedDay = _focusedDay.subtract(const Duration(days: 7))),
           onNext: () => setState(() => _focusedDay = _focusedDay.add(const Duration(days: 7))),
           onToday: () => setState(() => _focusedDay = DateTime.now()),
@@ -156,12 +218,35 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       case _CalView.day:
         return _TimeGridView(
           meetings: meetings,
+          tasks: tasks,
           days: [DateTime(_focusedDay.year, _focusedDay.month, _focusedDay.day)],
           onEventTap: (m) => _openJoinPreview(m),
+          onTaskTap: (t) => _openTaskDetail(t),
           onPrev: () => setState(() => _focusedDay = _focusedDay.subtract(const Duration(days: 1))),
           onNext: () => setState(() => _focusedDay = _focusedDay.add(const Duration(days: 1))),
           onToday: () => setState(() => _focusedDay = DateTime.now()),
         );
+    }
+  }
+
+  void _openTaskDetail(Map<String, dynamic> task) {
+    final projectId = task['projectId'] as String?;
+    final taskId = task['id'] as String?;
+    if (projectId != null && taskId != null) {
+      context.go('/projects/board/$projectId/task/$taskId');
+    }
+  }
+
+  Color _priorityColor(String p) {
+    switch (p) {
+      case 'urgent':
+        return const Color(0xFFEF4444);
+      case 'high':
+        return const Color(0xFFF59E0B);
+      case 'low':
+        return Colors.grey;
+      default:
+        return const Color(0xFF3B82F6); // medium
     }
   }
 
@@ -416,16 +501,20 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
 
 class _TimeGridView extends StatelessWidget {
   final List<dynamic> meetings;
+  final List<dynamic> tasks;
   final List<DateTime> days;
   final void Function(Map<String, dynamic>) onEventTap;
+  final void Function(Map<String, dynamic>) onTaskTap;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onToday;
 
   const _TimeGridView({
     required this.meetings,
+    required this.tasks,
     required this.days,
     required this.onEventTap,
+    required this.onTaskTap,
     required this.onPrev,
     required this.onNext,
     required this.onToday,
@@ -492,6 +581,21 @@ class _TimeGridView extends StatelessWidget {
             ],
           ),
           const Divider(height: 1),
+          if (tasks.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 56),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2),
+                children: days
+                    .expand((d) => tasks.where((t) {
+                          final due = DateTime.tryParse(t['dueDate'] ?? '');
+                          return due != null && isSameDay(due, d);
+                        }).map((t) => _TaskChip(task: t, onTap: () => onTaskTap(t))))
+                    .map((w) => w as Widget)
+                    .toList(),
+              ),
+            ),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -969,5 +1073,54 @@ class _ToggleBtn extends StatelessWidget {
       ),
       onPressed: onTap,
     );
+  }
+}
+
+// ─────────────────────────── all-day task chip ───────────────────────────
+
+class _TaskChip extends StatelessWidget {
+  final Map<String, dynamic> task;
+  final VoidCallback onTap;
+  const _TaskChip({required this.task, required this.onTap});
+
+  Color _color(String p) => switch (p) {
+        'urgent' => const Color(0xFFEF4444),
+        'high' => const Color(0xFFF59E0B),
+        'low' => Colors.grey,
+        _ => const Color(0xFF3B82F6),
+      };
+
+  Widget _chipInner() {
+    final completed = task['completed'] == true;
+    final c = _color(task['priority'] as String? ?? 'medium');
+    return Container(
+      margin: const EdgeInsets.only(right: OideaSpace.space2, top: OideaSpace.space1),
+      padding: const EdgeInsets.symmetric(horizontal: OideaSpace.space2, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(OideaRadius.md),
+        border: Border.all(color: c),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(completed ? Icons.check_circle_outline : Icons.circle_outlined, size: 14),
+          const SizedBox(width: 4),
+          Text(
+            task['title'] ?? '',
+            style: TextStyle(
+              fontSize: OideaFontSize.size12,
+              decoration: completed ? TextDecoration.lineThrough : TextDecoration.none,
+              color: completed ? Colors.grey : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(onTap: onTap, child: _chipInner());
   }
 }
