@@ -5,6 +5,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { RescheduleTaskDto } from './dto/reschedule-task.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('任務')
@@ -42,6 +43,12 @@ export class TasksController {
   @ApiOperation({ summary: '移動任務（拖曳）' })
   async move(@Req() req: any, @Param('id') id: string, @Body() body: { columnId: string; position: number }) {
     return this.tasksService.move(req.user.userId, id, body.columnId, body.position);
+  }
+
+  @Put(':id/reschedule')
+  @ApiOperation({ summary: '任務改日期（日曆拖曳）' })
+  async reschedule(@Req() req: any, @Param('id') id: string, @Body() dto: RescheduleTaskDto) {
+    return this.tasksService.reschedule(req.user.userId, id, dto);
   }
 
   @Delete(':id')
