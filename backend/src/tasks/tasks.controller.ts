@@ -27,6 +27,22 @@ export class TasksController {
     return this.tasksService.findByProject(req.user.userId, projectId);
   }
 
+  @Get('calendar')
+  @ApiOperation({ summary: '日曆視圖：workspace 內有 dueDate 的任務' })
+  async findCalendar(
+    @Req() req: any,
+    @Query('workspaceId') workspaceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.tasksService.findCalendar(
+      req.user.userId,
+      workspaceId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '取得任務詳情' })
   async findById(@Req() req: any, @Param('id') id: string) {

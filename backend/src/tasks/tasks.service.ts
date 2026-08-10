@@ -73,6 +73,34 @@ export class TasksService {
     });
   }
 
+  async findCalendar(userId: string, workspaceId: string, from?: Date, to?: Date) {
+    const member = await this.prisma.user.findFirst({
+      where: { id: userId, workspaceMembers: { some: { workspaceId } } },
+    });
+    if (!member) throw new ForbiddenException();
+
+    const dueWhere = from && to ? { gte: from, lt: to } : { not: null };
+    const rows = await this.prisma.task.findMany({
+      where: {
+        project: { workspaceId, deletedAt: null },
+        deletedAt: null,
+        dueDate: dueWhere,
+        OR: [{ assigneeId: userId }, { assigneeId: null }],
+      },
+      select: {
+        id: true, title: true, dueDate: true, priority: true,
+        projectId: true, columnId: true, completedAt: true, assigneeId: true,
+        project: { select: { id: true, name: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+    return rows.map((t) => ({
+      id: t.id, title: t.title, dueDate: t.dueDate, priority: t.priority,
+      projectId: t.projectId, projectName: t.project.name,
+      columnId: t.columnId, completed: t.completedAt !== null,
+    }));
+  }
+
   async findById(userId: string, id: string) {
     const task = await this.prisma.task.findUnique({
       where: { id, deletedAt: null },
