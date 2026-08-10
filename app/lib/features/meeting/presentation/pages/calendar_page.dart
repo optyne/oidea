@@ -10,14 +10,14 @@ import '../../../../core/theme/app_theme.dart';
 
 enum _CalView { month, week, day }
 
-class MeetingHomePage extends ConsumerStatefulWidget {
-  const MeetingHomePage({super.key});
+class CalendarPage extends ConsumerStatefulWidget {
+  const CalendarPage({super.key});
 
   @override
-  ConsumerState<MeetingHomePage> createState() => _MeetingHomePageState();
+  ConsumerState<CalendarPage> createState() => _CalendarPageState();
 }
 
-class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
+class _CalendarPageState extends ConsumerState<CalendarPage> {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -30,20 +30,20 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
 
     if (workspacesAsync.isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('會議')),
+        appBar: AppBar(title: const Text('行事曆')),
         body: const LoadingWidget(),
       );
     }
     final list = workspacesAsync.value ?? [];
     if (list.isNotEmpty && workspaceId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('會議')),
+        appBar: AppBar(title: const Text('行事曆')),
         body: const LoadingWidget(),
       );
     }
     if (workspaceId == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('會議')),
+        appBar: AppBar(title: const Text('行事曆')),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(OideaSpace.space6),
@@ -57,7 +57,7 @@ class _MeetingHomePageState extends ConsumerState<MeetingHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('會議'),
+        title: const Text('行事曆'),
         actions: [
           SegmentedButton<_CalView>(
             segments: const [
