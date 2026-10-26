@@ -12,6 +12,7 @@ import { MessagesGateway } from '../messages/messages.gateway';
 import { MessagesService } from '../messages/messages.service';
 import { WhiteboardGateway } from '../whiteboard/whiteboard.gateway';
 import { WhiteboardService } from '../whiteboard/whiteboard.service';
+import { WhiteboardPagesService } from '../whiteboard/whiteboard-pages.service';
 
 /**
  * 真的 Nest app ＋ 真的 socket.io server；客戶端用 Node 22 內建 WebSocket 直接講 socket.io v5 協定
@@ -41,6 +42,7 @@ describe('socket.io 握手（真的 server）', () => {
         { provide: RedisService, useValue: new FakeRedis() },
         { provide: MessagesService, useValue: {} },
         { provide: WhiteboardService, useValue: {} },
+        { provide: WhiteboardPagesService, useValue: {} },
       ],
     }).compile();
     app = moduleRef.createNestApplication({ logger: false });
@@ -73,6 +75,33 @@ describe('socket.io 握手（真的 server）', () => {
     });
 
   const access = () => jwt.sign({ sub: 'u-1', email: 'alice@example.com', typ: 'access' });
+
+  // 兩個 gateway 共用同一個 engine.io server（/socket.io/），CORS 設定也已統一
+  describe('CORS（與 main.ts 同一套 CORS_ORIGIN）', () => {
+    const original = process.env.CORS_ORIGIN;
+    afterEach(() => {
+      if (original === undefined) delete process.env.CORS_ORIGIN;
+      else process.env.CORS_ORIGIN = original;
+    });
+
+    const preflight = (origin: string) =>
+      fetch(`http://127.0.0.1:${port}/socket.io/?EIO=4&transport=polling`, {
+        method: 'OPTIONS',
+        headers: { origin, 'access-control-request-method': 'GET' },
+      });
+
+    it('白名單內的來源 → 回 Access-Control-Allow-Origin', async () => {
+      process.env.CORS_ORIGIN = 'https://app.example.com';
+      const res = await preflight('https://app.example.com');
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+    });
+
+    it('白名單外的來源 → 沒有 Access-Control-Allow-Origin', async () => {
+      process.env.CORS_ORIGIN = 'https://app.example.com';
+      const res = await preflight('https://evil.example.com');
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    });
+  });
 
   describe.each([
     ['messages', '/'],

@@ -30,6 +30,28 @@ export class MessagesService {
     private readonly ai: AiService | null,
   ) {}
 
+  /**
+   * 頻道存取檢查（socket 用）：頻道存在且未刪除、呼叫者是頻道成員（同 HTTP 各端點的
+   * channelMember 檢查），並且仍是頻道所屬工作空間的成員（被移出工作空間的人，
+   * channelMember 列不會被刪，所以另外檢查）。
+   */
+  async assertChannelAccess(userId: string, channelId: string): Promise<{ workspaceId: string }> {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { workspaceId: true, deletedAt: true },
+    });
+    if (!channel || channel.deletedAt) throw new NotFoundException('頻道不存在');
+    const channelMember = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId } },
+    });
+    if (!channelMember) throw new ForbiddenException('非此頻道成員');
+    const workspaceMember = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: channel.workspaceId, userId } },
+    });
+    if (!workspaceMember) throw new ForbiddenException('非此工作空間成員');
+    return { workspaceId: channel.workspaceId };
+  }
+
   async create(userId: string, dto: CreateMessageDto) {
     const channelMember = await this.prisma.channelMember.findUnique({
       where: { channelId_userId: { channelId: dto.channelId, userId } },

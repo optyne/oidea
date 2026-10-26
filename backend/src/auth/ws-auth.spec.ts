@@ -49,7 +49,7 @@ const gateways: Array<{
   build: (ws: WsAuthService) => { afterInit(server: any): void; handleConnection(c: any): Promise<void> };
 }> = [
   { name: 'messages', build: (ws) => new MessagesGateway({} as any, ws) },
-  { name: 'whiteboard', build: (ws) => new WhiteboardGateway({} as any, ws) },
+  { name: 'whiteboard', build: (ws) => new WhiteboardGateway({} as any, ws, {} as any) },
 ];
 
 describe.each(gateways)('$name gateway：握手驗身分（H0）', ({ build }) => {
