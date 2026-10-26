@@ -98,6 +98,19 @@ describe('ScheduledMessagesScheduler (C-17)', () => {
     );
   });
 
+  it('H2 review S2: 作者已停用（離職）→ 不代發，markFailed(author_disabled)', async () => {
+    scheduled.findDue.mockResolvedValue([
+      due({ id: 'sm-gone', creator: { disabledAt: new Date('2026-10-01T00:00:00Z'), deletedAt: null } }),
+      due({ id: 'sm-ok', creator: { disabledAt: null, deletedAt: null } }),
+    ]);
+    messages.broadcast.mockResolvedValue({ broadcastId: 'b-1', messages: [] });
+    const out = await scheduler.pollAndFire(NOW);
+    expect(out).toEqual({ sent: 1, failed: 1 });
+    expect(messages.broadcast).toHaveBeenCalledTimes(1);
+    expect(scheduled.markFailed).toHaveBeenCalledWith('sm-gone', 'author_disabled');
+    expect(scheduled.markSent).toHaveBeenCalledWith('sm-ok', NOW, 'b-1');
+  });
+
   it('TC-C17-SC06: markFailed 失敗只記 log，不拋', async () => {
     scheduled.findDue.mockResolvedValue([due()]);
     messages.broadcast.mockRejectedValue(new Error('step1'));

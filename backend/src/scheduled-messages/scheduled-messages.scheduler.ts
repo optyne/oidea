@@ -32,6 +32,17 @@ export class ScheduledMessagesScheduler {
     let failed = 0;
 
     for (const record of due) {
+      // 作者已停用（離職）或刪除：不以他的名義送出（H2 review S2；離職時也會把待送的排程取消）
+      const creator = (record as { creator?: { disabledAt: Date | null; deletedAt: Date | null } | null }).creator;
+      if (creator && (creator.disabledAt || creator.deletedAt)) {
+        try {
+          await this.scheduled.markFailed(record.id, 'author_disabled');
+        } catch (inner) {
+          this.logger.error(`markFailed 失敗 id=${record.id}: ${(inner as Error).message}`);
+        }
+        failed += 1;
+        continue;
+      }
       try {
         const result = await this.messages.broadcast(record.createdBy, {
           channelIds: record.channelIds,

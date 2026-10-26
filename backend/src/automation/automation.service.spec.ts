@@ -168,6 +168,7 @@ describe('AutomationService (P-15)', () => {
         trigger: 'task_completed',
         enabled: true,
         deletedAt: null,
+        creator: { disabledAt: null, deletedAt: null },
       },
     });
   });
