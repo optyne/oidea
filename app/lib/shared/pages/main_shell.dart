@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
+import '../../features/admin/providers/admin_providers.dart';
 import '../../features/search/presentation/widgets/command_palette.dart';
 import '../../features/shortcuts/presentation/widgets/shortcuts_cheatsheet.dart';
 import '../widgets/oidea_sidebar.dart';
@@ -125,6 +126,8 @@ class _CompactShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tabIndex = ref.watch(currentTabProvider);
+    final showAdmin = ref.watch(hasAdminAccessProvider);
+    final destinationCount = showAdmin ? 9 : 8;
 
     return Scaffold(
       // 窄版也讓側欄能叫出來:各 feature 頁面的 AppBar 會自動取得漢堡 icon。
@@ -133,7 +136,7 @@ class _CompactShell extends ConsumerWidget {
       ),
       body: child,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: tabIndex,
+        selectedIndex: tabIndex < destinationCount ? tabIndex : 0,
         onDestinationSelected: (index) {
           ref.read(currentTabProvider.notifier).state = index;
           const routes = [
@@ -145,10 +148,12 @@ class _CompactShell extends ConsumerWidget {
             '/files',
             '/sheets',
             '/erp',
+            '/admin',
           ];
           context.go(routes[index]);
         },
-        destinations: const [
+        destinations: [
+          ...const [
           NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
             selectedIcon: Icon(Icons.chat_bubble),
@@ -189,6 +194,14 @@ class _CompactShell extends ConsumerWidget {
             selectedIcon: Icon(Icons.business_center),
             label: 'ERP',
           ),
+          ],
+          // 「後台」：只對有任一後台權限的人顯示，與側欄同一個判斷。
+          if (showAdmin)
+            const NavigationDestination(
+              icon: Icon(Icons.admin_panel_settings_outlined),
+              selectedIcon: Icon(Icons.admin_panel_settings),
+              label: '後台',
+            ),
         ],
       ),
       floatingActionButton: FloatingActionButton.small(

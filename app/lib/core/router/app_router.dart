@@ -20,7 +20,16 @@ import '../../features/erp/presentation/pages/erp_home_page.dart';
 import '../../features/erp/presentation/pages/attendance_page.dart';
 import '../../features/erp/presentation/pages/expenses_page.dart';
 import '../../features/erp/presentation/pages/leaves_page.dart';
-import '../../features/erp/presentation/pages/members_page.dart';
+import '../../features/admin/admin_access.dart';
+import '../../features/admin/models/admin_models.dart';
+import '../../features/admin/presentation/pages/admin_home_page.dart';
+import '../../features/admin/presentation/pages/audit_page.dart';
+import '../../features/admin/presentation/pages/departments_page.dart';
+import '../../features/admin/presentation/pages/employees_page.dart';
+import '../../features/admin/presentation/pages/my_profile_page.dart';
+import '../../features/admin/presentation/pages/roles_page.dart';
+import '../../features/admin/presentation/widgets/admin_widgets.dart';
+import '../../features/admin/providers/admin_providers.dart';
 import '../../features/notes/presentation/pages/notes_home_page.dart';
 import '../../features/files/presentation/pages/files_gallery_page.dart';
 import '../../features/reminders/presentation/pages/reminders_page.dart';
@@ -46,7 +55,15 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/chat',
     redirect: (context, state) {
-      return authRedirect(state.matchedLocation, isAuthenticated: authState.isAuthenticated);
+      final loc = state.matchedLocation;
+      final base = authRedirect(loc, isAuthenticated: authState.isAuthenticated);
+      if (base != null) return base;
+      // /admin/*：權限已載入且不足就導走；還沒載入先放行，由頁面上的 AdminGuard 等載入完再判斷。
+      if (loc == '/admin' || loc.startsWith('/admin/')) {
+        final me = ref.read(companyMeProvider).valueOrNull;
+        return adminRedirect(loc, me?.permissions.toSet());
+      }
+      return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
@@ -187,9 +204,48 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'leaves',
                 builder: (context, state) => const LeavesPage(),
               ),
+              // 成員與權限已搬到後台（H2）；舊連結導過去。
               GoRoute(
                 path: 'members',
-                builder: (context, state) => const MembersPage(),
+                redirect: (context, state) => '/admin/roles',
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const MyProfilePage(),
+          ),
+          GoRoute(
+            path: '/admin',
+            builder: (context, state) => const AdminGuard(child: AdminHomePage()),
+            routes: [
+              GoRoute(
+                path: 'employees',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.employeeReadAll],
+                  child: EmployeesPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'departments',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.employeeReadAll],
+                  child: DepartmentsPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'roles',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.memberRoleManage],
+                  child: RolesPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'audit',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.auditRead],
+                  child: AuditPage(),
+                ),
               ),
             ],
           ),

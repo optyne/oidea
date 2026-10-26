@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/theme_mode_provider.dart';
+import '../../features/admin/providers/admin_providers.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/shortcuts/presentation/widgets/shortcuts_cheatsheet.dart';
 import '../../features/workspace/providers/workspace_provider.dart';
@@ -40,6 +41,10 @@ const _navItems = <_NavItem>[
   _NavItem('ERP', Icons.business_center_outlined, '/erp', 7),
 ];
 
+/// 「後台」：只對有任一後台權限的人顯示（見 [hasAdminAccessProvider]）。
+/// index 接在固定項目後面，main_shell 的底部導覽也用同一個 8。
+const _adminNavItem = _NavItem('後台', Icons.admin_panel_settings_outlined, '/admin', 8);
+
 /// 對應 prototype 的 OideaSidebar：深色、頂端 workspace switcher、中段導覽、
 /// 底端設定/主題/使用者。點選項目切換 tab + go_router route。
 class OideaSidebar extends ConsumerWidget {
@@ -49,6 +54,7 @@ class OideaSidebar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final collapsed = ref.watch(sidebarCollapsedProvider);
     final tabIndex = ref.watch(currentTabProvider);
+    final showAdmin = ref.watch(hasAdminAccessProvider);
     final width = collapsed ? kOideaSidebarCollapsed : kOideaSidebarExpanded;
 
     return AnimatedContainer(
@@ -70,7 +76,7 @@ class OideaSidebar extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(vertical: OideaSpace.space05),
                 child: Column(
                   children: [
-                    for (final item in _navItems)
+                    for (final item in [..._navItems, if (showAdmin) _adminNavItem])
                       _SidebarItem(
                         icon: item.icon,
                         label: item.label,
@@ -634,6 +640,15 @@ class _BottomArea extends ConsumerWidget {
                 }
               },
               child: const Text('更新名稱'),
+            ),
+            const SizedBox(height: OideaSpace.space2),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.badge_outlined),
+              label: const Text('我的資料'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.go('/profile');
+              },
             ),
             const Divider(height: 32),
             _ThemeModeRow(),

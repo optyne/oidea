@@ -46,12 +46,6 @@ class ErpHomePage extends ConsumerWidget {
                   color: Colors.orange,
                   onTap: () => context.go('/erp/leaves'),
                 ),
-                _Tile(
-                  icon: Icons.admin_panel_settings,
-                  label: '成員與權限',
-                  color: Colors.purple,
-                  onTap: () => context.go('/erp/members'),
-                ),
               ],
             ),
     );
