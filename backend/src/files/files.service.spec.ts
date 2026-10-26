@@ -1,0 +1,107 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { FilesService } from './files.service';
+import { PrismaService } from '../common/prisma.service';
+
+const minioMock = {
+  bucketExists: jest.fn().mockResolvedValue(true),
+  makeBucket: jest.fn(),
+  putObject: jest.fn().mockResolvedValue(undefined),
+  removeObject: jest.fn().mockResolvedValue(undefined),
+};
+jest.mock('minio', () => ({ Client: jest.fn(() => minioMock) }));
+
+/**
+ * Characterization tests for the current happy paths of FilesService
+ * (written before the H0 membership checks; kept green afterwards).
+ */
+describe('FilesService — characterization', () => {
+  let service: FilesService;
+  let prisma: any;
+  const FILE = {
+    id: 'f-1',
+    workspaceId: 'ws-1',
+    url: 'minio:9000/oidea-uploads/ws-1/1-a.png',
+    folderPath: null,
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      workspaceMember: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          where.workspaceId_userId.workspaceId === 'ws-1' && where.workspaceId_userId.userId === 'u-1'
+            ? { role: 'member' }
+            : null,
+        ),
+      },
+      file: {
+        create: jest.fn(async ({ data }: any) => ({ id: 'f-new', ...data })),
+        findUnique: jest.fn(async ({ where }: any) => (where.id === 'f-1' ? { ...FILE } : null)),
+        update: jest.fn(async ({ where, data }: any) => ({ ...FILE, id: where.id, ...data })),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+    const config = { get: jest.fn((k: string, d?: any) => d ?? k) };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        FilesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: config },
+      ],
+    }).compile();
+    service = module.get(FilesService);
+    await new Promise((r) => setImmediate(r)); // let ensureBucket() resolve → minioReady
+  });
+
+  it('upload stores the object and creates a File row with normalized folder', async () => {
+    const file = { originalname: 'a.png', buffer: Buffer.from('x'), size: 1, mimetype: 'image/png' } as any;
+    const res: any = await service.upload('u-1', 'ws-1', file, undefined, undefined, '/a//b/');
+    expect(minioMock.putObject).toHaveBeenCalled();
+    expect(res).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1', uploaderId: 'u-1', fileName: 'a.png', folderPath: 'a/b' }),
+    );
+  });
+
+  it('findById returns the row; missing is 404', async () => {
+    await expect(service.findById('f-1')).resolves.toEqual(expect.objectContaining({ id: 'f-1' }));
+    await expect(service.findById('f-x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('findByWorkspace lists non-deleted files', async () => {
+    await service.findByWorkspace('ws-1');
+    expect(prisma.file.findMany.mock.calls[0][0].where).toEqual({ workspaceId: 'ws-1', deletedAt: null });
+  });
+
+  it('listFolders expands prefixes', async () => {
+    prisma.file.findMany.mockResolvedValue([{ folderPath: 'work/2026/Q2' }, { folderPath: 'misc' }]);
+    await expect(service.listFolders('ws-1')).resolves.toEqual([
+      'misc',
+      'work',
+      'work/2026',
+      'work/2026/Q2',
+    ]);
+  });
+
+  it('browse clamps limit and filters by type', async () => {
+    const res = await service.browse('ws-1', { type: 'image', limit: 999 });
+    expect(res).toEqual({ items: [], total: 0, limit: 200, offset: 0 });
+    expect(prisma.file.findMany.mock.calls[0][0].where).toEqual(
+      expect.objectContaining({ workspaceId: 'ws-1', fileType: { startsWith: 'image/' } }),
+    );
+  });
+
+  it('moveToFolder normalizes path; empty → root', async () => {
+    const res: any = await service.moveToFolder('u-1', 'f-1', ' x/y/ ');
+    expect(res.folderPath).toBe('x/y');
+    const res2: any = await service.moveToFolder('u-1', 'f-1', '');
+    expect(res2.folderPath).toBeNull();
+  });
+
+  it('delete removes the object and soft-deletes the row', async () => {
+    const res: any = await service.delete('f-1');
+    expect(minioMock.removeObject).toHaveBeenCalledWith('oidea-uploads', 'ws-1/1-a.png');
+    expect(res.deletedAt).toBeInstanceOf(Date);
+  });
+});
