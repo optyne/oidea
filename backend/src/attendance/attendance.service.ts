@@ -175,18 +175,28 @@ export class AttendanceService {
     const leave = await this.prisma.leaveRequest.findUnique({ where: { id } });
     if (!leave) throw new NotFoundException('請假單不存在');
     await this.assertPermission(userId, leave.workspaceId, 'leave.approve');
+    if (leave.requesterId === userId) {
+      throw new ForbiddenException('不可審核自己的請假');
+    }
     if (leave.status !== 'pending') {
       throw new ForbiddenException(`無法審核：目前狀態為 ${leave.status}`);
     }
 
-    const updated = await this.prisma.leaveRequest.update({
-      where: { id },
+    // 條件式更新：只有仍是 pending 的那一筆會被改；兩個審核同時送出時只有一個成功。
+    const { count } = await this.prisma.leaveRequest.updateMany({
+      where: { id, status: 'pending' },
       data: {
         status: decision,
         approverId: userId,
         decidedAt: new Date(),
         rejectReason: decision === 'rejected' ? reason ?? null : null,
       },
+    });
+    if (count === 0) {
+      throw new ForbiddenException('無法審核：此請假已被其他人處理');
+    }
+    const updated = await this.prisma.leaveRequest.findUnique({
+      where: { id },
       include: {
         requester: { select: { id: true, displayName: true } },
       },
@@ -212,10 +222,15 @@ export class AttendanceService {
     if (leave.status !== 'pending') {
       throw new ForbiddenException('僅能取消待審核的請假');
     }
-    return this.prisma.leaveRequest.update({
-      where: { id },
+    // 條件式更新：避免取消覆蓋掉同時發生的核准／退回。
+    const { count } = await this.prisma.leaveRequest.updateMany({
+      where: { id, requesterId: userId, status: 'pending' },
       data: { status: 'cancelled' },
     });
+    if (count === 0) {
+      throw new ForbiddenException('僅能取消待審核的請假');
+    }
+    return { ...leave, status: 'cancelled' };
   }
 
   // ─────────── helpers ───────────

@@ -199,4 +199,67 @@ describe('AttendanceService — characterization', () => {
       await service.cancelLeave('u-member', 'l-1');
     });
   });
+
+  describe('H0: self-approval and concurrent decisions', () => {
+    // In-memory leave row; findUnique hands out snapshots, updateMany is the only writer.
+    let row: any;
+    beforeEach(() => {
+      row = { id: 'l-1', workspaceId: 'ws-1', requesterId: 'u-member', status: 'pending' };
+      prisma.leaveRequest.findUnique.mockImplementation(async () => ({ ...row }));
+      prisma.leaveRequest.updateMany.mockImplementation(async ({ where, data }: any) => {
+        const match =
+          where.id === row.id &&
+          (where.status === undefined || where.status === row.status) &&
+          (where.requesterId === undefined || where.requesterId === row.requesterId);
+        if (!match) return { count: 0 };
+        row = { ...row, ...data };
+        return { count: 1 };
+      });
+    });
+
+    it.each(['approved', 'rejected'] as const)('applicant with leave.approve cannot %s own leave → 403', async (d) => {
+      row.requesterId = 'u-hr';
+      await expect(service.decideLeave('u-hr', 'l-1', d)).rejects.toThrow(/不可審核自己的請假/);
+      expect(prisma.leaveRequest.updateMany).not.toHaveBeenCalled();
+      expect(row.status).toBe('pending');
+    });
+
+    it('owner applicant cannot approve own leave either', async () => {
+      row.requesterId = 'u-owner';
+      await expect(service.decideLeave('u-owner', 'l-1', 'approved')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('decision uses a conditional update on status=pending', async () => {
+      await service.decideLeave('u-hr', 'l-1', 'approved');
+      expect(prisma.leaveRequest.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'l-1', status: 'pending' } }),
+      );
+      expect(row).toEqual(expect.objectContaining({ status: 'approved', approverId: 'u-hr' }));
+    });
+
+    it('two concurrent approvals: exactly one succeeds, the loser is stopped by the conditional update', async () => {
+      const results = await Promise.allSettled([
+        service.decideLeave('u-hr', 'l-1', 'approved'),
+        service.decideLeave('u-admin', 'l-1', 'rejected', 'no'),
+      ]);
+      const ok = results.filter((r) => r.status === 'fulfilled');
+      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      expect(ok).toHaveLength(1);
+      expect(failed).toHaveLength(1);
+      // Both requests read "pending"; the loser was rejected by count=0, not by the pre-check.
+      expect(failed[0].reason).toBeInstanceOf(ForbiddenException);
+      expect(String(failed[0].reason.message)).toMatch(/已被其他人處理/);
+      expect(prisma.leaveRequest.updateMany).toHaveBeenCalledTimes(2);
+      expect(notifications.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancel racing an approval: exactly one wins and does not overwrite the other', async () => {
+      const [approve, cancel] = await Promise.allSettled([
+        service.decideLeave('u-hr', 'l-1', 'approved'),
+        service.cancelLeave('u-member', 'l-1'),
+      ]);
+      expect([approve.status, cancel.status].sort()).toEqual(['fulfilled', 'rejected']);
+      expect(row.status).toBe(approve.status === 'fulfilled' ? 'approved' : 'cancelled');
+    });
+  });
 });

@@ -12,13 +12,16 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../common/permissions.guard';
+import { RequirePermission } from '../common/require-permission.decorator';
+import { PERMISSIONS } from '../common/permissions';
 import { AttendanceService } from './attendance.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CreateLeaveDto } from './dto/leave-request.dto';
 
 @ApiTags('ERP・考勤')
 @Controller('attendance')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class AttendanceController {
   constructor(private readonly attendance: AttendanceService) {}
@@ -53,6 +56,7 @@ export class AttendanceController {
   }
 
   @Get('workspace/:workspaceId/report')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_REPORT)
   @ApiOperation({ summary: '工作空間出勤報表（需 attendance.report 權限）' })
   async report(
     @Req() req: any,

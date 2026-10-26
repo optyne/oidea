@@ -145,4 +145,68 @@ describe('ExpensesService — characterization', () => {
       rejected: { count: 1 },
     });
   });
+
+  describe('H0: concurrent decisions use conditional updates', () => {
+    beforeEach(() => {
+      prisma.expense.updateMany.mockImplementation(async ({ where, data }: any) => {
+        const match =
+          where.id === current.id &&
+          (where.status === undefined || where.status === current.status) &&
+          (where.deletedAt === undefined || (current.deletedAt ?? null) === where.deletedAt) &&
+          (where.submitterId === undefined || where.submitterId === current.submitterId);
+        if (!match) return { count: 0 };
+        current = { ...current, ...data };
+        return { count: 1 };
+      });
+    });
+
+    it('two concurrent approvals: exactly one succeeds and only one approval row is written', async () => {
+      roles['u-fin2'] = 'finance';
+      const results = await Promise.allSettled([
+        service.approve('u-fin', 'e-1'),
+        service.approve('u-fin2', 'e-1'),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(failed.reason).toBeInstanceOf(ForbiddenException);
+      expect(String(failed.reason.message)).toMatch(/已被其他人處理/);
+      expect(prisma.expenseApproval.create).toHaveBeenCalledTimes(1);
+      expect(notifications.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('approve vs reject race: one wins', async () => {
+      const results = await Promise.allSettled([
+        service.approve('u-fin', 'e-1'),
+        service.reject('u-admin', 'e-1', 'dup'),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(prisma.expenseApproval.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('double markPaid: exactly one succeeds', async () => {
+      current.status = 'approved';
+      const results = await Promise.allSettled([
+        service.markPaid('u-fin', 'e-1'),
+        service.markPaid('u-admin', 'e-1'),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(current.paidBy === 'u-fin' || current.paidBy === 'u-admin').toBe(true);
+    });
+
+    it('cancel racing an approval: exactly one wins and the state is consistent', async () => {
+      const [approve, cancel] = await Promise.allSettled([
+        service.approve('u-fin', 'e-1'),
+        service.cancel('u-member', 'e-1'),
+      ]);
+      expect([approve.status, cancel.status].sort()).toEqual(['fulfilled', 'rejected']);
+      if (approve.status === 'fulfilled') {
+        expect(current.deletedAt).toBeUndefined();
+        expect(current.status).toBe('approved');
+      } else {
+        expect(current.deletedAt).toBeInstanceOf(Date);
+        expect(current.status).toBe('pending');
+        expect(prisma.expenseApproval.create).not.toHaveBeenCalled();
+      }
+    });
+  });
 });

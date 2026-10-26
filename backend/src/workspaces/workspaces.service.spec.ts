@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -153,5 +153,187 @@ describe('WorkspacesService — characterization (happy paths)', () => {
   it('listMembers: member ok, non-member forbidden', async () => {
     await expect(service.listMembers('u-member', 'ws-1')).resolves.toHaveLength(3);
     await expect(service.listMembers('u-x', 'ws-1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('WorkspacesService — H0 roles & owner rules', () => {
+  let service: WorkspacesService;
+  let prisma: any;
+
+  const build = async (members: Record<string, string>, ownerId = 'u-owner') => {
+    prisma = buildWorkspacePrisma(members, ownerId);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [WorkspacesService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    service = module.get(WorkspacesService);
+  };
+
+  beforeEach(() =>
+    build({
+      'u-owner': 'owner',
+      'u-admin': 'admin',
+      'u-hr': 'hr',
+      'u-fin': 'finance',
+      'u-member': 'member',
+    }),
+  );
+
+  describe.each(['u-hr', 'u-fin'])('%s (no rank equivalence with admin)', (actor) => {
+    it('cannot change anyone’s role', async () => {
+      await expect(service.updateMemberRole(actor, 'ws-1', 'u-member', 'admin')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.workspaceMember.update).not.toHaveBeenCalled();
+    });
+
+    it('cannot remove members, including the owner', async () => {
+      await expect(service.removeMember(actor, 'ws-1', 'u-member')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.removeMember(actor, 'ws-1', 'u-owner')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.workspaceMember.delete).not.toHaveBeenCalled();
+    });
+
+    it('cannot promote anyone (including self) to owner', async () => {
+      await expect(service.updateMemberRole(actor, 'ws-1', actor, 'owner')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.updateMemberRole(actor, 'ws-1', 'u-member', 'owner')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.state.members[actor]).not.toBe('owner');
+    });
+
+    it('cannot invite or update the workspace', async () => {
+      await expect(service.inviteMember(actor, 'ws-1', 'u-new')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.update(actor, 'ws-1', { name: 'x' } as any)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('cannot transfer ownership', async () => {
+      await expect(service.transferOwnership(actor, 'ws-1', actor)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.state.ownerId).toBe('u-owner');
+    });
+  });
+
+  describe('admin cannot act on an owner', () => {
+    it('cannot demote or remove the owner', async () => {
+      await expect(service.updateMemberRole('u-admin', 'ws-1', 'u-owner', 'member')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.removeMember('u-admin', 'ws-1', 'u-owner')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.state.members['u-owner']).toBe('owner');
+    });
+
+    it('cannot assign owner by role change or invite', async () => {
+      await expect(service.updateMemberRole('u-admin', 'ws-1', 'u-member', 'owner')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.inviteMember('u-admin', 'ws-1', 'u-new', 'owner')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.state.members['u-new']).toBeUndefined();
+    });
+
+    it('cannot act on a co-owner either', async () => {
+      prisma.state.members['u-co'] = 'owner';
+      await expect(service.updateMemberRole('u-admin', 'ws-1', 'u-co', 'admin')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.removeMember('u-admin', 'ws-1', 'u-co')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('can still manage non-owner members', async () => {
+      await service.updateMemberRole('u-admin', 'ws-1', 'u-member', 'hr');
+      expect(prisma.state.members['u-member']).toBe('hr');
+      await service.removeMember('u-admin', 'ws-1', 'u-fin');
+      expect(prisma.state.members['u-fin']).toBeUndefined();
+    });
+  });
+
+  describe('owner invariants', () => {
+    it('the only owner cannot demote themselves', async () => {
+      await expect(service.updateMemberRole('u-owner', 'ws-1', 'u-owner', 'admin')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.state.members['u-owner']).toBe('owner');
+    });
+
+    it('the only owner cannot remove themselves', async () => {
+      await expect(service.removeMember('u-owner', 'ws-1', 'u-owner')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.state.members['u-owner']).toBe('owner');
+    });
+
+    it('≥1 owner kept even when ownerId is out of sync with member roles', async () => {
+      await build({ 'u-owner': 'owner', 'u-admin': 'admin' }, 'u-legacy');
+      await expect(service.updateMemberRole('u-owner', 'ws-1', 'u-owner', 'admin')).rejects.toThrow(
+        /至少要保留一位 owner/,
+      );
+    });
+
+    it('the main owner (ownerId) cannot be demoted by a co-owner until transferred', async () => {
+      prisma.state.members['u-co'] = 'owner';
+      await expect(service.updateMemberRole('u-co', 'ws-1', 'u-owner', 'admin')).rejects.toThrow(/先移交/);
+      await expect(service.removeMember('u-co', 'ws-1', 'u-owner')).rejects.toThrow(/先移交/);
+    });
+
+    it('owner may assign a co-owner and demote a co-owner (ownerId unchanged)', async () => {
+      await service.updateMemberRole('u-owner', 'ws-1', 'u-admin', 'owner');
+      expect(prisma.state.members['u-admin']).toBe('owner');
+      expect(prisma.state.ownerId).toBe('u-owner');
+      await service.updateMemberRole('u-owner', 'ws-1', 'u-admin', 'admin');
+      expect(prisma.state.members['u-admin']).toBe('admin');
+    });
+
+    it('invalid invite role → 400', async () => {
+      await expect(service.inviteMember('u-admin', 'ws-1', 'u-new', 'god')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('acting on a non-member target → 404', async () => {
+      await expect(service.updateMemberRole('u-admin', 'ws-1', 'u-ghost', 'hr')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.removeMember('u-admin', 'ws-1', 'u-ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('transferOwnership', () => {
+    it('owner transfers: target becomes owner, Workspace.ownerId updated, previous owner becomes admin', async () => {
+      const res = await service.transferOwnership('u-owner', 'ws-1', 'u-admin');
+      expect(prisma.state.ownerId).toBe('u-admin');
+      expect(prisma.state.members['u-admin']).toBe('owner');
+      expect(prisma.state.members['u-owner']).toBe('admin');
+      expect(prisma.workspace.update).toHaveBeenCalledWith({
+        where: { id: 'ws-1' },
+        data: { ownerId: 'u-admin' },
+      });
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(res).toEqual(expect.objectContaining({ ownerId: 'u-admin', previousOwnerId: 'u-owner' }));
+    });
+
+    it('after transfer the previous owner can no longer act on the new owner', async () => {
+      await service.transferOwnership('u-owner', 'ws-1', 'u-member');
+      await expect(service.updateMemberRole('u-owner', 'ws-1', 'u-member', 'admin')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('admin cannot transfer; target must be a member; cannot transfer to self', async () => {
+      await expect(service.transferOwnership('u-admin', 'ws-1', 'u-admin')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.transferOwnership('u-owner', 'ws-1', 'u-ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.transferOwnership('u-owner', 'ws-1', 'u-owner')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.state.ownerId).toBe('u-owner');
+    });
   });
 });
