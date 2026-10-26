@@ -113,13 +113,15 @@ suite('Postgres integration (TEST_DATABASE_URL)', () => {
       data: [
         { workspaceId, employeeNo: `S1-${tag}`, email: `a_b-${tag}@it.test`, fullName: 'Under Score', hireDate: new Date('2024-01-01') },
         { workspaceId, employeeNo: `S2-${tag}`, email: `axb-${tag}@it.test`, fullName: 'No Underscore', hireDate: new Date('2024-01-01') },
-        { workspaceId, employeeNo: `S3-${tag}`, email: `pct-${tag}@it.test`, fullName: '100% Sure', hireDate: new Date('2024-01-01') },
+        // 只有把 % 當字面值才分得出 S3 與 S4（ILIKE '%a%b-…%' 兩筆都會中，re-verify N-5）
+        { workspaceId, employeeNo: `S3-${tag}`, email: `pct-${tag}@it.test`, fullName: `a%b-${tag}`, hireDate: new Date('2024-01-01') },
+        { workspaceId, employeeNo: `S4-${tag}`, email: `pctx-${tag}@it.test`, fullName: `axxb-${tag}`, hireDate: new Date('2024-01-01') },
       ],
     });
     const service = new EmployeeAdminService(prisma as any, clock as any, audit as any, {} as any, {} as any, {} as any, {} as any);
     const under = await service.list(workspaceId, { q: 'A_B' } as any);
     expect(under.items.map((i) => i.employeeNo)).toEqual([`S1-${tag}`]);
-    const pct = await service.list(workspaceId, { q: '0% s' } as any);
+    const pct = await service.list(workspaceId, { q: `A%B-${tag}` } as any);
     expect(pct.items.map((i) => i.employeeNo)).toEqual([`S3-${tag}`]);
   });
 
