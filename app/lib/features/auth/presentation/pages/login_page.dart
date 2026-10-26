@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../sso/sso_service.dart';
 import 'shared_auth_widgets.dart';
 
 /// Width of the form column in the wide layout. Wider than this and the
@@ -11,6 +11,10 @@ const _formColumnWidth = 480.0;
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
+
+  static const ssoButtonKey = Key('login-sso-button');
+  static const passwordFormKey = Key('login-password-form');
+  static const configRetryKey = Key('login-config-retry');
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -54,6 +58,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
             _passwordController.text,
           );
     }
+  }
+
+  void _ssoLogin() {
+    ref.read(authStateProvider.notifier).loginWithSso();
   }
 
   @override
@@ -125,23 +133,90 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final secondary = isDark
         ? OideaTokens.darkTextSecondary
         : OideaTokens.lightTextSecondary;
+    final config = ref.watch(authConfigProvider);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '歡迎回來',
+          style: OideaType.h1.copyWith(color: scheme.onSurface),
+        ),
+        const SizedBox(height: OideaSpace.space2),
+        Text(
+          '登入帳號以繼續使用 Oidea',
+          style: OideaType.body.copyWith(color: secondary),
+        ),
+        const SizedBox(height: OideaSpace.space8),
+        if (authState.error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: OideaSpace.space4),
+            child: AuthErrorBanner(message: authState.error!),
+          ),
+        ...config.when(
+          loading: () => [
+            const Center(child: CircularProgressIndicator()),
+          ],
+          // Config unreachable: SSO is the default, so offer it plus a retry.
+          error: (_, __) => [
+            _ssoButton(authState),
+            const SizedBox(height: OideaSpace.space4),
+            Text(
+              '無法取得登入設定，請檢查網路連線',
+              textAlign: TextAlign.center,
+              style: OideaType.body.copyWith(color: secondary),
+            ),
+            Center(
+              child: TextButton(
+                key: LoginPage.configRetryKey,
+                onPressed: () => ref.invalidate(authConfigProvider),
+                style: TextButton.styleFrom(foregroundColor: OideaTokens.accent),
+                child: const Text('重試', style: OideaType.label),
+              ),
+            ),
+          ],
+          data: (cfg) => [
+            if (cfg.sso) _ssoButton(authState),
+            if (cfg.sso && cfg.passwordLogin) ...[
+              const SizedBox(height: OideaSpace.space6),
+              Text(
+                '或使用帳號密碼（開發／緊急登入）',
+                textAlign: TextAlign.center,
+                style: OideaType.body.copyWith(color: secondary),
+              ),
+              const SizedBox(height: OideaSpace.space4),
+            ],
+            if (cfg.passwordLogin) _passwordForm(authState, primary: !cfg.sso),
+            if (!cfg.sso && !cfg.passwordLogin)
+              Text(
+                '目前無法登入，請聯絡管理員',
+                textAlign: TextAlign.center,
+                style: OideaType.body.copyWith(color: secondary),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _ssoButton(AuthState authState) {
+    return AuthPrimaryButton(
+      key: LoginPage.ssoButtonKey,
+      onPressed: authState.isLoading ? null : _ssoLogin,
+      loading: authState.isLoading,
+      label: '使用公司帳號登入',
+    );
+  }
+
+  Widget _passwordForm(AuthState authState, {required bool primary}) {
     return Form(
       key: _formKey,
       child: Column(
+        key: LoginPage.passwordFormKey,
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '歡迎回來',
-            style: OideaType.h1.copyWith(color: scheme.onSurface),
-          ),
-          const SizedBox(height: OideaSpace.space2),
-          Text(
-            '登入帳號以繼續使用 Oidea',
-            style: OideaType.body.copyWith(color: secondary),
-          ),
-          const SizedBox(height: OideaSpace.space8),
-
           AuthTextField(
             controller: _emailController,
             label: '電子信箱',
@@ -155,7 +230,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
             },
           ),
           const SizedBox(height: OideaSpace.space4),
-
           AuthTextField(
             controller: _passwordController,
             label: '密碼',
@@ -172,37 +246,18 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 (v?.length ?? 0) < 8 ? '密碼至少 8 字元' : null,
             onFieldSubmitted: (_) => _submit(),
           ),
-          if (authState.error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: OideaSpace.space4),
-              child: AuthErrorBanner(message: authState.error!),
-            ),
-
           const SizedBox(height: OideaSpace.space6),
-
-          AuthPrimaryButton(
-            onPressed: authState.isLoading ? null : _submit,
-            loading: authState.isLoading,
-            label: '登入',
-          ),
-
-          const SizedBox(height: OideaSpace.space5),
-
-          Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('還沒有帳號？',
-                    style: OideaType.body.copyWith(color: secondary)),
-                TextButton(
-                  onPressed: () => context.go('/register'),
-                  style: TextButton.styleFrom(
-                      foregroundColor: OideaTokens.accent),
-                  child: Text('免費建立帳號', style: OideaType.label),
-                ),
-              ],
+          if (primary)
+            AuthPrimaryButton(
+              onPressed: authState.isLoading ? null : _submit,
+              loading: authState.isLoading,
+              label: '登入',
+            )
+          else
+            OutlinedButton(
+              onPressed: authState.isLoading ? null : _submit,
+              child: const Text('以帳號密碼登入'),
             ),
-          ),
         ],
       ),
     );

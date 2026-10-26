@@ -1,8 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/auth/presentation/pages/auth_callback_page.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
-import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../features/auth/sso/sso_service.dart' show ssoCallbackPath;
 import '../../features/chat/presentation/pages/chat_home_page.dart';
 import '../../features/chat/presentation/pages/channel_page.dart';
 import '../../features/chat/presentation/pages/thread_page.dart';
@@ -28,26 +29,29 @@ import '../../features/spreadsheets/presentation/pages/spreadsheet_editor_page.d
 import '../../features/workspace/presentation/pages/invite_landing_page.dart';
 import '../../shared/pages/main_shell.dart';
 
+/// Top-level redirect of the app router.
+String? authRedirect(String loc, {required bool isAuthenticated}) {
+  final isLoggingIn = loc == '/login' || loc == ssoCallbackPath;
+  // /invite/:token 是公開入口，未登入也可以看邀請資訊（landing page 自己引導登入）
+  final isPublicInvite = loc.startsWith('/invite/');
+
+  if (!isAuthenticated && !isLoggingIn && !isPublicInvite) return '/login';
+  if (isAuthenticated && isLoggingIn) return '/chat';
+  return null;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
   return GoRouter(
     initialLocation: '/chat',
     redirect: (context, state) {
-      final loc = state.matchedLocation;
-      final isLoggingIn = loc == '/login' || loc == '/register';
-      // /invite/:token 是公開入口，未登入也可以看邀請資訊（landing page 自己引導登入）
-      final isPublicInvite = loc.startsWith('/invite/');
-      final isAuthenticated = authState.isAuthenticated;
-
-      if (!isAuthenticated && !isLoggingIn && !isPublicInvite) return '/login';
-      // 登入後若是從邀請連結過來，由 login / register 頁處理 redirect query
-      if (isAuthenticated && isLoggingIn) return '/chat';
-      return null;
+      return authRedirect(state.matchedLocation, isAuthenticated: authState.isAuthenticated);
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-      GoRoute(path: '/register', builder: (context, state) => const RegisterPage()),
+      // SSO 回跳（Web）：未登入也要能進來，才能用 ticket 換 token
+      GoRoute(path: ssoCallbackPath, builder: (context, state) => const AuthCallbackPage()),
       GoRoute(
         path: '/invite/:token',
         builder: (context, state) => InviteLandingPage(
