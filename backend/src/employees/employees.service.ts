@@ -23,7 +23,8 @@ export interface EmployeeImportRow {
   jobTitle?: string;
 }
 
-export type EmployeeImportStatus = 'created' | 'updated' | 'error';
+/** unchanged = 既有員工、要寫的欄位跟現在完全一樣（不寫入）。 */
+export type EmployeeImportStatus = 'created' | 'updated' | 'unchanged' | 'error';
 
 export interface EmployeeImportRowResult {
   line?: number;
@@ -39,7 +40,10 @@ export interface EmployeeImportResult {
   results: EmployeeImportRowResult[];
   created: number;
   updated: number;
+  unchanged: number;
   failed: number;
+  /** true = 只試算，沒有寫入任何東西（也沒有寫 audit） */
+  dryRun: boolean;
 }
 
 export interface NormalizedEmployee {
@@ -135,11 +139,22 @@ export class EmployeesService {
 
   async importRows(
     rows: EmployeeImportRow[],
-    opts: { actorId?: string | null; workspaceId?: string; req?: AuditRequestContext } = {},
+    opts: {
+      actorId?: string | null;
+      workspaceId?: string;
+      req?: AuditRequestContext;
+      /** 只試算：做同樣的讀取與檢查，但不寫入任何東西、不寫 audit（H2 後台的預覽） */
+      dryRun?: boolean;
+      /** 併進 audit metadata 的額外數量（例如後台的 CSV 格式錯誤列數）；不可放個資 */
+      auditExtra?: Record<string, number | string>;
+    } = {},
   ): Promise<EmployeeImportResult> {
     const workspaceId = await this.resolveCompanyWorkspaceId(opts.workspaceId);
+    const dryRun = opts.dryRun === true;
     const departmentCache = new Map<string, string>();
     const seenEmployeeNos = new Set<string>();
+    // 試算時前面的列沒有真的寫入，「同一批裡 email 重複」要自己記（實際匯入時由 DB 查到）
+    const seenEmails = new Map<string, string>();
     const results: EmployeeImportRowResult[] = [];
 
     for (const row of rows) {
@@ -160,8 +175,19 @@ export class EmployeesService {
         continue;
       }
       seenEmployeeNos.add(value.employeeNo);
+      const emailOwner = seenEmails.get(value.email);
+      if (dryRun && emailOwner !== undefined && emailOwner !== value.employeeNo) {
+        results.push({
+          line: row.line,
+          employeeNo: value.employeeNo,
+          status: 'error',
+          reason: `此 email 已屬於另一位員工（員工編號 ${emailOwner}）`,
+        });
+        continue;
+      }
       try {
-        const { status, profileId } = await this.upsertNormalized(workspaceId, value, departmentCache);
+        const { status, profileId } = await this.upsertNormalized(workspaceId, value, departmentCache, dryRun);
+        seenEmails.set(value.email, value.employeeNo);
         results.push({ line: row.line, employeeNo: value.employeeNo, status, profileId });
       } catch (err) {
         const reason =
@@ -176,23 +202,29 @@ export class EmployeesService {
 
     const created = results.filter((r) => r.status === 'created').length;
     const updated = results.filter((r) => r.status === 'updated').length;
+    const unchanged = results.filter((r) => r.status === 'unchanged').length;
     const failed = results.filter((r) => r.status === 'error').length;
 
-    await this.audit.record({
-      actorId: opts.actorId ?? null,
-      workspaceId,
-      action: 'employee.import',
-      targetType: 'workspace',
-      targetId: workspaceId,
-      metadata: { total: rows.length, created, updated, failed },
-      req: opts.req,
-    });
+    if (!dryRun) {
+      await this.audit.record({
+        actorId: opts.actorId ?? null,
+        workspaceId,
+        action: 'employee.import',
+        targetType: 'workspace',
+        targetId: workspaceId,
+        metadata: { ...(opts.auditExtra ?? {}), total: rows.length, created, updated, unchanged, failed },
+        req: opts.req,
+      });
+    }
 
-    return { workspaceId, results, created, updated, failed };
+    return { workspaceId, results, created, updated, unchanged, failed, dryRun };
   }
 
   /** 單筆 upsert（不寫 audit）：company:init 建立 owner 的員工資料也用這個。 */
-  async upsertOne(workspaceId: string, row: EmployeeImportRow): Promise<{ status: 'created' | 'updated'; profileId: string }> {
+  async upsertOne(
+    workspaceId: string,
+    row: EmployeeImportRow,
+  ): Promise<{ status: 'created' | 'updated' | 'unchanged'; profileId: string }> {
     const normalized = normalizeEmployeeRow(row);
     if ('error' in normalized) throw new EmployeeRowError(normalized.error);
     return this.upsertNormalized(workspaceId, normalized.value, new Map());
@@ -202,7 +234,8 @@ export class EmployeesService {
     workspaceId: string,
     value: NormalizedEmployee,
     departmentCache: Map<string, string>,
-  ): Promise<{ status: 'created' | 'updated'; profileId: string }> {
+    dryRun = false,
+  ): Promise<{ status: 'created' | 'updated' | 'unchanged'; profileId: string }> {
     const byEmail = await this.prisma.employeeProfile.findUnique({
       where: { workspaceId_email: { workspaceId, email: value.email } },
       select: { id: true, employeeNo: true },
@@ -213,7 +246,7 @@ export class EmployeesService {
 
     const existing = await this.prisma.employeeProfile.findUnique({
       where: { workspaceId_employeeNo: { workspaceId, employeeNo: value.employeeNo } },
-      select: { id: true, email: true, userId: true },
+      select: { id: true, email: true, userId: true, fullName: true, hireDate: true, jobTitle: true, departmentId: true },
     });
     if (existing && existing.userId && existing.email !== value.email) {
       // 綁定是用 email 對應的；改 email 會讓這位員工的 SSO 對應改變，要在後台確認後處理
@@ -225,7 +258,7 @@ export class EmployeesService {
       value.departmentName === undefined
         ? undefined
         : value.departmentName
-          ? await this.findOrCreateRootDepartment(workspaceId, value.departmentName, departmentCache)
+          ? await this.findOrCreateRootDepartment(workspaceId, value.departmentName, departmentCache, dryRun)
           : null;
 
     const data = {
@@ -237,6 +270,14 @@ export class EmployeesService {
     };
 
     if (existing) {
+      const same =
+        existing.email === data.email &&
+        existing.fullName === data.fullName &&
+        existing.hireDate?.getTime?.() === data.hireDate.getTime() &&
+        (data.jobTitle === undefined || existing.jobTitle === data.jobTitle) &&
+        (data.departmentId === undefined || existing.departmentId === data.departmentId);
+      if (same) return { status: 'unchanged', profileId: existing.id };
+      if (dryRun) return { status: 'updated', profileId: existing.id };
       const row = await this.prisma.employeeProfile.update({
         where: { id: existing.id },
         data,
@@ -244,6 +285,7 @@ export class EmployeesService {
       });
       return { status: 'updated', profileId: row.id };
     }
+    if (dryRun) return { status: 'created', profileId: '' };
     const row = await this.prisma.employeeProfile.create({
       data: { workspaceId, employeeNo: value.employeeNo, jobTitle: '', departmentId: null, ...data },
       select: { id: true },
@@ -256,6 +298,7 @@ export class EmployeesService {
     workspaceId: string,
     name: string,
     cache: Map<string, string>,
+    dryRun = false,
   ): Promise<string> {
     const key = name.toLowerCase();
     const cached = cache.get(key);
@@ -270,6 +313,12 @@ export class EmployeesService {
     };
 
     let dept = await find();
+    if (!dept && dryRun) {
+      // 試算：不建立部門；用一個不會等於任何真實 id 的佔位值（員工會被算成 updated／created）
+      const placeholder = `dry-run:${key}`;
+      cache.set(key, placeholder);
+      return placeholder;
+    }
     if (!dept) {
       try {
         dept = await this.prisma.department.create({

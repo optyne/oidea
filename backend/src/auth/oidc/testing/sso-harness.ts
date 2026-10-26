@@ -4,12 +4,13 @@
  * AttendanceController，Prisma 與 Redis 用記憶體版，IdP 用 FakeIdp。
  * Nest Logger 與 console 的輸出全部收進 `logs`，給 log 測試比對。
  */
-import { INestApplication, LoggerService, ValidationPipe } from '@nestjs/common';
+import { INestApplication, LoggerService, Provider, Type, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
+import { json } from 'express';
 import { AuthController } from '../../auth.controller';
 import { AuthService } from '../../auth.service';
 import { RefreshTokenService } from '../../refresh-token.service';
@@ -116,6 +117,14 @@ export class SsoHarness {
     this.prisma.addMember(COMPANY_WS, 'u-founder', 'owner');
   }
 
+  /** 子類別（例如 H2 的 AdminHarness）可以加 controller／provider；預設沒有。 */
+  protected extraControllers(): Type<unknown>[] {
+    return [];
+  }
+  protected extraProviders(): Provider[] {
+    return [];
+  }
+
   async start(): Promise<this> {
     const sink = this.logs;
     const orig = { log: console.log, error: console.error, warn: console.warn, info: console.info, debug: console.debug };
@@ -144,7 +153,7 @@ export class SsoHarness {
         PassportModule.register({ defaultStrategy: 'jwt' }),
         JwtModule.register({ secret: JWT_TEST_SECRET, signOptions: { expiresIn: '15m' } }),
       ],
-      controllers: [OidcController, AuthController, AttendanceController],
+      controllers: [OidcController, AuthController, AttendanceController, ...this.extraControllers()],
       providers: [
         AuthService,
         OidcClient,
@@ -165,10 +174,12 @@ export class SsoHarness {
         { provide: ConfigService, useValue: config },
         { provide: PrismaService, useValue: this.prisma },
         { provide: RedisService, useValue: this.redis },
+        ...this.extraProviders(),
       ],
     }).compile();
 
     this.app = moduleRef.createNestApplication({ logger: new CaptureLogger(sink) });
+    this.app.use(json({ limit: '20mb' })); // 跟 main.ts 一樣（Nest 看到已有 jsonParser 就不再掛 100kb 的預設版）
     this.app.useGlobalFilters(new AllExceptionsFilter());
     this.app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await this.app.listen(0, '127.0.0.1');

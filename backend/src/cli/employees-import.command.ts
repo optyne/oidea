@@ -68,7 +68,7 @@ export async function runEmployeesImport(argv: string[], deps: EmployeesImportDe
     deps.err(`第 ${f.line ?? '?'} 行${who}：${f.reason}`);
   }
   deps.out(
-    `匯入完成：新增 ${result.created}、更新 ${result.updated}、失敗 ${failures.length}（共 ${parsed.rows.length + parsed.malformed.length} 列）`,
+    `匯入完成：新增 ${result.created}、更新 ${result.updated}、失敗 ${failures.length}、未變更 ${result.unchanged ?? 0}（共 ${parsed.rows.length + parsed.malformed.length} 列）`,
   );
   return failures.length > 0 ? 1 : 0;
 }
