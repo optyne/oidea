@@ -46,6 +46,13 @@ class ErpHomePage extends ConsumerWidget {
                   color: Colors.orange,
                   onTap: () => context.go('/erp/leaves'),
                 ),
+                // 員工自建的工作空間在這裡邀請與管理成員；公司工作空間會被導到後台的「成員與角色」
+                _Tile(
+                  icon: Icons.admin_panel_settings,
+                  label: '成員與權限',
+                  color: Colors.purple,
+                  onTap: () => context.go('/erp/members'),
+                ),
               ],
             ),
     );

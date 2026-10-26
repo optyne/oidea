@@ -32,3 +32,19 @@ String? adminRedirect(String location, Set<String>? permissions) {
   final needed = adminRequiredPerms(location);
   return needed.any(permissions.contains) ? null : '/chat';
 }
+
+/// [workspaceId] 是不是公司工作空間。兩個來源任一說是就算：`/company/me` 的 workspaceId，
+/// 或工作空間清單那一列的 `isCompany`（`/company/me` 失敗時也判斷得出來）。
+bool isCompanyWorkspace(String? workspaceId, {CompanyMe? me, List<dynamic>? workspaces}) {
+  if (workspaceId == null || workspaceId.isEmpty) return false;
+  if (me != null && me.workspaceId == workspaceId) return true;
+  for (final w in workspaces ?? const <dynamic>[]) {
+    if (w is Map && w['id'] == workspaceId && w['isCompany'] == true) return true;
+  }
+  return false;
+}
+
+/// `/erp/members` 的路由守門：公司工作空間的成員只由員工生命週期決定（SSO 登入加入、離職移出），
+/// 沒有邀請也不能移除，角色在後台「成員與角色」改 → 導到 `/admin/roles`。其他工作空間照舊。
+String? membersRedirect(String? currentWorkspaceId, {CompanyMe? me, List<dynamic>? workspaces}) =>
+    isCompanyWorkspace(currentWorkspaceId, me: me, workspaces: workspaces) ? '/admin/roles' : null;

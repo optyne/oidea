@@ -20,6 +20,7 @@ import '../../features/erp/presentation/pages/erp_home_page.dart';
 import '../../features/erp/presentation/pages/attendance_page.dart';
 import '../../features/erp/presentation/pages/expenses_page.dart';
 import '../../features/erp/presentation/pages/leaves_page.dart';
+import '../../features/erp/presentation/pages/members_page.dart';
 import '../../features/admin/admin_access.dart';
 import '../../features/admin/models/admin_models.dart';
 import '../../features/admin/presentation/pages/admin_home_page.dart';
@@ -36,6 +37,7 @@ import '../../features/reminders/presentation/pages/reminders_page.dart';
 import '../../features/spreadsheets/presentation/pages/spreadsheets_home_page.dart';
 import '../../features/spreadsheets/presentation/pages/spreadsheet_editor_page.dart';
 import '../../features/workspace/presentation/pages/invite_landing_page.dart';
+import '../../features/workspace/providers/workspace_provider.dart';
 import '../../shared/pages/main_shell.dart';
 
 /// Top-level redirect of the app router.
@@ -204,10 +206,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'leaves',
                 builder: (context, state) => const LeavesPage(),
               ),
-              // 成員與權限已搬到後台（H2）；舊連結導過去。
+              // 成員與權限：員工自建的工作空間照舊在這裡邀請與管理；
+              // 公司工作空間的成員只由員工生命週期決定，角色改在後台 → 導到 /admin/roles。
               GoRoute(
                 path: 'members',
-                redirect: (context, state) => '/admin/roles',
+                redirect: (context, state) => membersRedirect(
+                  ref.read(currentWorkspaceIdProvider),
+                  me: ref.read(companyMeProvider).valueOrNull,
+                  workspaces: ref.read(workspacesProvider).valueOrNull,
+                ),
+                builder: (context, state) => const MembersPage(),
               ),
             ],
           ),
