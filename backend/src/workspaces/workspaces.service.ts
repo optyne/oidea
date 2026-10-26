@@ -212,7 +212,9 @@ export class WorkspacesService {
       select: { id: true, ownerId: true },
     });
     if (!workspace) throw new NotFoundException('工作空間不存在');
-    if (workspace.ownerId !== userId) {
+    // 主 owner 已停用、刪除或不再是成員時，共同 owner 可以接手移交，否則工作空間會卡住。
+    const isMainOwner = workspace.ownerId === userId;
+    if (!isMainOwner && !(await this.isMainOwnerGone(workspaceId, workspace.ownerId))) {
       throw new ForbiddenException('只有主要 owner 能移交 owner');
     }
 
@@ -237,10 +239,12 @@ export class WorkspacesService {
         where: { id: workspaceId },
         data: { ownerId: targetUserId },
       });
-      await tx.workspaceMember.update({
-        where: { workspaceId_userId: { workspaceId, userId } },
-        data: { role: 'admin' },
-      });
+      if (isMainOwner) {
+        await tx.workspaceMember.update({
+          where: { workspaceId_userId: { workspaceId, userId } },
+          data: { role: 'admin' },
+        });
+      }
     });
 
     return {
@@ -248,8 +252,21 @@ export class WorkspacesService {
       ownerId: targetUserId,
       previousOwnerId: workspace.ownerId,
       previousTargetRole: target.role,
-      actorNewRole: 'admin',
+      actorNewRole: isMainOwner ? 'admin' : 'owner',
     };
+  }
+
+  /** 主 owner 帳號不存在、已刪除、已停用，或已不是此工作空間成員。 */
+  private async isMainOwnerGone(workspaceId: string, ownerId: string): Promise<boolean> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { id: true, disabledAt: true, deletedAt: true },
+    });
+    if (!owner || owner.deletedAt || owner.disabledAt) return true;
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: ownerId } },
+    });
+    return !membership;
   }
 
   async listMembers(userId: string, workspaceId: string) {

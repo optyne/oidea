@@ -365,6 +365,27 @@ describe('WorkspacesService — H0 roles & owner rules', () => {
     });
 
     it.each([
+      ['disabled', { disabledAt: new Date('2026-10-01') }],
+      ['deleted', { deletedAt: new Date('2026-10-01') }],
+      ['missing', { missing: true }],
+    ])('a co-owner can take over the transfer when the main owner is %s', async (_label, flags) => {
+      prisma.state.members['u-co'] = 'owner';
+      prisma.state.userFlags['u-owner'] = flags;
+      const res = await service.transferOwnership('u-co', 'ws-1', 'u-member');
+      expect(prisma.state.ownerId).toBe('u-member');
+      expect(prisma.state.members['u-member']).toBe('owner');
+      expect(prisma.state.members['u-co']).toBe('owner');
+      expect(res).toEqual(expect.objectContaining({ previousOwnerId: 'u-owner', actorNewRole: 'owner' }));
+    });
+
+    it('a co-owner can take over the transfer when the main owner is no longer a member', async () => {
+      prisma.state.members['u-co'] = 'owner';
+      delete prisma.state.members['u-owner'];
+      await service.transferOwnership('u-co', 'ws-1', 'u-member');
+      expect(prisma.state.ownerId).toBe('u-member');
+    });
+
+    it.each([
       ['a bot account', { bot: true }],
       ['a disabled user', { disabledAt: new Date('2026-10-01') }],
       ['a deleted user', { deletedAt: new Date('2026-10-01') }],
