@@ -131,13 +131,13 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 | ID   | 功能                 | 描述                                                         | 狀態   |
 | ---- | -------------------- | ------------------------------------------------------------ | ------ |
 | S-01 | 公司帳號單一登入     | Authentik OIDC（後端主導、ticket＋app_verifier）；Web 與 Android；只有員工主檔裡的人能登入 | `[x]` H1：backend＋Flutter 登入頁＋假 IdP 端到端測試。staging 用真的 Mailcow 信箱登入／登出（附截圖）**還沒做** |
-| S-02 | 員工主檔匯入         | `npm run employees:import -- <csv>`（upsert，只寫有提供的欄位） | `[~]` H1：CLI＋測試；H2：後台 API `POST /admin/employees/import`（dryRun 預覽、unchanged 計數）＋測試。UI in H2 Flutter |
+| S-02 | 員工主檔匯入         | `npm run employees:import -- <csv>`（upsert，只寫有提供的欄位） | `[x]` H1：CLI＋測試；H2：後台 API `POST /admin/employees/import`（dryRun 預覽、unchanged 計數）＋測試；H2 Flutter：名冊頁「匯入 CSV」（先預覽才能正式匯入、413／invalid_csv 訊息）＋ widget 測試 |
 | S-03 | 公司工作空間初始化   | `npm run company:init`（指定或建立唯一的公司工作空間、owner 待移交） | `[~]` H1：只有 CLI＋測試（設計上就是 CLI，沒有畫面） |
 | S-04 | 緊急登入（break-glass） | `BREAK_GLASS_OWNER_EMAILS` 名單上的公司 owner 才能用帳密；登入頁「管理者緊急登入」 | `[x]` H1：backend＋登入頁＋測試 |
 | S-05 | 正式環境關閉帳密登入 | `AUTH_PASSWORD_LOGIN_ENABLED` 預設關（有 SSO 或 production 時）；註冊回 404 | `[x]` H1：backend＋登入頁依設定隱藏＋測試 |
-| S-06 | 員工主檔後台         | 員工／部門 CRUD、離職流程                                     | `[ ]` H2：backend（`/admin/employees*`、`/admin/departments*`：名冊不含 bot、部門移動防環、同層不分大小寫不重名、離職撤銷 token／bot／socket 並移出工作空間、owner 須先移交、復職、解除綁定）＋端到端測試完成。UI in H2 Flutter |
-| S-07 | 我的資料             | `GET /company/me`：角色、展開的權限、員工資料（部門、依 §4.4 解析的主管）；側欄「後台」依權限顯示 | `[ ]` H2：backend＋測試完成。UI in H2 Flutter |
-| S-08 | 審計日誌查詢         | `GET /audit/workspaces/:id`：cursor 分頁、from／to、`prefix.*` 篩選 | `[ ]` H2：backend＋測試完成（回傳改為 `{items, nextCursor}`）。UI in H2 Flutter |
+| S-06 | 員工主檔後台         | 員工／部門 CRUD、離職流程                                     | `[x]` H2：backend（`/admin/employees*`、`/admin/departments*`：名冊不含 bot、部門移動防環、同層不分大小寫不重名、離職撤銷 token／bot／socket 並移出工作空間、owner（含公司工作空間的待移交 owner）須先移交、復職、解除綁定）＋端到端測試；Flutter `/admin/employees`、`/admin/departments`、`/admin/roles`（只改角色，公司工作空間不能邀請或移除成員，後端也回 403）＋ widget 測試；`backend/src/employees/h2-app-contract.spec.ts` 讀 App 原始碼核對錯誤碼與欄位。真機／staging 操作**還沒做** |
+| S-07 | 我的資料             | `GET /company/me`：角色、展開的權限、員工資料（部門、依 §4.4 解析的主管）；側欄「後台」依權限顯示 | `[x]` H2：backend＋測試；Flutter「我的資料」頁（`/profile`，唯讀）與側欄／底部導覽的「後台」項目（依權限顯示）＋ widget 測試 |
+| S-08 | 審計日誌查詢         | `GET /audit/workspaces/:id`：cursor 分頁、from／to、`prefix.*` 篩選 | `[x]` H2：backend＋測試（回傳改為 `{items, nextCursor}`）；Flutter `/admin/audit`（時間、人、動作、對象；日期與動作前綴篩選、「載入更多」）＋ widget 測試 |
 | S-09 | 離職員工的 bot 失效  | `/bot/*` 與一般 API 的 bot token 都拒絕「建立者已停用」的 bot；公司工作空間不能建立 bot | `[x]` H2：backend＋測試（沒有畫面需求） |
 
 ### P4 — 白板編輯模組 (Whiteboard)
@@ -241,3 +241,4 @@ Oidea 是一個整合即時通訊、專案管理、會議系統、白板協作�
 | 2026-08-09 | 白板筆記本化：WhiteboardPage model + 6 端點 + PencilKit 畫布（W-07/09/12 完成）       |
 | 2026-10-26 | H0 安全修補、H1 公司帳號單一登入（S-01～S-05）；更正 A-04、R-03 的狀態（原標 `[x]` 與事實不符） |
 | 2026-10-27 | H2 員工主檔後台 backend（S-06～S-09）；UI 由 H2 Flutter 另外進行，合併後再更新狀態 |
+| 2026-10-27 | H2 整合：S-06～S-08 backend＋Flutter＋測試都到位，改 `[x]`；S-02 補上後台匯入畫面；恢復非公司工作空間的「成員與權限」（邀請、邀請連結），公司工作空間導到後台 |
