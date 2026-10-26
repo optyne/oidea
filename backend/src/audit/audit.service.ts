@@ -23,7 +23,33 @@ export type AuditAction =
   | 'auth.sso_denied'
   | 'employee.import'
   | 'employee.sso_bind'
-  | 'company.init';
+  | 'company.init'
+  // H2 員工主檔後台
+  | 'employee.create'
+  | 'employee.update'
+  | 'employee.terminate'
+  | 'employee.reinstate'
+  | 'employee.unbind'
+  | 'department.create'
+  | 'department.update'
+  | 'department.archive'
+  | 'department.unarchive'
+  | 'department.delete';
+
+/** H2 新增的 action（測試逐一斷言每個都有寫 audit）。 */
+export const H2_AUDIT_ACTIONS = [
+  'employee.create',
+  'employee.update',
+  'employee.terminate',
+  'employee.reinstate',
+  'employee.unbind',
+  'employee.import',
+  'department.create',
+  'department.update',
+  'department.archive',
+  'department.unarchive',
+  'department.delete',
+] as const satisfies readonly AuditAction[];
 
 export interface AuditRequestContext {
   ip?: string | string[];

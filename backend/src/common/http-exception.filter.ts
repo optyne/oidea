@@ -24,6 +24,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let errorCode: string | undefined;
     // 機器可讀的錯誤碼（例如 SSO exchange 的 `invalid_ticket`），有給才放進 body
     let code: string | undefined;
+    // 附帶的明細（例如 owner_transfer_required 要移交的工作空間清單）；只放白名單內的欄位
+    let workspaces: unknown[] | undefined;
     if (isHttp) {
       const res = (exception as HttpException).getResponse();
       if (typeof res === 'string') {
@@ -33,6 +35,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message = obj.message ?? message;
         errorCode = obj.error;
         if (typeof obj.code === 'string') code = obj.code;
+        if (Array.isArray(obj.workspaces)) workspaces = obj.workspaces;
       }
     } else if (exception instanceof Error) {
       message = exception.message;
@@ -51,6 +54,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       error: errorCode,
       ...(code ? { code } : {}),
+      ...(workspaces ? { workspaces } : {}),
       message,
       path: request.url,
       timestamp: new Date().toISOString(),
