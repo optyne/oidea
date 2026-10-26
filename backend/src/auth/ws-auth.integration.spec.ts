@@ -25,10 +25,13 @@ describe('socket.io 握手（真的 server）', () => {
   let app: INestApplication;
   let port: number;
   let jwt: JwtService;
+  let registry: SocketRegistry;
+  let userStatus: UserStatusService;
 
   beforeAll(async () => {
     const prisma = new FakePrisma(new SystemClock() as any);
     prisma.addUser({ id: 'u-1', email: 'alice@example.com' });
+    prisma.addUser({ id: 'u-live', email: 'live@example.com' });
     const moduleRef = await Test.createTestingModule({
       imports: [JwtModule.register({ secret: 'test-secret', signOptions: { expiresIn: '15m' } })],
       providers: [
@@ -49,6 +52,8 @@ describe('socket.io 握手（真的 server）', () => {
     await app.listen(0, '127.0.0.1');
     port = app.getHttpServer().address().port;
     jwt = moduleRef.get(JwtService);
+    registry = moduleRef.get(SocketRegistry);
+    userStatus = moduleRef.get(UserStatusService);
   });
 
   afterAll(async () => {
@@ -122,6 +127,57 @@ describe('socket.io 握手（真的 server）', () => {
       const res = await handshake(nsp, auth);
       expect(res.startsWith(`44${prefix}`)).toBe(true);
       expect(JSON.parse(res.slice(2 + prefix.length))).toMatchObject({ data: { code: 'unauthorized' } });
+    });
+
+    it('S2：握手完成的連線才登記到 registry，斷線後移除', async () => {
+      const token = jwt.sign({ sub: 'u-live', email: 'live@example.com', typ: 'access' });
+      const sock = new WebSocket(`ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`);
+      const connected = new Promise<string>((resolve) => {
+        sock.onmessage = (ev) => {
+          const msg = String(ev.data);
+          if (msg.startsWith('0{')) sock.send(`40${prefix}${JSON.stringify({ token })}`);
+          else if (msg.startsWith('40') || msg.startsWith('44')) resolve(msg);
+        };
+      });
+      expect((await connected).startsWith(`40${prefix}{"sid"`)).toBe(true);
+      await new Promise((r) => setTimeout(r, 50)); // handleConnection runs after CONNECT is sent
+      expect(registry.count('u-live')).toBe(1);
+
+      const closed = new Promise<void>((r) => (sock.onclose = () => r()));
+      sock.close();
+      await closed;
+      await new Promise((r) => setTimeout(r, 100));
+      expect(registry.count('u-live')).toBe(0);
+    });
+
+    it('S2：客戶端在非同步驗證途中斷線 → registry 不留項目', async () => {
+      let release!: (disabled: boolean) => void;
+      let entered!: () => void;
+      const inCheck = new Promise<void>((r) => (entered = r));
+      const spy = jest.spyOn(userStatus, 'isDisabled').mockImplementationOnce(
+        () =>
+          new Promise<boolean>((r) => {
+            release = r;
+            entered();
+          }),
+      );
+      try {
+        const token = jwt.sign({ sub: 'u-abort', email: 'abort@example.com', typ: 'access' });
+        const sock = new WebSocket(`ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`);
+        const closed = new Promise<void>((r) => (sock.onclose = () => r()));
+        sock.onmessage = (ev) => {
+          if (String(ev.data).startsWith('0{')) sock.send(`40${prefix}${JSON.stringify({ token })}`);
+        };
+        await inCheck; // middleware is now awaiting the disabled check
+        sock.close();
+        await closed;
+        await new Promise((r) => setTimeout(r, 100)); // let the server see the close
+        release(false); // auth passes, but the connection is already gone
+        await new Promise((r) => setTimeout(r, 100));
+        expect(registry.count('u-abort')).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('過期 token → CONNECT_ERROR', async () => {

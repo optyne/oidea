@@ -188,6 +188,58 @@ void main() {
       expect(h.expiredEvents, 0);
     });
 
+    for (final status in [429, 408, 404, 500, 503]) {
+      test('refresh answered $status keeps tokens, does not expire the session, surfaces the error', () async {
+        final h = _Harness(
+          api: (o) async => _json({}, 401),
+          refresh: (o) async => _json({'message': 'busy'}, status),
+        );
+
+        final err = await h.dio.get<dynamic>('x').then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(err, isA<DioException>());
+        expect((err as DioException).response?.statusCode, status);
+        expect(err.requestOptions.path, 'x');
+        expect(h.store.accessToken, 'old-access');
+        expect(h.store.refreshToken, 'r1');
+        expect(h.session.lastRefreshError?.response?.statusCode, status);
+        await Future<void>.delayed(Duration.zero);
+        expect(h.expiredEvents, 0);
+      });
+    }
+
+    for (final status in [400, 401, 403]) {
+      test('refresh answered $status ends the session', () async {
+        final h = _Harness(
+          api: (o) async => _json({}, 401),
+          refresh: (o) async => _json({'message': 'revoked'}, status),
+        );
+
+        await expectLater(h.dio.get<dynamic>('x'), throwsA(isA<DioException>()));
+
+        expect(h.store.accessToken, isNull);
+        expect(h.store.refreshToken, isNull);
+        expect(h.session.lastRefreshError, isNull);
+        await Future<void>.delayed(Duration.zero);
+        expect(h.expiredEvents, 1);
+      });
+    }
+
+    test('a successful refresh clears lastRefreshError', () async {
+      var status = 429;
+      final h = _Harness(
+        api: (o) async => o.headers['Authorization'] == 'Bearer new-access' ? _json({'ok': true}, 200) : _json({}, 401),
+        refresh: (o) async =>
+            status == 200 ? _json({'accessToken': 'new-access', 'refreshToken': 'r2'}, 200) : _json({}, status),
+      );
+
+      await expectLater(h.dio.get<dynamic>('x'), throwsA(isA<DioException>()));
+      expect(h.session.lastRefreshError, isNotNull);
+      status = 200;
+      await h.dio.get<dynamic>('x');
+      expect(h.session.lastRefreshError, isNull);
+    });
+
     test('request that failed with a token already replaced is retried without refreshing', () async {
       late _Harness h;
       h = _Harness(

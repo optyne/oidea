@@ -2,6 +2,7 @@ import { RedisService } from './redis.service';
 
 const client = {
   getdel: jest.fn(),
+  set: jest.fn(),
   quit: jest.fn(),
 };
 
@@ -9,6 +10,19 @@ jest.mock('ioredis', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => client),
 }));
+
+describe('RedisService.setNx', () => {
+  const config = { get: (_k: string, d?: unknown) => d } as any;
+
+  it('送 SET key value EX ttl NX；OK → true，null（key 已存在）→ false', async () => {
+    const svc = new RedisService(config);
+    client.set.mockResolvedValueOnce('OK');
+    await expect(svc.setNx('k', 'v', 30)).resolves.toBe(true);
+    expect(client.set).toHaveBeenLastCalledWith('k', 'v', 'EX', 30, 'NX');
+    client.set.mockResolvedValueOnce(null);
+    await expect(svc.setNx('k', 'v', 30)).resolves.toBe(false);
+  });
+});
 
 describe('RedisService.getdel', () => {
   const config = { get: (_k: string, d?: unknown) => d } as any;

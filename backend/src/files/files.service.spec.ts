@@ -35,6 +35,21 @@ describe('FilesService — characterization', () => {
             : null,
         ),
       },
+      // t-1 / msg-1 are in ws-1; t-b / msg-b are in ws-b.
+      task: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          ({ 't-1': 'ws-1', 't-b': 'ws-b' } as Record<string, string>)[where.id]
+            ? { project: { workspaceId: ({ 't-1': 'ws-1', 't-b': 'ws-b' } as Record<string, string>)[where.id] } }
+            : null,
+        ),
+      },
+      message: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          ({ 'msg-1': 'ws-1', 'msg-b': 'ws-b' } as Record<string, string>)[where.id]
+            ? { channel: { workspaceId: ({ 'msg-1': 'ws-1', 'msg-b': 'ws-b' } as Record<string, string>)[where.id] } }
+            : null,
+        ),
+      },
       file: {
         create: jest.fn(async ({ data }: any) => ({ id: 'f-new', ...data })),
         findUnique: jest.fn(async ({ where }: any) => (where.id === 'f-1' ? { ...FILE } : null)),
@@ -117,6 +132,29 @@ describe('FilesService — characterization', () => {
       await expect(service.upload('u-2', 'ws-1', file)).rejects.toBeInstanceOf(ForbiddenException);
       expect(minioMock.putObject).not.toHaveBeenCalled();
       expect(prisma.file.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a task of another workspace', undefined, 't-b'],
+      ['a task that does not exist', undefined, 't-ghost'],
+      ['a message of another workspace', 'msg-b', undefined],
+      ['a message that does not exist', 'msg-ghost', undefined],
+      ['a valid task but a foreign message', 'msg-b', 't-1'],
+    ])('S6: upload attached to %s → 403, nothing stored', async (_label, messageId, taskId) => {
+      const file = { originalname: 'a.png', buffer: Buffer.from('x'), size: 1, mimetype: 'image/png' } as any;
+      await expect(service.upload('u-1', 'ws-1', file, messageId, taskId)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(minioMock.putObject).not.toHaveBeenCalled();
+      expect(prisma.file.create).not.toHaveBeenCalled();
+    });
+
+    it('S6: upload attached to a task and a message of the same workspace → stored', async () => {
+      const file = { originalname: 'a.png', buffer: Buffer.from('x'), size: 1, mimetype: 'image/png' } as any;
+      await service.upload('u-1', 'ws-1', file, 'msg-1', 't-1');
+      expect(prisma.file.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ workspaceId: 'ws-1', messageId: 'msg-1', taskId: 't-1' }),
+      });
     });
 
     it('upload without workspaceId → 400', async () => {

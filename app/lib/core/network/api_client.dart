@@ -125,6 +125,18 @@ class AuthInterceptor extends Interceptor {
       token = await _session.refresh();
     }
     if (token == null) {
+      // A transient refresh failure (e.g. 429 from auth/refresh) is reported as
+      // itself, not as the original 401: the session is still alive.
+      final refreshError = _session.lastRefreshError;
+      if (refreshError != null) {
+        return handler.next(DioException(
+          requestOptions: req,
+          response: refreshError.response,
+          type: refreshError.type,
+          error: refreshError.error,
+          message: refreshError.message,
+        ));
+      }
       return handler.next(err);
     }
 

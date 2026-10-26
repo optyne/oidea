@@ -1,5 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oidea/core/network/socket_service.dart';
+
+String _jwt(DateTime exp) {
+  String seg(Map<String, dynamic> m) => base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
+  return '${seg({'alg': 'HS256'})}.${seg({'sub': 'u1', 'exp': exp.millisecondsSinceEpoch ~/ 1000})}.sig';
+}
 
 const _unauthorized = {
   'message': '身分驗證失敗',
@@ -191,5 +198,118 @@ void main() {
 
     expect(service.joinedChannels, {'c2'});
     expect(service.joinedBoards, {'b1'});
+  });
+
+  group('S3: no silent message loss across reconnects', () {
+    test('chat (re)connect re-joins rooms first, then tells listeners to refetch', () {
+      final service = SocketService(tokenProvider: () async => 't', refreshToken: () async => 't');
+      service.joinChannel('c1');
+      service.joinChannel('c2');
+      final log = <String>[];
+      void onReconnect(dynamic _) => log.add('refetch');
+      service.addListener(SocketService.chatConnectedEvent, onReconnect);
+
+      service.handleChatConnected((event, data) => log.add('$event:$data'));
+      expect(log, ['joinChannel:c1', 'joinChannel:c2', 'refetch']);
+
+      // every reconnect, not only the first
+      service.handleChatConnected((event, data) => log.add('$event:$data'));
+      expect(log.where((e) => e == 'refetch'), hasLength(2));
+
+      service.removeListener(SocketService.chatConnectedEvent, onReconnect);
+      service.handleChatConnected((_, __) {});
+      expect(log.where((e) => e == 'refetch'), hasLength(2));
+    });
+
+    test('proactively refreshes and reconnects shortly before the token expires', () async {
+      final now = DateTime.utc(2026, 10, 26, 12);
+      // JWT exp has whole seconds: the clock runs 40 ms behind, so the lead window opens in 40 ms.
+      var current = _jwt(now.add(const Duration(seconds: 60)));
+      final fresh = _jwt(now.add(const Duration(minutes: 15)));
+      var refreshCalls = 0;
+      var reconnects = 0;
+      final sent = <Map>[];
+      late AuthedSocket socket;
+      socket = AuthedSocket(
+        url: 'http://test',
+        tokenProvider: () async => current,
+        refreshToken: () async {
+          refreshCalls++;
+          current = fresh;
+          return fresh;
+        },
+        events: const [],
+        onDispatch: (_, __) {},
+        clock: () => now.subtract(const Duration(milliseconds: 40)),
+        reconnectOverride: () async {
+          reconnects++;
+          await socket.authCallback(sent.add);
+          socket.handleConnected();
+        },
+      )..startForTest();
+
+      await socket.authCallback(sent.add);
+      socket.handleConnected();
+      expect(socket.proactiveReconnectPending, isTrue);
+      expect(refreshCalls, 0);
+
+      await _settle(); // 40 ms to the lead window
+      await _settle();
+
+      expect(refreshCalls, 1);
+      expect(reconnects, 1);
+      expect(sent.last, {'token': fresh});
+      // The fresh token is 15 min away: the next proactive reconnect is armed, not due.
+      expect(socket.proactiveReconnectPending, isTrue);
+      socket.close();
+      expect(socket.proactiveReconnectPending, isFalse);
+    });
+
+    test('proactive reconnect: refresh failure keeps the connection; disconnect cancels the timer', () async {
+      final now = DateTime.utc(2026, 10, 26, 12);
+      var reconnects = 0;
+      final socket = AuthedSocket(
+        url: 'http://test',
+        tokenProvider: () async => _jwt(now.add(const Duration(seconds: 60))),
+        refreshToken: () async => null,
+        events: const [],
+        onDispatch: (_, __) {},
+        clock: () => now.subtract(const Duration(milliseconds: 20)),
+        reconnectOverride: () => reconnects++,
+      )..startForTest();
+
+      await socket.authCallback((_) {});
+      socket.handleConnected();
+      await _settle();
+      expect(reconnects, 0);
+
+      await socket.authCallback((_) {});
+      socket.handleConnected();
+      expect(socket.proactiveReconnectPending, isTrue);
+      socket.handleDisconnect('transport close');
+      expect(socket.proactiveReconnectPending, isFalse);
+    });
+
+    test('no proactive timer for a non-JWT token or one already inside the lead window', () async {
+      final now = DateTime.utc(2026, 10, 26, 12);
+      var token = 'opaque';
+      final socket = AuthedSocket(
+        url: 'http://test',
+        tokenProvider: () async => token,
+        refreshToken: () async => null,
+        events: const [],
+        onDispatch: (_, __) {},
+        clock: () => now,
+      )..startForTest();
+
+      await socket.authCallback((_) {});
+      socket.handleConnected();
+      expect(socket.proactiveReconnectPending, isFalse);
+
+      token = _jwt(now.add(const Duration(seconds: 30)));
+      await socket.authCallback((_) {});
+      socket.handleConnected();
+      expect(socket.proactiveReconnectPending, isFalse);
+    });
   });
 }

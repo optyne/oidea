@@ -195,19 +195,38 @@ export class WorkspacesService {
 
   /**
    * 移交主 owner：目標成為 owner 並寫入 `Workspace.ownerId`，原 owner 改為 admin。
-   * 只有 owner（`owner.transfer`）能做。
+   * 只有主 owner（`Workspace.ownerId`）能做；共同 owner 雖有 `owner.transfer` 也不行，
+   * 否則共同 owner 可以先把主 owner 身分移走、再移除原主 owner。
+   * 目標必須是此工作空間的成員，且不是 bot、未停用、未刪除。
    */
-  async transferOwnership(userId: string, workspaceId: string, targetUserId: string) {
+  async transferOwnership(userId: string, workspaceId: string, rawTargetUserId: unknown) {
     await this.checkPermission(userId, workspaceId, PERMISSIONS.OWNER_TRANSFER);
-    if (!targetUserId) throw new BadRequestException('必須提供 userId');
+    if (typeof rawTargetUserId !== 'string' || rawTargetUserId.trim() === '') {
+      throw new BadRequestException('必須提供 userId');
+    }
+    const targetUserId: string = rawTargetUserId;
     if (targetUserId === userId) throw new BadRequestException('不可移交給自己');
-    const target = await this.getMemberOrThrow(workspaceId, targetUserId);
 
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: { id: true, ownerId: true },
     });
     if (!workspace) throw new NotFoundException('工作空間不存在');
+    if (workspace.ownerId !== userId) {
+      throw new ForbiddenException('只有主要 owner 能移交 owner');
+    }
+
+    const target = await this.getMemberOrThrow(workspaceId, targetUserId);
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, disabledAt: true, deletedAt: true, botAccount: { select: { id: true } } },
+    });
+    if (!targetUser || targetUser.deletedAt || targetUser.disabledAt) {
+      throw new BadRequestException('目標使用者已停用或不存在');
+    }
+    if (targetUser.botAccount) {
+      throw new BadRequestException('不可移交給 bot 帳號');
+    }
 
     await this.prisma.$transaction(async (tx: any) => {
       await tx.workspaceMember.update({

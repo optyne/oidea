@@ -37,11 +37,9 @@ export class MessagesGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.wsAuth.attach(server, 'messages');
   }
 
+  /** 連線真的建立後才登記到 SocketRegistry、排到期斷線；沒通過 middleware 的 socket 斷線（防禦）。 */
   async handleConnection(client: Socket) {
-    // 防禦：理論上沒通過 middleware 的連線到不了這裡
-    if (!client.data?.userId) {
-      client.disconnect(true);
-    }
+    this.wsAuth.onConnected(client);
   }
 
   handleDisconnect(client: Socket) {

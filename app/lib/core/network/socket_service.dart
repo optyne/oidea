@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 import 'api_client.dart';
+import 'auth_session.dart' show jwtExpiry;
 import 'dev_backend_urls.dart';
 
 final socketProvider = Provider<SocketService>((ref) {
@@ -30,6 +31,12 @@ typedef AccessTokenProvider = Future<String?> Function();
 /// socket_io_client retries neither, so this class refreshes the token (via
 /// the shared single-flight refresh) and reconnects itself, with backoff and
 /// a bounded number of attempts. If there is no session left it stops.
+///
+/// To keep the gap small it also reconnects on its own [proactiveRefreshLead]
+/// before the handshake token expires: refresh first, then a quick
+/// disconnect + connect with the new token. Events broadcast during any gap
+/// are not replayed by the server, so listeners of [onConnected] (see
+/// [SocketService.chatConnectedEvent]) refetch what they show.
 class AuthedSocket {
   AuthedSocket({
     required this.url,
@@ -40,9 +47,12 @@ class AuthedSocket {
     this.onConnected,
     this.baseReconnectDelay = const Duration(seconds: 1),
     this.maxReconnectAttempts = 10,
+    this.proactiveRefreshLead = const Duration(seconds: 60),
+    DateTime Function()? clock,
     @visibleForTesting void Function()? reconnectOverride,
   })  : _tokenProvider = tokenProvider,
         _refreshToken = refreshToken,
+        _clock = clock ?? DateTime.now,
         _reconnectOverride = reconnectOverride;
 
   final String url;
@@ -51,12 +61,18 @@ class AuthedSocket {
   final void Function(IO.Socket socket)? onConnected;
   final Duration baseReconnectDelay;
   final int maxReconnectAttempts;
+
+  /// How long before the handshake token's `exp` to refresh and reconnect.
+  final Duration proactiveRefreshLead;
+  final DateTime Function() _clock;
   final AccessTokenProvider _tokenProvider;
   final AccessTokenProvider _refreshToken;
   final void Function()? _reconnectOverride;
 
   IO.Socket? _socket;
   Timer? _reconnectTimer;
+  Timer? _proactiveTimer;
+  String? _handshakeToken;
   int _reconnectAttempts = 0;
   bool _stopped = true;
   bool _needsFreshToken = false;
@@ -71,6 +87,9 @@ class AuthedSocket {
 
   @visibleForTesting
   int get reconnectAttempts => _reconnectAttempts;
+
+  @visibleForTesting
+  bool get proactiveReconnectPending => _proactiveTimer?.isActive ?? false;
 
   /// Puts the state machine in the "open" state without a real socket.
   @visibleForTesting
@@ -118,10 +137,7 @@ class AuthedSocket {
     final socket = IO.io(url, buildOptions((cb) => authCallback(cb)));
     _socket = socket;
 
-    socket.on('connect', (_) {
-      _reconnectAttempts = 0;
-      onConnected?.call(socket);
-    });
+    socket.on('connect', (_) => handleConnected(socket));
     socket.on('auth_expired', (_) => handleAuthExpired());
     socket.on('disconnect', (reason) => handleDisconnect('$reason'));
     socket.on('connect_error', (err) => handleConnectError(err, socketActive: socket.active));
@@ -135,6 +151,7 @@ class AuthedSocket {
     _stopped = true;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    _cancelProactive();
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
@@ -161,7 +178,57 @@ class AuthedSocket {
       _stop();
       return;
     }
+    _handshakeToken = token;
     callback(handshakeAuth(token));
+  }
+
+  /// The connection is up: reset the backoff, schedule the proactive
+  /// reconnect for the token just used, then notify [onConnected].
+  @visibleForTesting
+  void handleConnected([IO.Socket? socket]) {
+    _reconnectAttempts = 0;
+    _scheduleProactive();
+    final s = socket ?? _socket;
+    if (s != null) onConnected?.call(s);
+  }
+
+  void _scheduleProactive() {
+    _cancelProactive();
+    final token = _handshakeToken;
+    if (_stopped || token == null) return;
+    final exp = jwtExpiry(token);
+    if (exp == null) return;
+    final delay = exp.difference(_clock().toUtc()) - proactiveRefreshLead;
+    // Already inside the lead window: the server's `auth_expired` path handles it.
+    if (delay <= Duration.zero) return;
+    _proactiveTimer = Timer(delay, () => unawaited(_proactiveReconnect()));
+  }
+
+  void _cancelProactive() {
+    _proactiveTimer?.cancel();
+    _proactiveTimer = null;
+  }
+
+  Future<void> _proactiveReconnect() async {
+    if (_stopped) return;
+    String? fresh;
+    try {
+      fresh = await _refreshToken();
+    } catch (_) {
+      fresh = null;
+    }
+    // On failure keep the current connection; the server expiry path follows.
+    if (fresh == null || _stopped) return;
+    final override = _reconnectOverride;
+    if (override != null) {
+      override();
+      return;
+    }
+    final socket = _socket;
+    if (socket == null) return;
+    // The auth callback reads the (now fresh) token on this connect.
+    socket.disconnect();
+    socket.connect();
   }
 
   @visibleForTesting
@@ -172,6 +239,7 @@ class AuthedSocket {
 
   @visibleForTesting
   void handleDisconnect(String reason) {
+    _cancelProactive();
     if (needsManualReconnect(reason)) _scheduleReconnect();
   }
 
@@ -213,6 +281,7 @@ class AuthedSocket {
     _stopped = true;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    _cancelProactive();
     final socket = _socket;
     if (socket != null) scheduleMicrotask(socket.disconnect);
   }
@@ -229,6 +298,11 @@ class SocketService {
 
   final AccessTokenProvider _tokenProvider;
   final AccessTokenProvider _refreshToken;
+
+  /// Dispatched (no payload) after the chat socket (re)connects and its rooms
+  /// were re-joined. Messages broadcast while it was down are not replayed, so
+  /// pages that show messages refetch on this event.
+  static const chatConnectedEvent = 'chat:connected';
 
   AuthedSocket? _chat;
   AuthedSocket? _board;
@@ -259,11 +333,7 @@ class SocketService {
       events: const ['newMessage', 'userTyping', 'userStopTyping'],
       onDispatch: _dispatch,
       // Rooms are per connection: re-join after every (re)connect.
-      onConnected: (s) {
-        for (final id in _channels) {
-          s.emit('joinChannel', id);
-        }
-      },
+      onConnected: (s) => handleChatConnected(s.emit),
     )..open();
     _board = AuthedSocket(
       url: '$base/whiteboard',
@@ -277,6 +347,16 @@ class SocketService {
         }
       },
     )..open();
+  }
+
+  /// Chat (re)connected: re-join every channel, then tell listeners of
+  /// [chatConnectedEvent] to refetch.
+  @visibleForTesting
+  void handleChatConnected(void Function(String event, dynamic data) emit) {
+    for (final id in _channels) {
+      emit('joinChannel', id);
+    }
+    _dispatch(chatConnectedEvent, null);
   }
 
   void disconnect() {

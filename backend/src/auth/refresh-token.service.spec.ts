@@ -179,6 +179,72 @@ describe('RefreshTokenService + AuthService.refresh/logout（H0 token 改造）'
     await expect(auth.refresh(b.refreshToken)).rejects.toThrow(UnauthorizedException);
   });
 
+  describe('S8：換發與撤銷 family 同時發生', () => {
+    const familyRows = (familyId: string) => prisma.refreshRows.filter((r) => r.familyId === familyId);
+    const familyOf = (token: string) =>
+      prisma.refreshRows.find((r) => r.tokenHash === hashRefreshToken(token))!.familyId;
+
+    /** 下一次建立 refresh row 之前，先跑 `during`（模擬撤銷剛好落在 claim 與 issue 之間）。 */
+    const beforeNextCreate = (during: () => Promise<unknown>) => {
+      const original = prisma.refreshToken.create.getMockImplementation()!;
+      prisma.refreshToken.create.mockImplementationOnce(async (args: any) => {
+        await during();
+        return original(args);
+      });
+    };
+
+    it('claim 之後、建新 row 之前被登出 → rotate 回 401，新 row 也被撤銷', async () => {
+      const first = await login();
+      const familyId = familyOf(first.refreshToken);
+      beforeNextCreate(() => auth.logout(first.refreshToken));
+
+      await expect(auth.refresh(first.refreshToken)).rejects.toThrow(UnauthorizedException);
+      expect(familyRows(familyId)).toHaveLength(2);
+      expect(familyRows(familyId).every((r) => r.revokedAt)).toBe(true);
+    });
+
+    it('寬限期重試換發途中，另一個請求觸發盜用偵測 → 重試回 401，family 全部撤銷', async () => {
+      const first = await login();
+      const familyId = familyOf(first.refreshToken);
+      await auth.refresh(first.refreshToken);
+      clock.advance(REFRESH_REUSE_GRACE_MS - 1000);
+
+      // 寬限期內的重試走到 issue() 前，有人在寬限期外重用同一個舊 token（盜用偵測撤銷 family）
+      beforeNextCreate(async () => {
+        clock.advance(2000);
+        await expect(auth.refresh(first.refreshToken)).rejects.toThrow(UnauthorizedException);
+      });
+
+      await expect(auth.refresh(first.refreshToken)).rejects.toThrow(UnauthorizedException);
+      expect(familyRows(familyId).every((r) => r.revokedAt)).toBe(true);
+    });
+
+    it('撤銷方第一次 updateMany 之後才 commit 的新 row，也會被第二次撤銷撈到', async () => {
+      const first = await login();
+      const familyId = familyOf(first.refreshToken);
+      const original = prisma.refreshToken.updateMany.getMockImplementation()!;
+      prisma.refreshToken.updateMany.mockImplementationOnce(async (args: any) => {
+        const res = await original(args);
+        // 併發的換發在這之後才 commit（它自己的檢查又剛好在撤銷 commit 之前讀，什麼都沒看到）
+        prisma.refreshRows.push({
+          id: 'late-row',
+          userId: 'u-1',
+          familyId,
+          tokenHash: 'late-hash',
+          expiresAt: new Date(clock.now().getTime() + 86_400_000),
+          revokedAt: null,
+          rotatedAt: null,
+          createdAt: clock.now(),
+        });
+        return res;
+      });
+
+      await auth.logout(first.refreshToken);
+      expect(familyRows(familyId).find((r) => r.id === 'late-row')!.revokedAt).not.toBeNull();
+      expect(familyRows(familyId).every((r) => r.revokedAt)).toBe(true);
+    });
+  });
+
   it('JWT_REFRESH_EXPIRATION 可設定有效期', async () => {
     const short = new RefreshTokenService(prisma as any, clock, audit as any, config({ JWT_REFRESH_EXPIRATION: '1h' }));
     await short.issueNewFamily('u-1');

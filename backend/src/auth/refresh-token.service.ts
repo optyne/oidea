@@ -38,6 +38,10 @@ export interface RotatedRefreshToken {
  * - 每次 refresh 都換發新的一組，新 token 沿用同一個 familyId。
  * - 被換掉的 token 在 10 秒內再被使用 → 在同一 family 再簽一組新的（DB 只有 hash，給不回舊的那組）。
  * - 超過 10 秒還被使用 → 視為盜用，撤銷**整個 family**（同一使用者其他 family 不受影響），回 401。
+ * - 換發與撤銷 family 同時發生時，新 token 不能活下來。兩邊都「先寫、再讀」：
+ *   換發方建好新 row（已 commit）之後，檢查 family 裡有沒有被撤銷的 row，有就把新 row 也撤銷並回 401；
+ *   撤銷方做完第一次 updateMany 之後再做一次，撈出撤銷途中才 commit 的新 row。
+ *   在 READ COMMITTED 下兩個「讀」至少有一個看得到對方的「寫」，所以兩種交錯都擋得住。
  */
 @Injectable()
 export class RefreshTokenService {
@@ -86,10 +90,7 @@ export class RefreshTokenService {
     }
 
     // 盜用：撤銷整個 family
-    const revoked = await this.prisma.refreshToken.updateMany({
-      where: { familyId: row.familyId, revokedAt: null },
-      data: { revokedAt: now },
-    });
+    const revoked = await this.revokeWhere({ familyId: row.familyId }, now);
     this.logger.warn(`refresh token reuse detected; family revoked (${revoked.count} tokens)`);
     await this.audit.record({
       actorId: row.userId,
@@ -112,19 +113,13 @@ export class RefreshTokenService {
       select: { userId: true, familyId: true },
     });
     if (!row) return null;
-    const res = await this.prisma.refreshToken.updateMany({
-      where: { familyId: row.familyId, revokedAt: null },
-      data: { revokedAt: this.clock.now() },
-    });
+    const res = await this.revokeWhere({ familyId: row.familyId }, this.clock.now());
     return { userId: row.userId, familyId: row.familyId, count: res.count };
   }
 
   /** 撤銷某使用者全部 refresh token（H1 綁定 SSO、H2 離職使用）。 */
   async revokeAllForUser(userId: string): Promise<number> {
-    const res = await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: this.clock.now() },
-    });
+    const res = await this.revokeWhere({ userId }, this.clock.now());
     return res.count;
   }
 
@@ -145,10 +140,37 @@ export class RefreshTokenService {
     return row;
   }
 
+  /**
+   * 撤銷符合條件、還沒撤銷的 row。做兩次：第二次撈出第一次之後才 commit 的 row
+   * （與 rotate 同時換發出來的新 token）。回傳總共撤銷幾筆。
+   */
+  private async revokeWhere(where: { familyId: string } | { userId: string }, now: Date) {
+    const first = await this.prisma.refreshToken.updateMany({
+      where: { ...where, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    const second = await this.prisma.refreshToken.updateMany({
+      where: { ...where, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    return { count: first.count + second.count };
+  }
+
+  /** rotate 換發：建好新 row 之後確認 family 沒被同時撤銷；被撤銷了就連新 row 一起撤銷並回 401。 */
   private async issueFor(
     row: { userId: string; familyId: string; user: { email: string } },
   ): Promise<RotatedRefreshToken> {
     const refreshToken = await this.issue(row.userId, row.familyId);
+    const revokedInFamily = await this.prisma.refreshToken.count({
+      where: { familyId: row.familyId, revokedAt: { not: null } },
+    });
+    if (revokedInFamily > 0) {
+      await this.prisma.refreshToken.updateMany({
+        where: { familyId: row.familyId, revokedAt: null },
+        data: { revokedAt: this.clock.now() },
+      });
+      throw new UnauthorizedException('Refresh token 已失效，請重新登入');
+    }
     return { userId: row.userId, email: row.user.email, refreshToken };
   }
 

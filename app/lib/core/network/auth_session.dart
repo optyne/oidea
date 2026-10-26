@@ -109,19 +109,32 @@ class AuthSession {
 
   Future<String?>? _inflight;
   final _sessionExpired = StreamController<void>.broadcast();
+  DioException? _lastRefreshError;
+
+  /// Statuses from `auth/refresh` that prove the refresh token is dead. Anything
+  /// else (429 rate limit, 408, 5xx, network errors) is transient: tokens are
+  /// kept and the error is exposed through [lastRefreshError].
+  static const sessionEndingStatuses = {400, 401, 403};
+
+  /// The error of the last refresh that failed for a transient reason (null
+  /// after a successful refresh or when the session ended). Callers surface it
+  /// instead of pretending the user was logged out.
+  DioException? get lastRefreshError => _lastRefreshError;
 
   /// Fires once each time a refresh proves the session dead (tokens already
   /// cleared). The auth state listens and sends the user to login.
   Stream<void> get onSessionExpired => _sessionExpired.stream;
 
   /// Gets a new access token. Returns null when it could not get one.
-  /// When the server rejects the refresh token (4xx), local tokens are cleared
-  /// and [onSessionExpired] fires; on network / 5xx errors tokens are kept.
+  /// When the server rejects the refresh token (400 / 401 / 403), local tokens
+  /// are cleared and [onSessionExpired] fires; on anything else (429, other
+  /// 4xx, 5xx, network errors) tokens are kept and [lastRefreshError] is set.
   Future<String?> refresh() {
     return _inflight ??= _doRefresh().whenComplete(() => _inflight = null);
   }
 
   Future<String?> _doRefresh() async {
+    _lastRefreshError = null;
     final refreshToken = await store.readRefreshToken();
     if (refreshToken == null) {
       await _expire();
@@ -145,8 +158,10 @@ class AuthSession {
       return access;
     } on DioException catch (e) {
       final code = e.response?.statusCode;
-      if (code != null && code >= 400 && code < 500) {
+      if (code != null && sessionEndingStatuses.contains(code)) {
         await _expire();
+      } else {
+        _lastRefreshError = e;
       }
       return null;
     } catch (_) {

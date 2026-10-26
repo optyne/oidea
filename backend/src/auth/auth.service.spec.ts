@@ -21,6 +21,7 @@ describe('AuthService — characterization (register / login)', () => {
   let users: Record<string, jest.Mock>;
   let audit: { record: jest.Mock };
   let jwt: JwtService;
+  let refreshTokens: { issueNewFamily: jest.Mock };
 
   const USER = {
     id: 'u-1',
@@ -39,6 +40,7 @@ describe('AuthService — characterization (register / login)', () => {
     };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
     jwt = new JwtService({ secret: 'test-secret', signOptions: { expiresIn: '15m' } });
+    refreshTokens = { issueNewFamily: jest.fn().mockResolvedValue('opaque-refresh-token') };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -48,10 +50,7 @@ describe('AuthService — characterization (register / login)', () => {
         { provide: ConfigService, useValue: { get: (_k: string, d?: unknown) => d } },
         { provide: AuditService, useValue: audit },
         // H0：refresh token 改成不透明字串（由 RefreshTokenService 發），這裡只固定「是字串」
-        {
-          provide: RefreshTokenService,
-          useValue: { issueNewFamily: jest.fn().mockResolvedValue('opaque-refresh-token') },
-        },
+        { provide: RefreshTokenService, useValue: refreshTokens },
       ],
     }).compile();
     service = module.get(AuthService);
@@ -126,6 +125,28 @@ describe('AuthService — characterization (register / login)', () => {
         }),
       );
     });
+
+    it.each([
+      ['disabled', { disabledAt: new Date('2026-10-01') }],
+      ['deleted', { deletedAt: new Date('2026-10-01') }],
+    ])(
+      'S5：密碼正確但帳號 %s → 401（訊息同密碼錯誤）、寫 auth.login_failed、不發 refresh token',
+      async (reason, flags) => {
+        users.findByEmail.mockResolvedValue({ ...USER, ...flags });
+        const err = await service.login({ email: USER.email, password: 'correct-horse' }).catch((e) => e);
+        expect(err).toBeInstanceOf(UnauthorizedException);
+        expect(err.message).toBe('信箱或密碼錯誤');
+        expect(audit.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            actorId: USER.id,
+            action: 'auth.login_failed',
+            metadata: { email: USER.email, reason },
+          }),
+        );
+        expect(audit.record).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'auth.login' }));
+        expect(refreshTokens.issueNewFamily).not.toHaveBeenCalled();
+      },
+    );
 
     it('成功 → 寫 auth.login，回 {accessToken, refreshToken, user:{id,email}}', async () => {
       users.findByEmail.mockResolvedValue(USER);

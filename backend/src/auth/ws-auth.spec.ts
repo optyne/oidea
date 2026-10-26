@@ -19,6 +19,7 @@ class FakeSocket {
   rooms = new Set<string>();
   emitted: Array<[string, unknown]> = [];
   disconnected = false;
+  connected = true;
   private listeners: Record<string, Array<() => void>> = {};
 
   constructor(public handshake: { auth?: Record<string, unknown> }) {}
@@ -34,6 +35,7 @@ class FakeSocket {
   disconnect = jest.fn((_close?: boolean) => {
     if (this.disconnected) return this;
     this.disconnected = true;
+    this.connected = false;
     (this.listeners.disconnect ?? []).forEach((fn) => fn());
     return this;
   });
@@ -151,6 +153,7 @@ describe.each(gateways)('$name gateway：握手驗身分（H0）', ({ build }) =
   it('access token 到期時後端主動斷線（假時鐘）', async () => {
     const s = new FakeSocket({ auth: { token: access({ exp: nowSec + 60 }) } });
     expect(await runMiddleware(mw, s)).toBeUndefined();
+    await gateway.handleConnection(s);
 
     jest.advanceTimersByTime(59_000);
     expect(s.disconnect).not.toHaveBeenCalled();
@@ -164,6 +167,8 @@ describe.each(gateways)('$name gateway：握手驗身分（H0）', ({ build }) =
   it('客戶端先斷線 → 計時器取消，不會再斷一次', async () => {
     const s = new FakeSocket({ auth: { token: access({ exp: nowSec + 60 }) } });
     await runMiddleware(mw, s);
+    await gateway.handleConnection(s);
+    expect(registry.count('u-1')).toBe(1);
     s.disconnect();
     expect(registry.count('u-1')).toBe(0);
     jest.advanceTimersByTime(120_000);
@@ -175,13 +180,45 @@ describe.each(gateways)('$name gateway：握手驗身分（H0）', ({ build }) =
     const a1 = new FakeSocket({ auth: { token: access() } });
     const a2 = new FakeSocket({ auth: { token: access() } });
     const b = new FakeSocket({ auth: { token: access({ sub: 'u-2', email: 'bob@example.com' }) } });
-    for (const s of [a1, a2, b]) expect(await runMiddleware(mw, s)).toBeUndefined();
+    for (const s of [a1, a2, b]) {
+      expect(await runMiddleware(mw, s)).toBeUndefined();
+      await gateway.handleConnection(s);
+    }
 
     expect(registry.disconnectUser('u-1')).toBe(2);
     expect(a1.disconnect).toHaveBeenCalledWith(true);
     expect(a2.disconnect).toHaveBeenCalledWith(true);
     expect(b.disconnect).not.toHaveBeenCalled();
     expect(registry.count('u-2')).toBe(1);
+  });
+
+  it('S2：通過驗證但連線沒建立（握手途中斷線）→ 不登記、不留計時器', async () => {
+    const s = new FakeSocket({ auth: { token: access({ exp: nowSec + 60 }) } });
+    expect(await runMiddleware(mw, s)).toBeUndefined();
+    // socket.io 此時只呼叫 _cleanup()：既不 emit connection，也不 emit disconnect。
+    expect(registry.count('u-1')).toBe(0);
+    expect(jest.getTimerCount()).toBe(0);
+    jest.advanceTimersByTime(120_000);
+    expect(s.emitted).toEqual([]);
+    expect(s.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('S2：handleConnection 跑到時 socket 已斷線 → 不登記、不留計時器', async () => {
+    const s = new FakeSocket({ auth: { token: access({ exp: nowSec + 60 }) } });
+    expect(await runMiddleware(mw, s)).toBeUndefined();
+    s.disconnect();
+    await gateway.handleConnection(s);
+    expect(registry.count('u-1')).toBe(0);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('S2：handleConnection 重複呼叫只登記一次', async () => {
+    const s = new FakeSocket({ auth: { token: access() } });
+    expect(await runMiddleware(mw, s)).toBeUndefined();
+    await gateway.handleConnection(s);
+    await gateway.handleConnection(s);
+    expect(registry.count('u-1')).toBe(1);
+    expect(jest.getTimerCount()).toBe(1);
   });
 });
 

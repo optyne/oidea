@@ -66,6 +66,17 @@ export class AuthService {
       throw new UnauthorizedException('信箱或密碼錯誤');
     }
 
+    // 停用或已刪除的帳號：回跟密碼錯誤一樣的訊息（不透露帳號狀態），不發 refresh token。
+    if (user.disabledAt || user.deletedAt) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: user.deletedAt ? 'deleted' : 'disabled' },
+        req,
+      });
+      throw new UnauthorizedException('信箱或密碼錯誤');
+    }
+
     await this.audit.record({
       actorId: user.id,
       action: 'auth.login',

@@ -12,7 +12,12 @@ function buildWorkspacePrisma(
   ownerId = 'u-owner',
   users: Record<string, any> = {},
 ) {
-  const state = { members: { ...members }, ownerId };
+  const state = {
+    members: { ...members },
+    ownerId,
+    /** Per-user flags for `user.findUnique` (default: active human user). */
+    userFlags: {} as Record<string, { disabledAt?: Date; deletedAt?: Date; bot?: boolean; missing?: boolean }>,
+  };
   const memberRow = (userId: string) =>
     state.members[userId] ? { workspaceId: 'ws-1', userId, role: state.members[userId] } : null;
   const prisma: any = {
@@ -60,6 +65,16 @@ function buildWorkspacePrisma(
       }),
     },
     user: {
+      findUnique: jest.fn(async ({ where }: any) => {
+        const f = state.userFlags[where.id] ?? {};
+        if (f.missing) return null;
+        return {
+          id: where.id,
+          disabledAt: f.disabledAt ?? null,
+          deletedAt: f.deletedAt ?? null,
+          botAccount: f.bot ? { id: `bot-${where.id}` } : null,
+        };
+      }),
       findFirst: jest.fn(async ({ where }: any) => {
         const id = where.OR?.map((c: any) => c.email ?? c.username).find((k: string) => users[k]);
         return id ? users[id] : null;
@@ -335,5 +350,44 @@ describe('WorkspacesService — H0 roles & owner rules', () => {
       );
       expect(prisma.state.ownerId).toBe('u-owner');
     });
+
+    it('a co-owner cannot transfer, so cannot strip and then remove the main owner (S1)', async () => {
+      prisma.state.members['u-co'] = 'owner';
+      await expect(service.transferOwnership('u-co', 'ws-1', 'u-member')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.state.ownerId).toBe('u-owner');
+      expect(prisma.state.members['u-member']).toBe('member');
+      expect(prisma.state.members['u-co']).toBe('owner');
+      // The second step of the attack therefore still hits the main-owner guard.
+      await expect(service.removeMember('u-co', 'ws-1', 'u-owner')).rejects.toThrow(/先移交/);
+      expect(prisma.state.members['u-owner']).toBe('owner');
+    });
+
+    it.each([
+      ['a bot account', { bot: true }],
+      ['a disabled user', { disabledAt: new Date('2026-10-01') }],
+      ['a deleted user', { deletedAt: new Date('2026-10-01') }],
+      ['a user row that no longer exists', { missing: true }],
+    ])('target cannot be %s → 400, nothing changes (S1)', async (_label, flags) => {
+      prisma.state.userFlags['u-member'] = flags;
+      await expect(service.transferOwnership('u-owner', 'ws-1', 'u-member')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.state.ownerId).toBe('u-owner');
+      expect(prisma.state.members['u-member']).toBe('member');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it.each([[undefined], [null], [''], ['   '], [123], [{ id: 'u-member' }], [['u-member']]])(
+      'body.userId %p that is not a non-empty string → 400 before any DB write (N6)',
+      async (bad) => {
+        await expect(service.transferOwnership('u-owner', 'ws-1', bad as any)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(prisma.workspaceMember.findUnique).toHaveBeenCalledTimes(1); // only the caller's permission check
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      },
+    );
   });
 });

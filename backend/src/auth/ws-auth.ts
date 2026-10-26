@@ -25,6 +25,8 @@ export interface AuthSocket {
   id: string;
   handshake: { auth?: Record<string, unknown> };
   data: Record<string, any>;
+  /** socket.io 的 `socket.connected`；握手完成後才是 true，斷線後變 false。 */
+  connected?: boolean;
   emit(event: string, ...args: unknown[]): unknown;
   disconnect(close?: boolean): unknown;
   on(event: 'disconnect', listener: (...args: unknown[]) => void): unknown;
@@ -48,8 +50,11 @@ export interface VerifiedAccessToken extends AuthenticatedUser {
  * - 只讀 `handshake.auth.token`（access token，可帶或不帶 `Bearer ` 前綴）；
  *   客戶端自報的 userId 欄位一律不看，身分只來自驗證過的 token。
  * - 驗簽、驗 exp（用注入的時鐘）、只接受 `typ: "access"`、檢查使用者是否停用。
- * - 成功後 `socket.data.userId` / `socket.data.email` / `socket.data.tokenExp` 有值，
- *   並登記到 SocketRegistry（H2 離職時斷線用）。
+ * - middleware 只驗 token，成功後 `socket.data.userId` / `socket.data.email` / `socket.data.tokenExp` 有值。
+ * - 登記到 SocketRegistry（H2 離職時斷線用）與排到期計時器，要等 gateway 的 handleConnection
+ *   呼叫 `onConnected()` 才做，因為 handleConnection 只在握手真的完成後才跑。若在 middleware 裡做，
+ *   客戶端在非同步驗證途中斷線時，socket.io 只 `_cleanup()`、不 emit `disconnect`，
+ *   registry 項目與計時器就永遠留著。
  * - token 到期時先 emit `auth_expired` 再斷線。伺服器主動斷線時 socket.io 客戶端**不會**自動重連，
  *   客戶端要先 refresh 拿新的 access token，再自行 `connect()`。
  */
@@ -103,20 +108,39 @@ export class WsAuthService {
     return { userId: payload.sub, email: payload.email, exp: payload.exp };
   }
 
+  /** middleware 用：只驗 token 並把結果放到 `socket.data`，不登記、不排計時器。 */
   async authenticateSocket(socket: AuthSocket): Promise<VerifiedAccessToken> {
     const verified = await this.verifyAccessToken(socket.handshake?.auth?.token);
 
     socket.data.userId = verified.userId;
     socket.data.email = verified.email;
     socket.data.tokenExp = verified.exp;
+    return verified;
+  }
 
-    this.registry.add(verified.userId, socket);
-    const cancel = this.scheduleExpiry(socket, verified.exp);
+  /**
+   * gateway 的 handleConnection 呼叫：連線真的建立後才登記到 SocketRegistry 並排到期斷線。
+   * 沒通過 middleware 的 socket（沒有 `data.userId`）直接斷線；已經斷掉的 socket 不登記。
+   * 回傳是否已登記。
+   */
+  onConnected(socket: AuthSocket): boolean {
+    const userId = socket.data?.userId;
+    const exp = socket.data?.tokenExp;
+    if (typeof userId !== 'string' || !userId || typeof exp !== 'number') {
+      socket.disconnect(true);
+      return false;
+    }
+    if (socket.connected === false) return false;
+    if (socket.data.wsAuthRegistered) return true;
+    socket.data.wsAuthRegistered = true;
+
+    this.registry.add(userId, socket);
+    const cancel = this.scheduleExpiry(socket, exp);
     socket.on('disconnect', () => {
       cancel();
-      this.registry.remove(verified.userId, socket);
+      this.registry.remove(userId, socket);
     });
-    return verified;
+    return true;
   }
 
   /** token 到期時斷線；回傳取消函式。 */

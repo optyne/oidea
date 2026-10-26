@@ -66,6 +66,31 @@ export class FilesService {
     return file;
   }
 
+  /**
+   * 上傳時指定的 task／message 必須屬於同一個工作空間（task 經 project、message 經 channel），
+   * 否則 403；不存在也回 403（不透露別的工作空間有什麼）。
+   */
+  private async assertAttachTargetsInWorkspace(workspaceId: string, messageId?: string, taskId?: string) {
+    if (taskId) {
+      const task = await this.prisma.task.findUnique({
+        where: { id: taskId },
+        select: { project: { select: { workspaceId: true } } },
+      });
+      if (task?.project?.workspaceId !== workspaceId) {
+        throw new ForbiddenException('任務不屬於此工作空間');
+      }
+    }
+    if (messageId) {
+      const message = await this.prisma.message.findUnique({
+        where: { id: messageId },
+        select: { channel: { select: { workspaceId: true } } },
+      });
+      if (message?.channel?.workspaceId !== workspaceId) {
+        throw new ForbiddenException('訊息不屬於此工作空間');
+      }
+    }
+  }
+
   private assertMinioReady() {
     if (!this.minioReady) {
       throw new ServiceUnavailableException(
@@ -83,6 +108,7 @@ export class FilesService {
     folderPath?: string,
   ) {
     await this.assertMember(userId, workspaceId);
+    await this.assertAttachTargetsInWorkspace(workspaceId, messageId, taskId);
     this.assertMinioReady();
     const key = `${workspaceId}/${Date.now()}-${file.originalname}`;
     await this.minioClient.putObject(this.bucket, key, file.buffer, file.size, {

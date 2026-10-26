@@ -35,10 +35,15 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   late void Function(dynamic) _newMessageListener;
+  late void Function(dynamic) _reconnectListener;
+
+  /// Captured here: `ref` can no longer be used inside [dispose].
+  late final SocketService _socket;
 
   @override
   void initState() {
     super.initState();
+    _socket = ref.read(socketProvider);
     _newMessageListener = (dynamic data) {
       if (!mounted) return;
       Map<String, dynamic>? m;
@@ -53,14 +58,21 @@ class _ThreadPanelState extends ConsumerState<ThreadPanel> {
         ref.invalidate(threadProvider(widget.parentId));
       }
     };
+    // Replies broadcast while the socket was down are not replayed: reload.
+    _reconnectListener = (_) {
+      if (!mounted) return;
+      ref.invalidate(threadProvider(widget.parentId));
+    };
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(socketProvider).addListener('newMessage', _newMessageListener);
+      _socket.addListener('newMessage', _newMessageListener);
+      _socket.addListener(SocketService.chatConnectedEvent, _reconnectListener);
     });
   }
 
   @override
   void dispose() {
-    ref.read(socketProvider).removeListener('newMessage', _newMessageListener);
+    _socket.removeListener('newMessage', _newMessageListener);
+    _socket.removeListener(SocketService.chatConnectedEvent, _reconnectListener);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();

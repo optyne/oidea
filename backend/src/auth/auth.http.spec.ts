@@ -201,6 +201,18 @@ describe('Auth over HTTP（H0 驗收）', () => {
       expect((await probe(`Bearer ${accessToken}`)).status).toBe(200);
     });
 
+    it('S5：已停用的帳號用正確密碼登入 → 401、不建立 refresh token row', async () => {
+      prisma.users.get('u-1')!.disabledAt = new Date();
+      const res = await post('/auth/login', { email: 'alice@example.com', password: 'pw' });
+      expect(res.status).toBe(401);
+      const wrong = await post('/auth/login', { email: 'alice@example.com', password: 'nope' });
+      expect((await res.json()).message).toBe((await wrong.json()).message);
+      expect(prisma.refreshRows).toHaveLength(0);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.login_failed', metadata: expect.objectContaining({ reason: 'disabled' }) }),
+      );
+    });
+
     it('停用後 refresh 也 401', async () => {
       const { refreshToken } = await login();
       prisma.users.get('u-1')!.disabledAt = new Date();

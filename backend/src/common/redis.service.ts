@@ -35,6 +35,12 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  /** `SET key value EX ttl NX`：key 不存在才寫入。回傳是否寫入。 */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    const res = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+    return res === 'OK';
+  }
+
   async get(key: string): Promise<string | null> {
     return this.client.get(key);
   }

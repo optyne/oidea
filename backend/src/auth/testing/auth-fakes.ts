@@ -99,6 +99,18 @@ export class FakePrisma {
       }
       return out;
     }),
+    /** 只支援 rotate 用到的 `{ familyId, revokedAt: { not: null } }` 與一般等值條件。 */
+    count: jest.fn(async ({ where }: any) => {
+      const { revokedAt, ...rest } = where ?? {};
+      return this.refreshRows.filter((r) => {
+        if (!matches(r, rest)) return false;
+        if (revokedAt === undefined) return true;
+        if (revokedAt && typeof revokedAt === 'object' && 'not' in revokedAt && revokedAt.not === null) {
+          return r.revokedAt != null;
+        }
+        return matches(r, { revokedAt });
+      }).length;
+    }),
     updateMany: jest.fn(async ({ where, data }: any) => {
       let count = 0;
       for (const r of this.refreshRows) {
@@ -138,6 +150,14 @@ export class FakeRedis {
   set = jest.fn((key: string, value: string, _ttl?: number) =>
     this.gate(() => {
       this.store.set(key, value);
+    }),
+  );
+  /** 跟真的 `SET … NX` 一樣：key 已存在就不寫，回傳是否寫入。 */
+  setNx = jest.fn((key: string, value: string, _ttl: number) =>
+    this.gate(() => {
+      if (this.store.has(key)) return false;
+      this.store.set(key, value);
+      return true;
     }),
   );
   del = jest.fn((key: string) =>
