@@ -10,7 +10,7 @@ export interface FakeUser {
   email: string;
   username: string;
   displayName: string;
-  passwordHash: string;
+  passwordHash: string | null;
   disabledAt: Date | null;
   deletedAt: Date | null;
 }

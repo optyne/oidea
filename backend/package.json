@@ -17,6 +17,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
+    "employees:import": "node dist/cli/employees-import.js",
+    "company:init": "node dist/cli/company-init.js",
+    "auth:set-break-glass-password": "node dist/cli/set-break-glass-password.js",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
   },

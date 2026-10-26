@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -11,16 +11,26 @@ import { Public } from './decorators/public.decorator';
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  /** 登入頁用：哪些登入方式可用。只有布林值，不含任何設定值。 */
+  @Get('config')
+  @Public()
+  @ApiOperation({ summary: '登入方式設定 { sso, passwordLogin }（公開）' })
+  config() {
+    return this.authService.publicConfig();
+  }
+
   @Post('register')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  @ApiOperation({ summary: '使用者註冊（每分鐘上限 10 次）' })
+  @ApiOperation({ summary: '使用者註冊（每分鐘上限 10 次；帳密登入關閉時 404）' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
-  @ApiOperation({ summary: '使用者登入（每分鐘上限 5 次／IP，防暴力破解）' })
+  @ApiOperation({
+    summary: '使用者登入（每分鐘上限 5 次／IP，防暴力破解；帳密登入關閉時只有緊急登入名單上的公司 owner 可用，其他 404）',
+  })
   async login(@Body() dto: LoginDto, @Req() req: any) {
     return this.authService.login(dto, { ip: req.ip, headers: req.headers });
   }

@@ -7,6 +7,8 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../audit/audit.service';
 import { RefreshTokenService } from './refresh-token.service';
+import { AuthConfig } from '../common/auth-config';
+import { CompanyService } from '../company/company.service';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn(async (pw: string) => `hashed:${pw}`),
@@ -51,6 +53,9 @@ describe('AuthService — characterization (register / login)', () => {
         { provide: AuditService, useValue: audit },
         // H0：refresh token 改成不透明字串（由 RefreshTokenService 發），這裡只固定「是字串」
         { provide: RefreshTokenService, useValue: refreshTokens },
+        // H1：帳密登入開關（ConfigService 沒設 → 非 production 預設開啟）；緊急登入另有 password-login-gate.spec
+        AuthConfig,
+        { provide: CompanyService, useValue: {} },
       ],
     }).compile();
     service = module.get(AuthService);

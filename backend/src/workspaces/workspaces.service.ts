@@ -8,6 +8,7 @@ import { PrismaService } from '../common/prisma.service';
 import { PERMISSIONS, WORKSPACE_ROLES, hasPermission } from '../common/permissions';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
+import { CompanyService } from '../company/company.service';
 
 /**
  * 成員管理的 owner 規則（spec §4.4）：
@@ -17,7 +18,10 @@ import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
  */
 @Injectable()
 export class WorkspacesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private company: CompanyService,
+  ) {}
 
   async create(userId: string, dto: CreateWorkspaceDto) {
     return this.prisma.workspace.create({
@@ -91,6 +95,8 @@ export class WorkspacesService {
 
   async delete(userId: string, id: string) {
     await this.checkPermission(userId, id, PERMISSIONS.WORKSPACE_DELETE);
+    // 公司工作空間不能刪除（spec §4.1）：員工主檔、部門、假別都綁在它身上
+    await this.company.assertNotCompanyWorkspace(id, '公司工作空間不能刪除');
     return this.prisma.workspace.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -99,6 +105,8 @@ export class WorkspacesService {
 
   async inviteMember(userId: string, workspaceId: string, targetUserId: string, role: string = 'member') {
     const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_MANAGE);
+    // 公司工作空間的成員只由員工生命週期決定（spec §4.3「邀請」）
+    await this.company.assertNotCompanyWorkspace(workspaceId);
     this.assertAssignableRole(actorRole, role);
 
     const existing = await this.prisma.workspaceMember.findUnique({
@@ -122,6 +130,7 @@ export class WorkspacesService {
     role: string = 'member',
   ) {
     const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_MANAGE);
+    await this.company.assertNotCompanyWorkspace(workspaceId);
     this.assertAssignableRole(actorRole, role);
 
     const target = await this.prisma.user.findFirst({

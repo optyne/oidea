@@ -10,6 +10,7 @@ import {
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { FakeClock } from '../common/clock';
 import { FakePrisma } from './testing/auth-fakes';
+import { AuthConfig } from '../common/auth-config';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn(async (pw: string) => `hashed:${pw}`),
@@ -46,7 +47,8 @@ describe('RefreshTokenService + AuthService.refresh/logout（H0 token 改造）'
       ),
       findById: jest.fn(async (id: string) => prisma.users.get(id) ?? null),
     };
-    auth = new AuthService(users as any, jwt, audit as any, refresh);
+    // H1：AuthConfig（帳密登入開關）沒設 → 非 production 預設開啟；CompanyService 只在緊急登入用到
+    auth = new AuthService(users as any, jwt, audit as any, refresh, new AuthConfig(config()), {} as any);
     strategy = new JwtStrategy(config(), { isDisabled: async () => false } as any);
   });
 

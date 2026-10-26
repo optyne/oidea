@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 import { PrismaService } from '../common/prisma.service';
+import { CompanyService } from '../company/company.service';
 
 /**
  * In-memory fake of the Prisma calls WorkspacesService makes, so tests read like
@@ -92,7 +93,7 @@ describe('WorkspacesService — characterization (happy paths)', () => {
   const build = async (members: Record<string, string>, users: Record<string, any> = {}) => {
     prisma = buildWorkspacePrisma(members, 'u-owner', users);
     const module: TestingModule = await Test.createTestingModule({
-      providers: [WorkspacesService, { provide: PrismaService, useValue: prisma }],
+      providers: [WorkspacesService, CompanyService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = module.get(WorkspacesService);
   };
@@ -178,7 +179,7 @@ describe('WorkspacesService — H0 roles & owner rules', () => {
   const build = async (members: Record<string, string>, ownerId = 'u-owner') => {
     prisma = buildWorkspacePrisma(members, ownerId);
     const module: TestingModule = await Test.createTestingModule({
-      providers: [WorkspacesService, { provide: PrismaService, useValue: prisma }],
+      providers: [WorkspacesService, CompanyService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = module.get(WorkspacesService);
   };

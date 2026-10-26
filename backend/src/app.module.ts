@@ -31,6 +31,8 @@ import { BotsModule } from './bots/bots.module';
 import { SearchModule } from './search/search.module';
 import { SpreadsheetsModule } from './spreadsheets/spreadsheets.module';
 import { AiModule } from './ai/ai.module';
+import { CompanyModule } from './company/company.module';
+import { EmployeesModule } from './employees/employees.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { AiModule } from './ai/ai.module';
     PrismaModule,
     RedisModule,
     AuditModule,
+    CompanyModule,
+    EmployeesModule,
     HealthModule,
     AuthModule,
     UsersModule,
