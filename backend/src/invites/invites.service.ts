@@ -7,6 +7,7 @@ import {
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CompanyService } from '../company/company.service';
 
 const VALID_ROLES = ['admin', 'hr', 'finance', 'member'] as const;
 const DEFAULT_EXPIRY_DAYS = 7;
@@ -16,6 +17,7 @@ export class InvitesService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private company: CompanyService,
   ) {}
 
   // ─────────────────── 管理端：建 / 列 / 撤 ───────────────────
@@ -26,6 +28,8 @@ export class InvitesService {
     opts: { email?: string; role?: string; expiresInDays?: number },
   ) {
     await this.assertAdmin(actorId, workspaceId);
+    // 公司工作空間的成員只由員工生命週期決定（spec §4.3「邀請」）
+    await this.company.assertNotCompanyWorkspace(workspaceId);
 
     const role = opts.role ?? 'member';
     if (!VALID_ROLES.includes(role as any)) {
@@ -138,6 +142,8 @@ export class InvitesService {
   async accept(userId: string, token: string) {
     const invite = await this.prisma.workspaceInvite.findUnique({ where: { token } });
     if (!invite) throw new NotFoundException('邀請連結不存在或已失效');
+    // 工作空間在 company:init 之前發出的邀請，之後也不能用來加入公司工作空間
+    await this.company.assertNotCompanyWorkspace(invite.workspaceId);
 
     // 已是成員：以條件式 update 消費 invite（不改 role；若別人搶先消費此 invite 就直接結束）
     const existing = await this.prisma.workspaceMember.findUnique({

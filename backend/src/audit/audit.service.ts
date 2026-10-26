@@ -16,7 +16,13 @@ export type AuditAction =
   | 'workspace.role_change'
   | 'workspace.member_remove'
   | 'owner.transfer'
-  | 'auth.refresh_reuse';
+  | 'auth.refresh_reuse'
+  // H1
+  | 'auth.break_glass'
+  | 'auth.break_glass_password_set'
+  | 'auth.sso_denied'
+  | 'employee.import'
+  | 'company.init';
 
 export interface AuditRequestContext {
   ip?: string | string[];

@@ -89,6 +89,17 @@ JWT_REFRESH_EXPIRATION=7d
 PORT=3001
 CORS_ORIGIN=https://app.oidea.example.com,https://admin.oidea.example.com
 NODE_ENV=production
+# 登入方式（H1）
+AUTH_PASSWORD_LOGIN_ENABLED=false
+BREAK_GLASS_OWNER_EMAILS=
+COMPANY_TIMEZONE=Asia/Taipei
+# 公司帳號單一登入（Authentik OIDC；OIDC 流程使用）
+OIDC_ISSUER=https://<authentik>/application/o/oidea/
+OIDC_CLIENT_ID=<Authentik provider 的 client id>
+OIDC_CLIENT_SECRET=<Authentik provider 的 client secret>
+OIDC_REDIRECT_URI=https://api.oidea.example.com/api/auth/oidc/callback
+APP_WEB_CALLBACK_URL=https://app.oidea.example.com/auth/callback
+APP_MOBILE_CALLBACK_URL=oidea://auth
 ```
 
 要點：
@@ -97,6 +108,36 @@ NODE_ENV=production
 - `JWT_EXPIRATION` 是 access token 的有效期（建議 15m）；`JWT_REFRESH_EXPIRATION` 是 refresh token 的有效期（不透明字串、存在 `refresh_tokens` 資料表，每次 refresh 換發並重新起算；格式 `7d`／`12h`／`30m`／秒數）
 - **H0 上線注意**：H0 改了 token 格式（access token 要有 `typ: "access"`，refresh token 改成不透明字串），上線後舊的 access／refresh token 全部失效，**所有人都要重新登入一次**。WebSocket 也改成要在握手帶 access token（`auth.token`），舊版 App 連不上即時訊息與白板，前後端要一起上線。
 - `CORS_ORIGIN` 是逗號分隔的白名單，讓你的 Flutter Web / 其他前端可以打 API
+
+### 登入方式、公司工作空間與緊急登入（H1）
+
+- `AUTH_PASSWORD_LOGIN_ENABLED`：帳密登入／註冊開關。**不設時 `NODE_ENV=production` 為 false**，其他環境為 true。關閉時 `POST /api/auth/register`、`POST /api/auth/login` 回 404（下面的緊急登入例外）。接受 `true/false/1/0/yes/no/on/off`，無法辨識的值當 false。
+- `OIDC_ISSUER`、`OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`、`OIDC_REDIRECT_URI`、`APP_WEB_CALLBACK_URL`、`APP_MOBILE_CALLBACK_URL`：Authentik 單一登入（OIDC 流程使用）。`OIDC_CLIENT_SECRET` 只放後端。`OIDC_ISSUER` 有值時 `GET /api/auth/config` 回 `sso: true`。
+- `GET /api/auth/config`（公開）回 `{ "sso": <OIDC_ISSUER 有設>, "passwordLogin": <AUTH_PASSWORD_LOGIN_ENABLED> }`，Flutter 登入頁用它決定要顯示哪些按鈕。不含任何設定值。
+- `COMPANY_TIMEZONE`：判斷「哪一天」用的時區，預設 `Asia/Taipei`（H4 起使用）。
+
+**第一次上線：指定公司工作空間**（在後端容器的 Terminal 執行；映像裡已經 build 好）：
+
+```bash
+npm run company:init -- --workspace <既有工作空間 id> --owner-email <owner 公司信箱> --employee-no <編號> --full-name <姓名> --hire-date <YYYY-MM-DD>
+npm run company:init -- --create <名稱> --owner-email <owner 公司信箱> --executor-email <暫時擔任 owner 的既有帳號> --employee-no <編號> --full-name <姓名> --hire-date <YYYY-MM-DD>
+```
+
+- 全庫只能有一個公司工作空間；已有別的就拒絕，對同一個重跑是冪等的。
+- owner 已有帳號（email 不分大小寫）時，`ownerId` 直接指向他。還沒有帳號時記成「待移交」（`workspaces.pendingOwnerEmail`），他第一次 SSO 登入時自動成為 owner；用 `--create` 時要用 `--executor-email` 指定一位既有帳號暫時擔任 owner。
+- 匯入員工主檔：`npm run employees:import -- /path/員工.csv`（UTF-8，第一行檔頭 `employeeNo,email,fullName,hireDate,departmentName,jobTitle`；後兩欄可省略）。有任何一列失敗時 exit code 非 0，會逐列印出行號與原因。
+- 本機開發要先 `npm run build`，這三個指令跑的是 `dist/cli/*.js`。
+- 公司工作空間不能刪除，也不能發邀請或手動加人（403）；成員由 SSO 登入（加入）與離職（移出）決定。
+
+**緊急登入（break-glass）**：Authentik 或 Mailcow 掛掉、沒人能登入時使用。
+
+1. 平時先替公司 owner 設好緊急密碼（至少 12 字元，從 stdin 讀，不會顯示也不會寫進 log）：
+   ```bash
+   npm run auth:set-break-glass-password -- owner@example.com
+   ```
+   只有公司工作空間的 owner 能設定。注意：帳號第一次 SSO 綁定時會清掉舊密碼，所以要在 owner 第一次 SSO 登入**之後**再設。
+2. 緊急時在 Dokploy 設 `BREAK_GLASS_OWNER_EMAILS=owner@example.com`（逗號分隔）並重新部署。這段期間只有名單上、且是公司工作空間 owner 的帳號能用帳密登入，其他人仍回 404；每次登入寫 audit `auth.break_glass`。
+3. 有設這個變數時，啟動與每天 09:00（`COMPANY_TIMEZONE`）都會在 log 印 warning。**緊急狀況解除後把變數拿掉並重新部署。**
 
 ### 反向代理與 `TRUST_PROXY`
 

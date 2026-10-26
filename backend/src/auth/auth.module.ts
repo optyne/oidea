@@ -11,6 +11,8 @@ import { UserStatusService } from './user-status.service';
 import { WsAuthService } from './ws-auth';
 import { SocketRegistry } from './socket-registry';
 import { Clock, SystemClock } from '../common/clock';
+import { AuthConfig } from '../common/auth-config';
+import { BreakGlassReminder } from './break-glass-reminder';
 
 /**
  * 設為 Global：JwtAuthGuard（在各 module 的 controller 上 @UseGuards）需要 UserStatusService，
@@ -41,8 +43,18 @@ import { Clock, SystemClock } from '../common/clock';
     UserStatusService,
     WsAuthService,
     SocketRegistry,
+    AuthConfig,
+    BreakGlassReminder,
     { provide: Clock, useClass: SystemClock },
   ],
-  exports: [AuthService, RefreshTokenService, UserStatusService, WsAuthService, SocketRegistry, Clock],
+  exports: [
+    AuthService,
+    RefreshTokenService,
+    UserStatusService,
+    WsAuthService,
+    SocketRegistry,
+    AuthConfig,
+    Clock,
+  ],
 })
 export class AuthModule {}

@@ -15,6 +15,8 @@ import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { Clock, FakeClock } from '../common/clock';
 import { FakePrisma, FakeRedis } from './testing/auth-fakes';
+import { AuthConfig } from '../common/auth-config';
+import { CompanyService } from '../company/company.service';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn(async (pw: string) => `hashed:${pw}`),
@@ -87,6 +89,8 @@ describe('Auth over HTTP（H0 驗收）', () => {
         { provide: RedisService, useValue: redis },
         { provide: UsersService, useValue: users },
         { provide: AuditService, useValue: audit },
+        AuthConfig,
+        { provide: CompanyService, useValue: {} },
       ],
     }).compile();
 
