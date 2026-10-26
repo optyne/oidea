@@ -86,16 +86,12 @@ export class ExpensesService {
       throw new ForbiddenException(`無法審核：目前狀態為 ${expense.status}`);
     }
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.expense.update({
-        where: { id },
-        data: { status: 'approved' },
-        include: this.senderInclude(),
-      }),
-      this.prisma.expenseApproval.create({
-        data: { expenseId: id, approverId: userId, decision: 'approved', comment },
-      }),
-    ]);
+    const updated = await this.decide(id, 'pending', { status: 'approved' }, {
+      expenseId: id,
+      approverId: userId,
+      decision: 'approved',
+      comment,
+    });
 
     await this.notifications.create({
       userId: expense.submitterId,
@@ -122,16 +118,12 @@ export class ExpensesService {
       throw new ForbiddenException(`無法拒絕：目前狀態為 ${expense.status}`);
     }
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.expense.update({
-        where: { id },
-        data: { status: 'rejected', rejectReason: reason },
-        include: this.senderInclude(),
-      }),
-      this.prisma.expenseApproval.create({
-        data: { expenseId: id, approverId: userId, decision: 'rejected', comment: reason },
-      }),
-    ]);
+    const updated = await this.decide(id, 'pending', { status: 'rejected', rejectReason: reason }, {
+      expenseId: id,
+      approverId: userId,
+      decision: 'rejected',
+      comment: reason,
+    });
 
     await this.notifications.create({
       userId: expense.submitterId,
@@ -155,10 +147,10 @@ export class ExpensesService {
       throw new ForbiddenException(`僅能為已核准的報銷單標記付款`);
     }
 
-    const updated = await this.prisma.expense.update({
-      where: { id },
-      data: { status: 'paid', paidAt: new Date(), paidBy: userId },
-      include: this.senderInclude(),
+    const updated = await this.decide(id, 'approved', {
+      status: 'paid',
+      paidAt: new Date(),
+      paidBy: userId,
     });
 
     await this.notifications.create({
@@ -181,9 +173,40 @@ export class ExpensesService {
       throw new ForbiddenException('僅能取消尚未審核的報銷單');
     }
 
-    return this.prisma.expense.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    // 條件式更新：避免取消與同時發生的審核互相覆蓋。
+    const deletedAt = new Date();
+    const { count } = await this.prisma.expense.updateMany({
+      where: { id, submitterId: userId, status: 'pending', deletedAt: null },
+      data: { deletedAt },
+    });
+    if (count === 0) {
+      throw new ForbiddenException('僅能取消尚未審核的報銷單');
+    }
+    return { ...expense, deletedAt };
+  }
+
+  /**
+   * 條件式狀態轉換：只有目前狀態仍為 `from` 時才更新，並在同一個 transaction 內寫審批紀錄。
+   * 兩個請求同時處理同一張報銷單時，只有一個會成功，另一個回 403。
+   */
+  private async decide(
+    id: string,
+    from: string,
+    data: Record<string, any>,
+    approval?: { expenseId: string; approverId: string; decision: string; comment?: string },
+  ) {
+    return this.prisma.$transaction(async (tx: any) => {
+      const { count } = await tx.expense.updateMany({
+        where: { id, status: from, deletedAt: null },
+        data,
+      });
+      if (count === 0) {
+        throw new ForbiddenException('無法處理：此報銷單已被其他人處理');
+      }
+      if (approval) {
+        await tx.expenseApproval.create({ data: approval });
+      }
+      return tx.expense.findUnique({ where: { id }, include: this.senderInclude() });
     });
   }
 

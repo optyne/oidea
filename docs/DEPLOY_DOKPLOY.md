@@ -96,6 +96,21 @@ NODE_ENV=production
 - `JWT_SECRET` **絕對要換**，不然任何人都能偽造 token
 - `CORS_ORIGIN` 是逗號分隔的白名單，讓你的 Flutter Web / 其他前端可以打 API
 
+### 反向代理與 `TRUST_PROXY`
+
+後端在 Traefik（可能再加 Cloudflare）後面時，若不設 `TRUST_PROXY`，`req.ip`（登入限流、審計日誌用）拿到的會是代理的 IP，不是客戶端 IP。
+
+- 不設（預設）：維持原本行為，不信任任何代理。
+- 數字：信任的代理跳數。只有 Traefik 通常是 `1`；Cloudflare → Traefik 可能是 `2`。**這只是猜測，不要直接照抄。**
+- 也接受 Express 的其他寫法（`loopback`、逗號分隔的子網段）。不要用 `true`，那會讓客戶端能偽造 `X-Forwarded-For`。
+
+**正確的值必須先在 staging 實測**：
+1. 先不設 `TRUST_PROXY` 部署到 staging，從一台已知對外 IP 的機器登入失敗一次（或打任何會寫 audit 的 API）。
+2. 查 audit log 的 `ipAddress`，跟那台機器的實際對外 IP（例如 `curl https://ifconfig.me`）比對。
+3. 設 `TRUST_PROXY=1` 重新部署再測一次；不對就試 `2`。取「剛好等於實際客戶端 IP」的最小值。
+4. 再用偽造標頭測一次（`curl -H 'X-Forwarded-For: 1.2.3.4' ...`），確認記到的仍是真實 IP，不是 `1.2.3.4`。
+5. 確認後才把同一個值設到正式環境。
+
 ### 網域 + HTTPS
 
 Application → **Domains** → **Add Domain**：

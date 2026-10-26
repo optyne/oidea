@@ -1,8 +1,20 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { PERMISSIONS, WORKSPACE_ROLES, hasPermission } from '../common/permissions';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 
+/**
+ * 成員管理的 owner 規則（spec §4.4）：
+ * - 只有 owner（`owner.transfer`）能指定或移交 owner，也只有 owner 能動另一位 owner。
+ * - `Workspace.ownerId` 指向的主 owner 不能被移除或降級，必須先移交。
+ * - 任何操作之後都至少保留一位 owner。
+ */
 @Injectable()
 export class WorkspacesService {
   constructor(private prisma: PrismaService) {}
@@ -66,7 +78,7 @@ export class WorkspacesService {
   }
 
   async update(userId: string, id: string, dto: UpdateWorkspaceDto) {
-    await this.checkPermission(userId, id, 'admin');
+    await this.checkPermission(userId, id, PERMISSIONS.WORKSPACE_MANAGE);
     return this.prisma.workspace.update({
       where: { id },
       data: {
@@ -78,7 +90,7 @@ export class WorkspacesService {
   }
 
   async delete(userId: string, id: string) {
-    await this.checkPermission(userId, id, 'owner');
+    await this.checkPermission(userId, id, PERMISSIONS.WORKSPACE_DELETE);
     return this.prisma.workspace.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -86,7 +98,8 @@ export class WorkspacesService {
   }
 
   async inviteMember(userId: string, workspaceId: string, targetUserId: string, role: string = 'member') {
-    await this.checkPermission(userId, workspaceId, 'admin');
+    const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_MANAGE);
+    this.assertAssignableRole(actorRole, role);
 
     const existing = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
@@ -108,7 +121,8 @@ export class WorkspacesService {
     identifier: string,
     role: string = 'member',
   ) {
-    await this.checkPermission(userId, workspaceId, 'admin');
+    const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_MANAGE);
+    this.assertAssignableRole(actorRole, role);
 
     const target = await this.prisma.user.findFirst({
       where: {
@@ -140,23 +154,32 @@ export class WorkspacesService {
   }
 
   async removeMember(userId: string, workspaceId: string, targetUserId: string) {
-    await this.checkPermission(userId, workspaceId, 'admin');
+    const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_MANAGE);
+    const target = await this.getMemberOrThrow(workspaceId, targetUserId);
+    if (target.role === 'owner') {
+      await this.assertOwnerMayLoseRole(actorRole, workspaceId, targetUserId, '移除');
+    }
     return this.prisma.workspaceMember.delete({
       where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
     });
   }
 
   async updateMemberRole(userId: string, workspaceId: string, targetUserId: string, role: string) {
-    await this.checkPermission(userId, workspaceId, 'admin');
+    const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_ROLE_MANAGE);
 
-    const validRoles = ['owner', 'admin', 'hr', 'finance', 'member'];
-    if (!validRoles.includes(role)) {
-      throw new ForbiddenException(`角色必須為 ${validRoles.join(' / ')}`);
+    if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+      throw new ForbiddenException(`角色必須為 ${WORKSPACE_ROLES.join(' / ')}`);
     }
 
     // 不可直接把自己降級為 member，避免誤操作鎖死管理權。
     if (userId === targetUserId && role === 'member') {
       throw new ForbiddenException('不可將自己降為 member，請改由其他管理員操作');
+    }
+
+    const target = await this.getMemberOrThrow(workspaceId, targetUserId);
+    this.assertAssignableRole(actorRole, role);
+    if (target.role === 'owner' && role !== 'owner') {
+      await this.assertOwnerMayLoseRole(actorRole, workspaceId, targetUserId, '降級');
     }
 
     return this.prisma.workspaceMember.update({
@@ -168,6 +191,46 @@ export class WorkspacesService {
         },
       },
     });
+  }
+
+  /**
+   * 移交主 owner：目標成為 owner 並寫入 `Workspace.ownerId`，原 owner 改為 admin。
+   * 只有 owner（`owner.transfer`）能做。
+   */
+  async transferOwnership(userId: string, workspaceId: string, targetUserId: string) {
+    await this.checkPermission(userId, workspaceId, PERMISSIONS.OWNER_TRANSFER);
+    if (!targetUserId) throw new BadRequestException('必須提供 userId');
+    if (targetUserId === userId) throw new BadRequestException('不可移交給自己');
+    const target = await this.getMemberOrThrow(workspaceId, targetUserId);
+
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, ownerId: true },
+    });
+    if (!workspace) throw new NotFoundException('工作空間不存在');
+
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.workspaceMember.update({
+        where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+        data: { role: 'owner' },
+      });
+      await tx.workspace.update({
+        where: { id: workspaceId },
+        data: { ownerId: targetUserId },
+      });
+      await tx.workspaceMember.update({
+        where: { workspaceId_userId: { workspaceId, userId } },
+        data: { role: 'admin' },
+      });
+    });
+
+    return {
+      workspaceId,
+      ownerId: targetUserId,
+      previousOwnerId: workspace.ownerId,
+      previousTargetRole: target.role,
+      actorNewRole: 'admin',
+    };
   }
 
   async listMembers(userId: string, workspaceId: string) {
@@ -187,23 +250,60 @@ export class WorkspacesService {
     });
   }
 
-  private async checkPermission(userId: string, workspaceId: string, requiredRole: string) {
+  // ─────────── helpers ───────────
+
+  /** 檢查呼叫者在此工作空間有 `key` 權限，回傳其角色。 */
+  private async checkPermission(userId: string, workspaceId: string, key: string): Promise<string> {
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
     });
     if (!member) throw new ForbiddenException('非此工作空間成員');
+    if (!hasPermission(member.role, key)) {
+      throw new ForbiddenException(`權限不足：需要 ${key}`);
+    }
+    return member.role;
+  }
 
-    const roleHierarchy: Record<string, number> = {
-      owner: 3,
-      admin: 2,
-      hr: 2,
-      finance: 2,
-      member: 1,
-    };
-    const memberRank = roleHierarchy[member.role] ?? 0;
-    const requiredRank = roleHierarchy[requiredRole] ?? 0;
-    if (memberRank < requiredRank) {
-      throw new ForbiddenException('權限不足');
+  private async getMemberOrThrow(workspaceId: string, userId: string) {
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    if (!member) throw new NotFoundException('此使用者不是工作空間成員');
+    return member;
+  }
+
+  /** 邀請或改角色時的目標角色檢查：角色必須合法；指定 owner 只能由 owner 做。 */
+  private assertAssignableRole(actorRole: string, role: string) {
+    if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+      throw new BadRequestException(`角色必須為 ${WORKSPACE_ROLES.join(' / ')}`);
+    }
+    if (role === 'owner' && !hasPermission(actorRole, PERMISSIONS.OWNER_TRANSFER)) {
+      throw new ForbiddenException('只有 owner 能指定 owner');
+    }
+  }
+
+  /** 目標目前是 owner、即將失去 owner 身分（移除或降級）時的檢查。 */
+  private async assertOwnerMayLoseRole(
+    actorRole: string,
+    workspaceId: string,
+    targetUserId: string,
+    verb: string,
+  ) {
+    if (!hasPermission(actorRole, PERMISSIONS.OWNER_TRANSFER)) {
+      throw new ForbiddenException(`只有 owner 能${verb} owner`);
+    }
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { ownerId: true },
+    });
+    if (workspace?.ownerId === targetUserId) {
+      throw new ForbiddenException(`無法${verb}主要 owner，請先移交 owner`);
+    }
+    const owners = await this.prisma.workspaceMember.count({
+      where: { workspaceId, role: 'owner' },
+    });
+    if (owners <= 1) {
+      throw new ForbiddenException(`工作空間至少要保留一位 owner，無法${verb}`);
     }
   }
 }

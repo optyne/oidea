@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -66,18 +71,29 @@ export class UsersService {
     });
   }
 
-  async search(query: string, workspaceId?: string) {
+  /**
+   * 在指定工作空間的成員中搜尋（不含 bot）。workspaceId 必填，呼叫者必須是該工作空間成員。
+   */
+  async search(userId: string, query: string, workspaceId: string) {
+    if (!workspaceId || !workspaceId.trim()) {
+      throw new BadRequestException('缺少 workspaceId');
+    }
+    const self = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      select: { role: true },
+    });
+    if (!self) throw new ForbiddenException('非此工作空間成員');
+
     return this.prisma.user.findMany({
       where: {
         deletedAt: null,
+        botAccount: { is: null },
+        workspaceMembers: { some: { workspaceId } },
         OR: [
           { username: { contains: query, mode: 'insensitive' } },
           { displayName: { contains: query, mode: 'insensitive' } },
           { email: { contains: query, mode: 'insensitive' } },
         ],
-        ...(workspaceId && {
-          workspaceMembers: { some: { workspaceId } },
-        }),
       },
       select: {
         id: true,
