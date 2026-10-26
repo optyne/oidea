@@ -34,12 +34,17 @@ class MembersPage extends ConsumerWidget {
       return const Scaffold(body: Center(child: Text('請先選擇工作空間')));
     }
     final me = ref.watch(companyMeProvider);
-    final workspaces = ref.watch(workspacesProvider).valueOrNull;
+    final workspacesAsync = ref.watch(workspacesProvider);
+    final workspaces = workspacesAsync.valueOrNull;
     if (isCompanyWorkspace(workspaceId, me: me.valueOrNull, workspaces: workspaces)) {
       return const _CompanyMembersRedirect();
     }
     // 還不知道是不是公司工作空間：先等，不要先露出邀請按鈕
     if (me.isLoading && !me.hasValue) {
+      return const Scaffold(body: LoadingWidget());
+    }
+    // /company/me 失敗、工作空間清單也還在載入：還判斷不出來，一樣先等（H2 review N9）
+    if (me.hasError && !me.hasValue && workspacesAsync.isLoading && !workspacesAsync.hasValue) {
       return const Scaffold(body: LoadingWidget());
     }
     return _MembersBody(workspaceId: workspaceId);

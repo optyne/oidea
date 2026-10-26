@@ -30,6 +30,7 @@ void main() {
     required String currentWorkspaceId,
     Future<CompanyMe> Function()? companyMe,
     List<dynamic> workspaces = const [],
+    Future<List<dynamic>> Function()? workspacesLoader,
   }) {
     late final ProviderContainer container;
     final router = GoRouter(
@@ -50,7 +51,7 @@ void main() {
     container = ProviderContainer(overrides: [
       apiClientProvider.overrideWithValue(api),
       currentWorkspaceIdProvider.overrideWith((ref) => currentWorkspaceId),
-      workspacesProvider.overrideWith((ref) async => workspaces),
+      workspacesProvider.overrideWith((ref) => workspacesLoader == null ? Future.value(workspaces) : workspacesLoader()),
       companyMeProvider.overrideWith((ref) => companyMe == null ? Future.value(companyMeFor('ws-co')) : companyMe()),
     ]);
     addTearDown(container.dispose);
@@ -142,6 +143,27 @@ void main() {
           {'id': 'ws-side', 'name': '專案', 'isCompany': false},
         ],
       ));
+      await tester.pumpAndSettle();
+      expect(find.text('ADMIN ROLES PAGE'), findsOneWidget);
+      expect(find.text('邀請成員'), findsNothing);
+    });
+
+    testWidgets('/company/me 失敗、工作空間清單還在載入：不露出邀請，清單載入後導走', (tester) async {
+      final api = FakeAdminApi();
+      final gate = Completer<List<dynamic>>();
+      await tester.pumpWidget(app(
+        api: api,
+        currentWorkspaceId: 'ws-co',
+        companyMe: () async => throw apiError(500, {'message': 'boom'}),
+        workspacesLoader: () => gate.future,
+      ));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('邀請成員'), findsNothing);
+      expect(api.calls, isEmpty);
+      gate.complete([
+        {'id': 'ws-co', 'name': '公司', 'isCompany': true},
+      ]);
       await tester.pumpAndSettle();
       expect(find.text('ADMIN ROLES PAGE'), findsOneWidget);
       expect(find.text('邀請成員'), findsNothing);
