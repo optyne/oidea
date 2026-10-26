@@ -43,6 +43,14 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  /**
+   * 原子地取出並刪除（Redis ≥ 6.2 `GETDEL`）。用在只能使用一次的值（OIDC ticket 等）：
+   * 兩個併發呼叫只有一個拿得到值。錯誤照樣往上拋，由呼叫端決定要不要 fail closed。
+   */
+  async getdel(key: string): Promise<string | null> {
+    return this.client.getdel(key);
+  }
+
   async publish(channel: string, message: string): Promise<void> {
     await this.client.publish(channel, message);
   }

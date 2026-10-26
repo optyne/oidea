@@ -6,6 +6,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma.service';
+import { UserStatusService } from '../user-status.service';
 
 /**
  * JWT 守衛；同時支援 **bot token**（格式 `Bearer bot_<prefix>.<secret>`）。
@@ -22,7 +23,10 @@ import { PrismaService } from '../../common/prisma.service';
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userStatus: UserStatusService,
+  ) {
     super();
   }
 
@@ -45,6 +49,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
           revokedAt: true,
           userId: true,
           workspaceId: true,
+          createdById: true,
         },
       });
       if (!bot || bot.revokedAt) {
@@ -54,6 +59,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       const ok = await bcrypt.compare(secret, bot.tokenHash);
       if (!ok) {
         throw new UnauthorizedException('無效的 bot token');
+      }
+
+      // bot 的建立者被停用（離職）→ bot 一起失效；與 JwtStrategy 共用同一套快取
+      if (await this.userStatus.isDisabled(bot.createdById)) {
+        throw new UnauthorizedException('Bot 建立者已停用');
       }
 
       // lastUsedAt 非關鍵；失敗不擋主流程

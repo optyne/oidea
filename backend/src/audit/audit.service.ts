@@ -15,7 +15,8 @@ export type AuditAction =
   | 'expense.cancel'
   | 'workspace.role_change'
   | 'workspace.member_remove'
-  | 'owner.transfer';
+  | 'owner.transfer'
+  | 'auth.refresh_reuse';
 
 export interface AuditRequestContext {
   ip?: string | string[];
