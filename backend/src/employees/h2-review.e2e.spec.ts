@@ -332,6 +332,23 @@ describe('H2 review regressions', () => {
       expect(h.prisma.lockLog).toEqual(expect.arrayContaining(['7301:u-t']));
     });
 
+    it('the SSO exchange re-check and department archive run under their locks', async () => {
+      await boot((h) => {
+        h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'ex@corp.com', employeeNo: 'X9', id: 'p-ex' });
+        h.prisma.addDepartment({ workspaceId: COMPANY_WS, name: '封存部', id: 'd-arc' });
+      });
+      const l = await h.login({ sub: 'sub-ex', email: 'ex@corp.com' });
+      expect(l.exchange!.status).toBe(201);
+      const userId = l.exchange!.body.user.id;
+      // 新建的 User 在綁定時還不存在，user 鎖只會來自 exchange 的重新檢查（離職交易進行中時 exchange 會等它 commit）
+      expect(h.prisma.lockLog).toContain(`7302:p-ex`);
+      expect(h.prisma.lockLog).toContain(`7301:${userId}`);
+
+      h.prisma.lockLog.length = 0;
+      expect((await h.call('POST', '/admin/departments/d-arc/archive', hr())).status).toBe(200);
+      expect(h.prisma.lockLog).toEqual([ORG_LOCK_KEY]);
+    });
+
     it('memberships written during the terminate transaction by a path without the lock are swept after commit', async () => {
       await boot((h) => {
         h.prisma.addUser({ id: 'u-own', email: 'own@corp.com' });
