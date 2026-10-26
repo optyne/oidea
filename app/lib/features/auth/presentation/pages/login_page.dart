@@ -15,6 +15,7 @@ class LoginPage extends ConsumerStatefulWidget {
   static const ssoButtonKey = Key('login-sso-button');
   static const passwordFormKey = Key('login-password-form');
   static const configRetryKey = Key('login-config-retry');
+  static const breakGlassToggleKey = Key('login-break-glass-toggle');
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -26,6 +27,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
+
+  /// Emergency login form revealed (only offered when config.breakGlass).
+  bool _showBreakGlass = false;
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
@@ -51,11 +55,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
     super.dispose();
   }
 
-  void _submit() {
+  void _submit({bool breakGlass = false}) {
     if (_formKey.currentState!.validate()) {
       ref.read(authStateProvider.notifier).login(
             _emailController.text.trim(),
             _passwordController.text,
+            breakGlass: breakGlass,
           );
     }
   }
@@ -188,12 +193,28 @@ class _LoginPageState extends ConsumerState<LoginPage>
               const SizedBox(height: OideaSpace.space4),
             ],
             if (cfg.passwordLogin) _passwordForm(authState, primary: !cfg.sso),
-            if (!cfg.sso && !cfg.passwordLogin)
+            if (!cfg.sso && !cfg.passwordLogin && !cfg.breakGlass)
               Text(
                 '目前無法登入，請聯絡管理員',
                 textAlign: TextAlign.center,
                 style: OideaType.body.copyWith(color: secondary),
               ),
+            // Break-glass: SSO is down; only listed company owners can use a
+            // password. Everyone else still gets 404 from the backend.
+            if (cfg.breakGlass && !cfg.passwordLogin) ...[
+              const SizedBox(height: OideaSpace.space6),
+              if (!_showBreakGlass)
+                Center(
+                  child: TextButton(
+                    key: LoginPage.breakGlassToggleKey,
+                    onPressed: () => setState(() => _showBreakGlass = true),
+                    style: TextButton.styleFrom(foregroundColor: secondary),
+                    child: const Text('管理者緊急登入', style: OideaType.label),
+                  ),
+                )
+              else
+                _passwordForm(authState, primary: !cfg.sso, breakGlass: true),
+            ],
           ],
         ),
       ],
@@ -209,7 +230,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _passwordForm(AuthState authState, {required bool primary}) {
+  Widget _passwordForm(AuthState authState, {required bool primary, bool breakGlass = false}) {
     return Form(
       key: _formKey,
       child: Column(
@@ -244,19 +265,19 @@ class _LoginPageState extends ConsumerState<LoginPage>
             ),
             validator: (v) =>
                 (v?.length ?? 0) < 8 ? '密碼至少 8 字元' : null,
-            onFieldSubmitted: (_) => _submit(),
+            onFieldSubmitted: (_) => _submit(breakGlass: breakGlass),
           ),
           const SizedBox(height: OideaSpace.space6),
           if (primary)
             AuthPrimaryButton(
-              onPressed: authState.isLoading ? null : _submit,
+              onPressed: authState.isLoading ? null : () => _submit(breakGlass: breakGlass),
               loading: authState.isLoading,
               label: '登入',
             )
           else
             OutlinedButton(
-              onPressed: authState.isLoading ? null : _submit,
-              child: const Text('以帳號密碼登入'),
+              onPressed: authState.isLoading ? null : () => _submit(breakGlass: breakGlass),
+              child: Text(breakGlass ? '緊急登入' : '以帳號密碼登入'),
             ),
         ],
       ),

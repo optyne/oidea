@@ -162,7 +162,7 @@ class ApiClient {
   @visibleForTesting
   Dio get dio => _dio;
 
-  /// Public login options: `{sso, passwordLogin, endSessionUrl?}`.
+  /// Public login options: `{sso, passwordLogin, breakGlass, endSessionUrl?}`.
   Future<Map<String, dynamic>> getAuthConfig() async {
     final res = await _dio.get<Map<String, dynamic>>('auth/config');
     return res.data ?? const {};

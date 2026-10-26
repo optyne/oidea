@@ -61,6 +61,8 @@ final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   );
 });
 
+const badCredentialsMessage = '帳號或密碼錯誤';
+
 String _formatAuthError(Object e) {
   if (e is! DioException) return e.toString();
   final uri = e.requestOptions.uri;
@@ -72,7 +74,7 @@ String _formatAuthError(Object e) {
         '④ 實體手機請用 --dart-define 設電腦區網 IP，勿用 localhost。';
   }
   if (code == 401) {
-    return '帳號或密碼錯誤';
+    return badCredentialsMessage;
   }
   switch (e.type) {
     case DioExceptionType.connectionTimeout:
@@ -169,13 +171,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> login(String email, String password) async {
+  /// [breakGlass]: emergency owner login. The backend answers 404 for anyone
+  /// not allowed (not listed, not an owner, wrong password), so 404 means
+  /// 「帳號或密碼錯誤」 here instead of the developer "API not found" hint.
+  Future<void> login(String email, String password, {bool breakGlass = false}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final response = await _api.login(email, password);
       await _completeLogin(response);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: _formatAuthError(e));
+      final notFound = e is DioException && e.response?.statusCode == 404;
+      state = state.copyWith(
+        isLoading: false,
+        error: breakGlass && notFound ? badCredentialsMessage : _formatAuthError(e),
+      );
     }
   }
 

@@ -160,6 +160,13 @@ void main() {
       expect(s.endBrowserSession(null), isFalse);
       expect(s.endBrowserSession('javascript:alert(1)'), isFalse);
       expect(s.endBrowserSession('/relative'), isFalse);
+      // review F6：有 authority 但不是 http(s) 的 URL 也不導
+      expect(s.endBrowserSession('ftp://sso.example.com/end-session/'), isFalse);
+      expect(s.endBrowserSession('file://host/etc/passwd'), isFalse);
+      expect(s.endBrowserSession('oidea://auth/logout'), isFalse);
+      expect(w.assigned, isEmpty);
+      expect(s.endBrowserSession('http://sso.example.com/end-session/'), isTrue);
+      w.assigned.clear();
       expect(s.endBrowserSession('https://sso.example.com/end-session/'), isTrue);
       expect(w.assigned, ['https://sso.example.com/end-session/']);
 

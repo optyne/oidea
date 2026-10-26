@@ -32,6 +32,7 @@ class _Harness {
     this.configStatus = 200,
     this.exchangeStatus = 201,
     this.exchangeBody,
+    this.loginStatus = 404,
   }) {
     adapter = FakeAdapter(_handle);
     pendingCallback = PendingSsoCallback(pending);
@@ -46,6 +47,9 @@ class _Harness {
   int configStatus;
   int exchangeStatus;
   Map<String, dynamic>? exchangeBody;
+
+  /// POST auth/login: 201 = tokens, anything else = that status (backend's break-glass 404 by default).
+  int loginStatus;
 
   /// Set to run the mobile flow instead of the web one.
   MobileWebAuth? mobileAuth;
@@ -65,6 +69,15 @@ class _Harness {
           }, 201);
         }
         return jsonBody(exchangeBody ?? {'statusCode': exchangeStatus, 'message': 'Unauthorized'}, exchangeStatus);
+      case 'auth/login':
+        if (loginStatus == 201) {
+          return jsonBody({
+            'accessToken': _access,
+            'refreshToken': _refresh,
+            'user': {'id': 'u1', 'email': 'owner@corp.example'},
+          }, 201);
+        }
+        return jsonBody({'statusCode': loginStatus, 'message': 'Not Found'}, loginStatus);
       case 'users/me':
         return jsonBody({'id': 'u1', 'email': 'emp@corp.example', 'displayName': 'Emp'}, 200);
       case 'workspaces':
@@ -232,6 +245,79 @@ void main() {
 
       expect(find.byKey(LoginPage.ssoButtonKey), findsNothing);
       expect(find.byKey(LoginPage.passwordFormKey), findsOneWidget);
+    });
+
+    group('break-glass (review S5)', () {
+      const emergency = {'sso': true, 'passwordLogin': false, 'breakGlass': true};
+
+      Future<void> fillAndSubmit(WidgetTester tester, String email, String password) async {
+        final fields = find.descendant(of: find.byKey(LoginPage.passwordFormKey), matching: find.byType(TextFormField));
+        await tester.enterText(fields.at(0), email);
+        await tester.enterText(fields.at(1), password);
+        await tester.tap(find.text('緊急登入'));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('breakGlass=true: the form is hidden behind 「管理者緊急登入」, SSO button still shown', (tester) async {
+        final h = _Harness(config: emergency);
+        await tester.pumpWidget(h.app(initial: '/login'));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(LoginPage.ssoButtonKey), findsOneWidget);
+        expect(find.byKey(LoginPage.passwordFormKey), findsNothing);
+        expect(find.byKey(LoginPage.breakGlassToggleKey), findsOneWidget);
+        expect(find.text('管理者緊急登入'), findsOneWidget);
+
+        await tester.tap(find.byKey(LoginPage.breakGlassToggleKey));
+        await tester.pumpAndSettle();
+        expect(find.byKey(LoginPage.passwordFormKey), findsOneWidget);
+        expect(find.byKey(LoginPage.breakGlassToggleKey), findsNothing);
+      });
+
+      testWidgets('not on the list (backend 404) → 「帳號或密碼錯誤」, not the developer 404 hint', (tester) async {
+        final h = _Harness(config: emergency);
+        await tester.pumpWidget(h.app(initial: '/login'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(LoginPage.breakGlassToggleKey));
+        await tester.pumpAndSettle();
+
+        await fillAndSubmit(tester, 'someone@corp.example', 'not-the-password');
+
+        expect(h.requestsTo('auth/login'), hasLength(1));
+        expect(find.text('帳號或密碼錯誤'), findsOneWidget);
+        expect(find.textContaining('找不到此 API'), findsNothing);
+        expect(h.store.accessToken, isNull);
+      });
+
+      testWidgets('listed owner: logs in with the password and stores the tokens', (tester) async {
+        final h = _Harness(config: emergency, loginStatus: 201);
+        await tester.pumpWidget(h.app(initial: '/login'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(LoginPage.breakGlassToggleKey));
+        await tester.pumpAndSettle();
+
+        await fillAndSubmit(tester, 'owner@corp.example', 'Correct-Horse-Battery-9');
+
+        expect(h.requestsTo('auth/login'), hasLength(1));
+        expect(h.store.accessToken, _access);
+        expect(h.store.refreshToken, _refresh);
+      });
+
+      testWidgets('breakGlass=false: no emergency link', (tester) async {
+        final h = _Harness(config: {'sso': true, 'passwordLogin': false, 'breakGlass': false});
+        await tester.pumpWidget(h.app(initial: '/login'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(LoginPage.breakGlassToggleKey), findsNothing);
+        expect(find.byKey(LoginPage.passwordFormKey), findsNothing);
+      });
+
+      testWidgets('normal password login on: no separate emergency link (the form is already there)', (tester) async {
+        final h = _Harness(config: {'sso': true, 'passwordLogin': true, 'breakGlass': true});
+        await tester.pumpWidget(h.app(initial: '/login'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(LoginPage.breakGlassToggleKey), findsNothing);
+        expect(find.byKey(LoginPage.passwordFormKey), findsOneWidget);
+      });
     });
 
     testWidgets('config fails: shows the company button and a retry that refetches', (tester) async {

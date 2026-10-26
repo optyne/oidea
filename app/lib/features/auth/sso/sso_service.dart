@@ -14,6 +14,7 @@ class AuthConfig {
   const AuthConfig({
     required this.sso,
     required this.passwordLogin,
+    this.breakGlass = false,
     this.endSessionUrl,
   });
 
@@ -22,12 +23,18 @@ class AuthConfig {
     return AuthConfig(
       sso: json['sso'] == true,
       passwordLogin: json['passwordLogin'] == true,
+      breakGlass: json['breakGlass'] == true,
       endSessionUrl: end is String && end.trim().isNotEmpty ? end.trim() : null,
     );
   }
 
   final bool sso;
   final bool passwordLogin;
+
+  /// Emergency (break-glass) login is on: the backend accepts password login
+  /// only for listed company owners. The login page offers a small
+  /// 「管理者緊急登入」 link instead of showing the form to everyone.
+  final bool breakGlass;
 
   /// Where web logout sends the browser so the IdP session ends too.
   final String? endSessionUrl;
