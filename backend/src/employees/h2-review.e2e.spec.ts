@@ -501,4 +501,123 @@ describe('H2 review regressions', () => {
       expect((await h.call('GET', url('from=2026-10-01'), owner)).status).toBe(200);
     });
   });
+  // ─────────────── re-verify（notes/h2-reverify.md）：R1、R9、R10、R11 ───────────────
+
+  describe('re-verify regressions', () => {
+    it('R1: hr cannot change his own record through CSV import; the other rows still import', async () => {
+      await boot((h) => h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'p1@corp.com', employeeNo: 'P1', id: 'p-1' }));
+      const csv = ['employeeNo,email,fullName,hireDate', 'H001,u-hr@corp.com,hr,2000-01-01', 'P1,p1@corp.com,P1 New,2024-01-01'].join('\n');
+      const r = await h.call('POST', '/admin/employees/import', hr(), { csv });
+      expect(r.status).toBe(200);
+      expect(r.body.updated).toBe(1);
+      expect(r.body.errors).toEqual([expect.objectContaining({ line: 2, code: 'cannot_edit_self' })]);
+      expect(profileOf('u-hr').hireDate.toISOString().slice(0, 10)).toBe('2024-01-01');
+      expect(h.prisma.profiles.find((p) => p.id === 'p-1')!.fullName).toBe('P1 New');
+    });
+
+    it('R1: also when his own profile is unbound (the email resolves to the caller)', async () => {
+      await boot((h) => h.addEmployee({ id: 'u-admin', role: 'admin', employeeNo: 'A1' }));
+      const own = profileOf('u-hr').id;
+      expect((await h.call('POST', `/admin/employees/${own}/unbind`, h.token('u-admin'))).status).toBe(200);
+      const csv = ['employeeNo,email,fullName,hireDate', 'H001,u-hr@corp.com,hr,2000-01-01'].join('\n');
+      const r = await h.call('POST', '/admin/employees/import', h.token('u-hr', 1), { csv });
+      expect(r.status).toBe(200);
+      expect(r.body.errors).toEqual([expect.objectContaining({ code: 'cannot_edit_self' })]);
+      expect(h.prisma.profiles.find((p) => p.id === own)!.hireDate.toISOString().slice(0, 10)).toBe('2024-01-01');
+    });
+
+    it('R9: terminate of an unbound profile offboards the email-matched User; reinstate re-enables him', async () => {
+      await boot((h) => {
+        h.addEmployee({ id: 'u-admin', role: 'admin', employeeNo: 'A1' });
+        h.prisma.addWorkspace({ id: 'ws-m', ownerId: 'u-admin', name: 'M' });
+        h.prisma.addMember('ws-m', 'u-member', 'member');
+      });
+      const pid = profileOf('u-member').id;
+      const prisma: any = h.prisma;
+      prisma.scheduledMessages.push({ id: 'sm-u', createdBy: 'u-member', status: 'pending', deletedAt: null });
+      prisma.channelMembers.push({ id: 'cm-u', channelId: 'c1', userId: 'u-member' });
+      prisma.automationRules.push({ id: 'ar-u', createdBy: 'u-member', enabled: true, deletedAt: null });
+      expect((await h.call('POST', `/admin/employees/${pid}/unbind`, h.token('u-admin'))).status).toBe(200);
+
+      const t = await h.call('POST', `/admin/employees/${pid}/terminate`, hr(), { terminationDate: '2026-10-31' });
+      expect(t.status).toBe(200);
+      const u = prisma.users.find((x: any) => x.id === 'u-member');
+      expect(u.disabledAt).toBeTruthy();
+      expect(prisma.scheduledMessages.find((m: any) => m.id === 'sm-u').status).toBe('canceled');
+      expect(prisma.automationRules.find((m: any) => m.id === 'ar-u').enabled).toBe(false);
+      expect(prisma.members.some((m: any) => m.userId === 'u-member')).toBe(false);
+      expect(prisma.channelMembers.some((m: any) => m.userId === 'u-member')).toBe(false);
+      expect(h.audits('employee.terminate')[0].metadata).toMatchObject({ userId: 'u-member', userResolvedBy: 'email' });
+      expect((await h.login({ sub: 'sub-member-new', email: 'u-member@corp.com' })).callback.ticket).toBeUndefined();
+
+      expect((await h.call('POST', `/admin/employees/${pid}/reinstate`, hr())).status).toBe(200);
+      expect(prisma.users.find((x: any) => x.id === 'u-member').disabledAt).toBeNull();
+      expect((await h.login({ sub: 'sub-member-new', email: 'u-member@corp.com' })).exchange!.status).toBe(201);
+    });
+
+    it('R9: a User that is bound to another profile is not offboarded with this one; ambiguous emails → 409', async () => {
+      await boot((h) => {
+        h.addEmployee({ id: 'u-admin', role: 'admin', employeeNo: 'A1' });
+        // u-other 綁的是另一筆 profile（email 不同），他的 User email 卻跟沒綁定的 p-x 一樣
+        h.prisma.addUser({ id: 'u-other', email: 'x@corp.com' });
+        h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'other@corp.com', employeeNo: 'O1', userId: 'u-other' });
+        h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'x@corp.com', employeeNo: 'X1', id: 'p-x' });
+        h.prisma.addUser({ id: 'u-d1', email: 'Dup@corp.com' });
+        h.prisma.addUser({ id: 'u-d2', email: 'DUP@corp.com' });
+        h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'dup@corp.com', employeeNo: 'D1', id: 'p-dup' });
+      });
+      const admin = h.token('u-admin');
+      expect((await h.call('POST', '/admin/employees/p-x/terminate', admin, { terminationDate: '2026-10-31' })).status).toBe(200);
+      expect(h.prisma.users.find((u) => u.id === 'u-other')!.disabledAt).toBeNull();
+
+      const amb = await h.call('POST', '/admin/employees/p-dup/terminate', admin, { terminationDate: '2026-10-31' });
+      expect(amb.status).toBe(409);
+      expect(amb.body.code).toBe('identity_ambiguous');
+      expect(h.prisma.profiles.find((p) => p.id === 'p-dup')!.employmentStatus).toBe('active');
+    });
+
+    it('R10: nobody can terminate an unbound owner (owner found through the email)', async () => {
+      await boot((h) => {
+        h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'founder@corp.com', employeeNo: 'F001', id: 'p-founder', userId: 'u-founder' });
+        h.addEmployee({ id: 'u-co', role: 'owner', employeeNo: 'C001' });
+      });
+      expect((await h.call('POST', '/admin/employees/p-founder/unbind', h.token('u-co'))).status).toBe(200);
+      for (const caller of ['u-hr', 'u-co']) {
+        const t = await h.call('POST', '/admin/employees/p-founder/terminate', h.token(caller), { terminationDate: '2026-10-31' });
+        expect(t.status).toBe(400);
+        expect(t.body.code).toBe('owner_transfer_required');
+      }
+      expect(h.prisma.profiles.find((p) => p.id === 'p-founder')!.employmentStatus).toBe('active');
+      expect(h.prisma.users.find((u) => u.id === 'u-founder')!.disabledAt).toBeNull();
+    });
+
+    it('R11: every CSV-updated row gets an employee.update audit with changes; name/phone only {changed: true}', async () => {
+      await boot((h) => h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'q@corp.com', employeeNo: 'Q1', id: 'p-q', fullName: 'Q' }));
+      const csv = ['employeeNo,email,fullName,hireDate', 'Q1,q2@corp.com,Q Renamed,1999-01-01'].join('\n');
+      const r = await h.call('POST', '/admin/employees/import', hr(), { csv });
+      expect(r.body.updated).toBe(1);
+      const rows = h.audits('employee.update');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ actorId: 'u-hr', targetId: 'p-q' });
+      expect(rows[0].metadata).toMatchObject({
+        source: 'import',
+        changes: {
+          email: { from: 'q@corp.com', to: 'q2@corp.com' },
+          fullName: { changed: true },
+          hireDate: { from: '2024-01-01', to: '1999-01-01' },
+        },
+      });
+      expect(JSON.stringify(rows[0].metadata)).not.toContain('Q Renamed');
+      expect(h.audits('employee.import')).toHaveLength(1);
+    });
+
+    it('PATCH audit: fullName and phone are recorded as {changed: true}, no values', async () => {
+      await boot((h) => h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'n@corp.com', employeeNo: 'N1', id: 'p-n', fullName: 'Old Name' }));
+      const r = await h.call('PATCH', '/admin/employees/p-n', hr(), { fullName: 'New Name', phone: '0912000111' });
+      expect(r.status).toBe(200);
+      const meta: any = h.audits('employee.update')[0].metadata;
+      expect(meta.changes).toEqual({ fullName: { changed: true }, phone: { changed: true } });
+      expect(JSON.stringify(meta)).not.toMatch(/New Name|Old Name|0912000111/);
+    });
+  });
 });

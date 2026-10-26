@@ -17,6 +17,8 @@ import { ORG_WALK_LIMIT } from './manager-resolver';
 import { lockOrgStructure } from './org-lock';
 import { LOCKED_TX_OPTIONS, lockEmployeeProfile, lockUser } from '../common/identity-lock';
 import { actorStanding, assessIdentity, IdentityAction, identityRefusal } from './identity-guard';
+import { profileAuditChanges } from './employee-audit';
+import { resolveUserIdByEmail } from '../common/email-lookup';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -114,18 +116,6 @@ export function toEmployeeDto(p: EmployeeRow): EmployeeDto {
   };
 }
 
-/** audit 用的欄位值：日期記 `YYYY-MM-DD`，其他照原樣（字串、null）。 */
-const auditValue = (v: unknown) => (v instanceof Date ? formatDate(v) : (v ?? null));
-
-/** `{ 欄位: { from, to } }`，只含改過的欄位。 */
-function auditChanges(fields: string[], before: EmployeeRow, after: EmployeeRow): Record<string, { from: unknown; to: unknown }> {
-  const out: Record<string, { from: unknown; to: unknown }> = {};
-  for (const f of fields) {
-    out[f] = { from: auditValue((before as any)[f]), to: auditValue((after as any)[f]) };
-  }
-  return out;
-}
-
 const err = {
   notFound: () => new NotFoundException('員工資料不存在'),
   invalidDate: (field: string) => apiError(HttpStatus.BAD_REQUEST, 'invalid_date', `${field} 必須是有效的 YYYY-MM-DD 日期`),
@@ -157,6 +147,12 @@ const err = {
     apiError(HttpStatus.FORBIDDEN, 'owner_protected', '待移交 owner 的 email 不能在後台修改，請重新執行 company:init'),
   adminProtected: () =>
     apiError(HttpStatus.FORBIDDEN, 'admin_protected', 'hr 不能對公司 admin 解除綁定、修改 email 或辦理離職'),
+  identityAmbiguous: () =>
+    apiError(
+      HttpStatus.CONFLICT,
+      'identity_ambiguous',
+      '有多個帳號的 email 跟這位員工只差大小寫，無法判斷是哪一位；請先處理重複的帳號',
+    ),
 };
 
 function requiredText(raw: string | undefined, field: string, max: number): string {
@@ -390,7 +386,7 @@ export class EmployeeAdminService {
         // statusFrom/To、departmentFrom/To 是 H2 初版就有的鍵，留著相容
         metadata: {
           fields: result.changed,
-          changes: auditChanges(result.changed, result.before, result.row),
+          changes: profileAuditChanges(result.changed, result.before, result.row),
           ...(result.changed.includes('employmentStatus')
             ? { statusFrom: result.before.employmentStatus, statusTo: result.row.employmentStatus }
             : {}),
@@ -415,13 +411,17 @@ export class EmployeeAdminService {
       await lockEmployeeProfile(tx, id);
       const profile = await this.findRow(tx, workspaceId, id);
       if (!profile) throw err.notFound();
-      if (profile.userId) await lockUser(tx, profile.userId);
+      // 這筆 profile 代表的 User：已綁定的那位；沒綁定（例如剛被解除綁定）時是 email 相同的既有 User
+      // （H2 re-verify）。否則離職不會停用他，他的排程訊息、成員資格、自動化都留著，owner 檢查也被跳過。
+      const target = await this.resolveProfileUser(tx, profile);
+      const userId = target.userId;
+      if (userId) await lockUser(tx, userId);
       // ── 先擋（任何寫入之前） ──
-      if (profile.userId && profile.userId === actorId) throw err.cannotTerminateSelf();
+      if (userId && userId === actorId) throw err.cannotTerminateSelf();
       if (profile.employmentStatus === 'terminated') throw err.alreadyTerminated();
       if (terminationDate.getTime() < profile.hireDate.getTime()) throw err.invalidDate('terminationDate（不能早於到職日）');
       await this.assertIdentityChangeAllowed(tx, workspaceId, actorId, profile, 'terminate');
-      const owned = profile.userId ? await this.ownedWorkspaces(tx, profile.userId) : [];
+      const owned = userId ? await this.ownedWorkspaces(tx, userId) : [];
       // 待移交的 owner（company:init 時他還沒綁 SSO，記在 pendingOwnerEmail）：跟現任 owner 一樣要先改指定別人。
       // 否則他離職後再也不能 SSO 登入，移交永遠不會發生，公司就一直由 company:init 的執行者當 owner。
       const pending = await this.pendingOwnerWorkspace(tx, workspaceId, profile.email);
@@ -441,8 +441,7 @@ export class EmployeeAdminService {
         canceledScheduledMessages: 0,
         disabledAutomationRules: 0,
       };
-      if (profile.userId) {
-        const userId = profile.userId;
+      if (userId) {
         await tx.user.update({
           where: { id: userId },
           data: { disabledAt: now, tokenVersion: { increment: 1 } },
@@ -454,10 +453,10 @@ export class EmployeeAdminService {
         stats.removedMemberships = (await tx.workspaceMember.deleteMany({ where: { userId } })).count;
         Object.assign(stats, await this.removeActingAs(tx, userId));
       }
-      return { profile, stats };
+      return { profile, stats, userId, userResolvedBy: target.via };
     }, LOCKED_TX_OPTIONS);
 
-    const userId = outcome.profile.userId;
+    const userId = outcome.userId;
     let disconnectedSockets = 0;
     if (userId) {
       // commit 之後再撤銷一次：撈出交易途中才 commit 的 refresh token 換發與新建的 bot
@@ -487,6 +486,7 @@ export class EmployeeAdminService {
         employeeNo: outcome.profile.employeeNo,
         terminationDate: formatDate(terminationDate),
         userId,
+        userResolvedBy: outcome.userResolvedBy,
         ...outcome.stats,
         disconnectedSockets,
       },
@@ -500,13 +500,15 @@ export class EmployeeAdminService {
       await lockEmployeeProfile(tx, id);
       const current = await this.findRow(tx, workspaceId, id);
       if (!current) throw err.notFound();
-      if (current.userId) await lockUser(tx, current.userId);
+      // 跟離職用同一套解析：沒綁定的離職員工，停用的是 email 相同的 User，復職也要把他解除停用
+      const { userId } = await this.resolveProfileUser(tx, current);
+      if (userId) await lockUser(tx, userId);
       if (current.employmentStatus !== 'terminated') throw err.notTerminated();
       await tx.employeeProfile.update({ where: { id }, data: { employmentStatus: 'active', terminationDate: null } });
-      if (current.userId) {
-        await tx.user.update({ where: { id: current.userId }, data: { disabledAt: null } });
+      if (userId) {
+        await tx.user.update({ where: { id: userId }, data: { disabledAt: null } });
       }
-      return current;
+      return { ...current, userId };
     }, LOCKED_TX_OPTIONS);
     // 重讀 DB 並覆寫快取：快取裡的「停用」立刻換掉（不會等 30 秒）
     if (profile.userId) await this.userStatus.refresh(profile.userId);
@@ -635,6 +637,30 @@ export class EmployeeAdminService {
     }, LOCKED_TX_OPTIONS);
   }
 
+  /**
+   * 這筆 profile 代表的 User（離職、復職用；在 profile 鎖底下呼叫）：
+   * - 已綁定 → 那位 User；
+   * - 沒綁定 → email 相同（不分大小寫，跟 identity-guard 的 assessIdentity 一樣）的既有 User，
+   *   但排除 bot 與已經綁了**另一筆** profile 的 User（那是別的員工，不能被連帶停用）；
+   * - 只差大小寫的同 email 帳號有好幾個 → 409 `identity_ambiguous`（判斷不出是誰，寧可不做）。
+   */
+  private async resolveProfileUser(
+    tx: Db,
+    profile: { id: string; userId: string | null; email: string },
+  ): Promise<{ userId: string | null; via: 'bound' | 'email' | null }> {
+    if (profile.userId) return { userId: profile.userId, via: 'bound' };
+    const found = await resolveUserIdByEmail(tx, profile.email, { includeDeleted: false });
+    if (found === 'ambiguous') throw err.identityAmbiguous();
+    if (!found) return { userId: null, via: null };
+    const user = await tx.user.findUnique({
+      where: { id: found },
+      select: { id: true, botAccount: { select: { id: true } }, employeeProfile: { select: { id: true } } },
+    });
+    if (!user || user.botAccount) return { userId: null, via: null };
+    if (user.employeeProfile && user.employeeProfile.id !== profile.id) return { userId: null, via: null };
+    return { userId: user.id, via: 'email' };
+  }
+
   /** B1：owner／待移交 owner／admin 的身分對應保護（規則在 identity-guard.ts）。 */
   private async assertIdentityChangeAllowed(
     tx: Db,
@@ -684,6 +710,11 @@ export class EmployeeAdminService {
         ]);
         return identityRefusal('email', actor, risk);
       },
+      // 匯入也不能改自己的資料（re-verify R1）：已綁定的看 userId；沒綁定的看 email 對到的 User 是不是自己
+      guardSelf: async (db, profile) => {
+        if (profile.userId) return profile.userId === actorId;
+        return (await resolveUserIdByEmail(db, profile.email, { includeDeleted: false })) === actorId;
+      },
       workspaceId,
       req,
       dryRun: dto.dryRun === true,
@@ -693,7 +724,7 @@ export class EmployeeAdminService {
       ...parsed.malformed.map((m) => ({ line: m.line, message: m.reason })),
       ...result.results
         .filter((r) => r.status === 'error')
-        .map((r) => ({ line: r.line ?? 0, message: r.reason ?? '' })),
+        .map((r) => ({ line: r.line ?? 0, message: r.reason ?? '', ...(r.code ? { code: r.code } : {}) })),
     ].sort((a, b) => a.line - b.line);
     return {
       created: result.created,

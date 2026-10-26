@@ -22,6 +22,7 @@ const Map<String, String> _fallbackByCode = {
   'owner_protected': '這位員工是工作空間的擁有者（或待移交的擁有者），只有公司擁有者能解除綁定或修改 Email',
   'admin_protected': '人資不能對公司管理員解除綁定、修改 Email 或辦理離職',
   'cannot_edit_self': '不能在後台修改自己的員工資料，請由其他管理者處理',
+  'identity_ambiguous': '有多個帳號的 Email 跟這位員工只差大小寫，無法判斷是哪一位，請先處理重複的帳號',
 };
 // 後端 backend/src/employees/h2-app-contract.spec.ts 會讀這個檔，確認上面的鍵（加上下面特別處理的
 // owner_transfer_required）跟後端會送的 H2 錯誤碼完全相同。新增或移除錯誤碼時兩邊要一起改。

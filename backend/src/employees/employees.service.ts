@@ -6,12 +6,16 @@ import { AuditRequestContext, AuditService } from '../audit/audit.service';
 import { CompanyService } from '../company/company.service';
 import { LOCKED_TX_OPTIONS, lockEmployeeProfile } from '../common/identity-lock';
 import { lockOrgStructure } from './org-lock';
+import { AuditChange, profileAuditChanges } from './employee-audit';
 import type { IdentityRefusal } from './identity-guard';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
 /** 匯入改 email 前的身分保護（H2 後台傳入；CLI 不傳，CLI 的操作者跟 company:init 一樣是可信的）。 */
 export type EmailChangeGuard = (db: Db, profile: { userId: string | null; email: string }) => Promise<IdentityRefusal | null>;
+
+/** 這筆既有 profile 是不是呼叫者本人（H2 後台傳入；是的話該列 `cannot_edit_self`）。 */
+export type SelfGuard = (db: Db, profile: { userId: string | null; email: string }) => Promise<boolean>;
 
 const EMAIL_GUARD_MESSAGES: Record<IdentityRefusal, string> = {
   pending_owner_email: '待移交 owner 的 email 不能用匯入修改，請重新執行 company:init',
@@ -47,6 +51,8 @@ export interface EmployeeImportRowResult {
   status: EmployeeImportStatus;
   /** status=error 時的原因（繁體中文） */
   reason?: string;
+  /** status=error 時的機器碼（目前只有 `cannot_edit_self`） */
+  code?: string;
   profileId?: string;
 }
 
@@ -118,7 +124,14 @@ export function normalizeEmployeeRow(row: EmployeeImportRow): { value: Normalize
 }
 
 /** 單筆 upsert 的錯誤：會變成該列的 error，不中斷整批。 */
-export class EmployeeRowError extends Error {}
+export class EmployeeRowError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 
 const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code === 'P2002';
 
@@ -164,6 +177,8 @@ export class EmployeesService {
       auditExtra?: Record<string, number | string>;
       /** 既有員工要改 email 時先問這個（H2 後台：owner／待移交 owner／admin 的保護，review B1） */
       guardEmailChange?: EmailChangeGuard;
+      /** 既有員工是呼叫者本人 → 該列失敗（H2 後台：不能用匯入改自己的資料，re-verify R1） */
+      guardSelf?: SelfGuard;
     } = {},
   ): Promise<EmployeeImportResult> {
     const workspaceId = await this.resolveCompanyWorkspaceId(opts.workspaceId);
@@ -207,13 +222,25 @@ export class EmployeesService {
         // 不包成整批一個交易：Postgres 交易裡一個語句失敗，整個交易就不能再用（這裡要逐列回報錯誤）。
         // 部門快取在這一列成功之後才併回去（這一列 rollback 時，它建的部門也不存在了）。
         const rowCache = new Map(departmentCache);
-        const { status, profileId } = await this.prisma.$transaction(async (tx) => {
+        const { status, profileId, fields, changes } = await this.prisma.$transaction(async (tx) => {
           await lockOrgStructure(tx);
-          return this.upsertNormalized(workspaceId, value, rowCache, dryRun, tx, opts.guardEmailChange ?? null, true);
+          return this.upsertNormalized(workspaceId, value, rowCache, dryRun, tx, opts.guardEmailChange ?? null, true, opts.guardSelf ?? null);
         }, LOCKED_TX_OPTIONS);
         for (const [k, v] of rowCache) departmentCache.set(k, v);
         seenEmails.set(value.email, value.employeeNo);
         results.push({ line: row.line, employeeNo: value.employeeNo, status, profileId });
+        // 匯入改到的每一筆都有一筆 employee.update（跟 PATCH 同樣的 changes 格式，H2 re-verify S7）
+        if (!dryRun && status === 'updated' && fields && changes) {
+          await this.audit.record({
+            actorId: opts.actorId ?? null,
+            workspaceId,
+            action: 'employee.update',
+            targetType: 'employee_profile',
+            targetId: profileId,
+            metadata: { source: 'import', line: row.line ?? null, fields, changes },
+            req: opts.req,
+          });
+        }
       } catch (err) {
         const reason =
           err instanceof EmployeeRowError
@@ -221,7 +248,8 @@ export class EmployeesService {
             : isUniqueViolation(err)
               ? '與既有員工資料衝突（員工編號、email 或部門名稱重複），請重試或檢查資料'
               : `寫入失敗：${(err as Error).message}`;
-        results.push({ line: row.line, employeeNo: value.employeeNo, status: 'error', reason });
+        const code = err instanceof EmployeeRowError ? err.code : undefined;
+        results.push({ line: row.line, employeeNo: value.employeeNo, status: 'error', reason, ...(code ? { code } : {}) });
       }
     }
 
@@ -264,15 +292,13 @@ export class EmployeesService {
     guardEmailChange: EmailChangeGuard | null = null,
     /** db 是交易（拿得到 advisory lock）；company:init 的 upsertOne 不在交易裡 */
     inTx = false,
-  ): Promise<{ status: 'created' | 'updated' | 'unchanged'; profileId: string }> {
-    const byEmail = await db.employeeProfile.findUnique({
-      where: { workspaceId_email: { workspaceId, email: value.email } },
-      select: { id: true, employeeNo: true },
-    });
-    if (byEmail && byEmail.employeeNo !== value.employeeNo) {
-      throw new EmployeeRowError(`此 email 已屬於另一位員工（員工編號 ${byEmail.employeeNo}）`);
-    }
-
+    guardSelf: SelfGuard | null = null,
+  ): Promise<{
+    status: 'created' | 'updated' | 'unchanged';
+    profileId: string;
+    fields?: string[];
+    changes?: Record<string, AuditChange>;
+  }> {
     const findExisting = () =>
       db.employeeProfile.findUnique({
         where: { workspaceId_employeeNo: { workspaceId, employeeNo: value.employeeNo } },
@@ -283,6 +309,18 @@ export class EmployeesService {
       // 跟 SSO 綁定、解除綁定排隊（review S3），拿到鎖之後重讀綁定狀態
       await lockEmployeeProfile(db, existing.id);
       existing = await findExisting();
+    }
+    // email 衝突在 profile 鎖之後才讀（re-verify N-6）
+    const byEmail = await db.employeeProfile.findUnique({
+      where: { workspaceId_email: { workspaceId, email: value.email } },
+      select: { id: true, employeeNo: true },
+    });
+    if (byEmail && byEmail.employeeNo !== value.employeeNo) {
+      throw new EmployeeRowError(`此 email 已屬於另一位員工（員工編號 ${byEmail.employeeNo}）`);
+    }
+    // 自己的 HR 資料要由別人改，匯入也一樣（re-verify R1；PATCH 是 403 cannot_edit_self）
+    if (existing && guardSelf && (await guardSelf(db, { userId: existing.userId, email: existing.email }))) {
+      throw new EmployeeRowError('不能用匯入修改自己的員工資料，請由其他管理者處理', 'cannot_edit_self');
     }
     if (existing && existing.email !== value.email && guardEmailChange) {
       const refusal = await guardEmailChange(db, { userId: existing.userId, email: existing.email });
@@ -323,7 +361,14 @@ export class EmployeesService {
         data,
         select: { id: true },
       });
-      return { status: 'updated', profileId: row.id };
+      const before = existing as Record<string, unknown>;
+      const after = data as Record<string, unknown>;
+      const fields = Object.keys(data).filter((k) => {
+        const a = before[k];
+        const b = after[k];
+        return a instanceof Date && b instanceof Date ? a.getTime() !== b.getTime() : a !== b;
+      });
+      return { status: 'updated', profileId: row.id, fields, changes: profileAuditChanges(fields, before, after) };
     }
     if (dryRun) return { status: 'created', profileId: '' };
     const row = await db.employeeProfile.create({
