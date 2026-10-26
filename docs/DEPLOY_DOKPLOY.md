@@ -94,7 +94,24 @@ NODE_ENV=production
 要點：
 - `DATABASE_URL` 的 host 用 Dokploy 內部網路名（**不是 localhost**），port 用 **5432**（容器內部通訊不經過 5433 映射）
 - `JWT_SECRET` **絕對要換**，不然任何人都能偽造 token
+- `JWT_EXPIRATION` 是 access token 的有效期（建議 15m）；`JWT_REFRESH_EXPIRATION` 是 refresh token 的有效期（不透明字串、存在 `refresh_tokens` 資料表，每次 refresh 換發並重新起算；格式 `7d`／`12h`／`30m`／秒數）
+- **H0 上線注意**：H0 改了 token 格式（access token 要有 `typ: "access"`，refresh token 改成不透明字串），上線後舊的 access／refresh token 全部失效，**所有人都要重新登入一次**。WebSocket 也改成要在握手帶 access token（`auth.token`），舊版 App 連不上即時訊息與白板，前後端要一起上線。
 - `CORS_ORIGIN` 是逗號分隔的白名單，讓你的 Flutter Web / 其他前端可以打 API
+
+### 反向代理與 `TRUST_PROXY`
+
+後端在 Traefik（可能再加 Cloudflare）後面時，若不設 `TRUST_PROXY`，`req.ip`（登入限流、審計日誌用）拿到的會是代理的 IP，不是客戶端 IP。
+
+- 不設（預設）：維持原本行為，不信任任何代理。
+- 數字：信任的代理跳數。只有 Traefik 通常是 `1`；Cloudflare → Traefik 可能是 `2`。**這只是猜測，不要直接照抄。**
+- 也接受 Express 的其他寫法（`loopback`、逗號分隔的子網段）。不要用 `true`，那會讓客戶端能偽造 `X-Forwarded-For`。
+
+**正確的值必須先在 staging 實測**：
+1. 先不設 `TRUST_PROXY` 部署到 staging，從一台已知對外 IP 的機器登入失敗一次（或打任何會寫 audit 的 API）。
+2. 查 audit log 的 `ipAddress`，跟那台機器的實際對外 IP（例如 `curl https://ifconfig.me`）比對。
+3. 設 `TRUST_PROXY=1` 重新部署再測一次；不對就試 `2`。取「剛好等於實際客戶端 IP」的最小值。
+4. 再用偽造標頭測一次（`curl -H 'X-Forwarded-For: 1.2.3.4' ...`），確認記到的仍是真實 IP，不是 `1.2.3.4`。
+5. 確認後才把同一個值設到正式環境。
 
 ### 網域 + HTTPS
 

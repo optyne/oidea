@@ -70,7 +70,7 @@ Bot 能以 member 身份存取所有業務模組：
 | **會議** | `POST /api/meetings` 建會議、邀請成員 |
 | **訊息** | `POST /api/messages`、`/api/messages/broadcast`（跨頻道廣播） |
 | **通知** | `GET /api/notifications` bot 自己的通知 |
-| **工作空間** | `GET /api/workspaces/:id` 讀資訊、`GET /api/users/search?q=` 找成員 |
+| **工作空間** | `GET /api/workspaces/:id` 讀資訊、`GET /api/users/search?q=&workspaceId=` 找成員（workspaceId 必填，結果不含 bot） |
 | **審計日誌** | 僅 bot 為 admin 角色時可讀 |
 
 完整 API 清單見 `https://api.oidea.oadpiz.com/api/docs`（Swagger UI）。想讓 bot 有更高權限（例如自動核准報銷），管理員可把 bot 的角色從 `member` 改成 `admin` / `finance` / `hr`（ERP → 成員與權限 → 點 bot user 改角色）。

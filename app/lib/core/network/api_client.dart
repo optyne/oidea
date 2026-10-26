@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'auth_session.dart';
 import 'dev_backend_urls.dart';
 
 /// NestJS 使用 `setGlobalPrefix('api')`。若 `API_URL` 只寫到埠號（例如 `http://localhost:3001`），
@@ -34,28 +34,74 @@ String nestApiBaseUrl(String raw) {
   return '$resolved/';
 }
 
-final apiClientProvider = Provider<ApiClient>((ref) {
+String resolvedRestBaseUrl() {
   const apiUrlEnv = String.fromEnvironment('API_URL', defaultValue: '');
   final rawBase = apiUrlEnv.isNotEmpty ? apiUrlEnv : (devBackendRestBaseFromHostDefine() ?? '');
+  return nestApiBaseUrl(rawBase);
+}
+
+/// Token pair + refresh/logout calls. The refresh Dio has no interceptors.
+final authSessionProvider = Provider<AuthSession>((ref) {
+  final session = AuthSession(
+    store: const SecureTokenStore(),
+    refreshDio: Dio(
+      BaseOptions(
+        baseUrl: resolvedRestBaseUrl(),
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ),
+    ),
+  );
+  ref.onDispose(session.dispose);
+  return session;
+});
+
+final apiClientProvider = Provider<ApiClient>((ref) {
   final dio = Dio(
     BaseOptions(
-      baseUrl: nestApiBaseUrl(rawBase),
+      baseUrl: resolvedRestBaseUrl(),
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
     ),
   );
-  dio.interceptors.add(AuthInterceptor());
+  dio.interceptors.add(AuthInterceptor(ref.watch(authSessionProvider), dio));
   return ApiClient(dio);
 });
 
+/// Attaches the access token and, on 401, refreshes once and retries once.
+///
+/// Concurrent 401s share one refresh ([AuthSession.refresh] is single-flight).
+/// A request that failed with a token that has since been replaced is retried
+/// with the new token without another refresh. Auth endpoints are never
+/// refreshed-and-retried, so a 401 from `auth/refresh` cannot loop.
 class AuthInterceptor extends Interceptor {
-  static const _storage = FlutterSecureStorage();
-  static const _tokenKey = 'access_token';
-  static const _refreshKey = 'refresh_token';
+  AuthInterceptor(this._session, this._retryDio);
+
+  final AuthSession _session;
+
+  /// Dio used for the single retry (normally the same Dio this interceptor is
+  /// attached to, so [onRequest] attaches the latest token).
+  final Dio _retryDio;
+
+  static const retriedKey = 'auth_retried';
+  static const _noRefreshPaths = {
+    'auth/login',
+    'auth/register',
+    'auth/refresh',
+    'auth/logout',
+  };
+
+  static bool _isAuthEndpoint(RequestOptions o) {
+    var path = o.path;
+    while (path.startsWith('/')) {
+      path = path.substring(1);
+    }
+    return _noRefreshPaths.any((p) => path == p || path.endsWith('/$p'));
+  }
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = await _session.store.readAccessToken();
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
     }
@@ -64,44 +110,44 @@ class AuthInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode == 401) {
-      final refreshToken = await _storage.read(key: _refreshKey);
-      if (refreshToken != null) {
-        try {
-          final refreshDio = Dio(
-            BaseOptions(
-              baseUrl: err.requestOptions.baseUrl,
-              connectTimeout: const Duration(seconds: 15),
-            ),
-          );
-          final response = await refreshDio.post<Map<String, dynamic>>(
-            'auth/refresh',
-            options: Options(headers: {'Authorization': 'Bearer $refreshToken'}),
-          );
-          final newToken = response.data?['accessToken'] as String?;
-          final newRefresh = response.data?['refreshToken'] as String?;
-          if (newToken != null) {
-            await _storage.write(key: _tokenKey, value: newToken);
-            if (newRefresh != null) {
-              await _storage.write(key: _refreshKey, value: newRefresh);
-            }
-            final retry = Dio(
-              BaseOptions(
-                baseUrl: err.requestOptions.baseUrl,
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 15),
-              ),
-            );
-            err.requestOptions.headers['Authorization'] = 'Bearer $newToken';
-            final retryResponse = await retry.fetch(err.requestOptions);
-            return handler.resolve(retryResponse);
-          }
-        } catch (_) {
-          await _storage.deleteAll();
-        }
-      }
+    final req = err.requestOptions;
+    if (err.response?.statusCode != 401 || req.extra[retriedKey] == true || _isAuthEndpoint(req)) {
+      return handler.next(err);
     }
-    handler.next(err);
+
+    final sent = req.headers['Authorization'];
+    final current = await _session.store.readAccessToken();
+    String? token;
+    if (current != null && sent != 'Bearer $current') {
+      // Someone else already refreshed while this request was in flight.
+      token = current;
+    } else {
+      token = await _session.refresh();
+    }
+    if (token == null) {
+      // A transient refresh failure (e.g. 429 from auth/refresh) is reported as
+      // itself, not as the original 401: the session is still alive.
+      final refreshError = _session.lastRefreshError;
+      if (refreshError != null) {
+        return handler.next(DioException(
+          requestOptions: req,
+          response: refreshError.response,
+          type: refreshError.type,
+          error: refreshError.error,
+          message: refreshError.message,
+        ));
+      }
+      return handler.next(err);
+    }
+
+    try {
+      req.extra[retriedKey] = true;
+      req.headers['Authorization'] = 'Bearer $token';
+      final response = await _retryDio.fetch<dynamic>(req);
+      return handler.resolve(response);
+    } on DioException catch (e) {
+      return handler.next(e);
+    }
   }
 }
 
@@ -446,10 +492,11 @@ class ApiClient {
     return res.data!;
   }
 
-  Future<List<dynamic>> searchUsers(String query, {String? workspaceId}) async {
+  /// The backend requires [workspaceId] (400 without it) and excludes bots.
+  Future<List<dynamic>> searchUsers(String query, {required String workspaceId}) async {
     final res = await _dio.get<List<dynamic>>(
       'users/search',
-      queryParameters: {'q': query, if (workspaceId != null) 'workspaceId': workspaceId},
+      queryParameters: {'q': query, 'workspaceId': workspaceId},
     );
     return res.data ?? [];
   }

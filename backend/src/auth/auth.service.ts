@@ -1,18 +1,25 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto, LoginDto } from './dto/register.dto';
 import { AuditService, AuditRequestContext } from '../audit/audit.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { ACCESS_TOKEN_TYPE, AccessTokenPayload } from './token-types';
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; email: string };
+}
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    private configService: ConfigService,
     private audit: AuditService,
+    private refreshTokens: RefreshTokenService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -59,6 +66,17 @@ export class AuthService {
       throw new UnauthorizedException('信箱或密碼錯誤');
     }
 
+    // 停用或已刪除的帳號：回跟密碼錯誤一樣的訊息（不透露帳號狀態），不發 refresh token。
+    if (user.disabledAt || user.deletedAt) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: user.deletedAt ? 'deleted' : 'disabled' },
+        req,
+      });
+      throw new UnauthorizedException('信箱或密碼錯誤');
+    }
+
     await this.audit.record({
       actorId: user.id,
       action: 'auth.login',
@@ -67,28 +85,49 @@ export class AuthService {
     return this.generateTokens(user.id, user.email);
   }
 
-  async refreshToken(userId: string) {
-    const user = await this.usersService.findById(userId);
-    if (!user) {
-      throw new UnauthorizedException('使用者不存在');
+  /**
+   * 用 refresh token 換一組新的 token（body 帶 token，不經 JwtAuthGuard）。
+   * 換發、寬限期與盜用偵測見 RefreshTokenService.rotate。
+   */
+  async refresh(refreshToken: string, req?: AuditRequestContext): Promise<AuthTokens> {
+    const rotated = await this.refreshTokens.rotate(refreshToken, req);
+    return {
+      accessToken: this.signAccessToken(rotated.userId, rotated.email),
+      refreshToken: rotated.refreshToken,
+      user: { id: rotated.userId, email: rotated.email },
+    };
+  }
+
+  /** 登出：撤銷這個 refresh token 所屬的整個 family。冪等：未知 token 也回 ok。 */
+  async logout(refreshToken: string, req?: AuditRequestContext): Promise<{ ok: true }> {
+    const revoked = await this.refreshTokens.revokeFamilyOf(refreshToken);
+    if (revoked) {
+      await this.audit.record({
+        actorId: revoked.userId,
+        action: 'auth.logout',
+        targetType: 'refresh_token_family',
+        targetId: revoked.familyId,
+        metadata: { revokedCount: revoked.count },
+        req,
+      });
     }
-    return this.generateTokens(user.id, user.email);
+    return { ok: true };
   }
 
   async validateUser(userId: string) {
     return this.usersService.findById(userId);
   }
 
-  private generateTokens(userId: string, email: string) {
-    const payload = { sub: userId, email };
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION', '7d'),
-    });
+  private signAccessToken(userId: string, email: string): string {
+    const payload: AccessTokenPayload = { sub: userId, email, typ: ACCESS_TOKEN_TYPE };
+    // 有效期由 JwtModule 的 signOptions（JWT_EXPIRATION，預設 15m）決定
+    return this.jwtService.sign(payload);
+  }
 
+  private async generateTokens(userId: string, email: string): Promise<AuthTokens> {
     return {
-      accessToken,
-      refreshToken,
+      accessToken: this.signAccessToken(userId, email),
+      refreshToken: await this.refreshTokens.issueNewFamily(userId),
       user: { id: userId, email },
     };
   }
