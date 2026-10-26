@@ -142,6 +142,9 @@ export class FakeSsoPrisma implements Tables {
   /** email-lookup.ts 的 `lower("email") = lower($1)`（不把 `_`、`%` 當萬用字元）。 */
   $queryRaw = fakeEmailQueryRaw(() => this.users);
 
+  /** `identity-lock.ts` 的 advisory lock：這個 fake 不模擬併發，直接放行（FakeAdminPrisma 會真的排隊）。 */
+  $executeRaw: any = jest.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => 1);
+
   // ── seed helpers ──
   addUser(p: Partial<SsoUserRow> & { id: string; email: string }): SsoUserRow {
     const row: SsoUserRow = {
@@ -201,7 +204,7 @@ export class FakeSsoPrisma implements Tables {
     });
   }
 
-  async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+  async $transaction<T>(fn: (tx: this) => Promise<T>, _options?: unknown): Promise<T> {
     this.transactions++;
     const before = this.snapshot();
     try {

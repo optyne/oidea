@@ -9,6 +9,7 @@ import { UserStatusService } from '../user-status.service';
 import { SocketRegistry } from '../socket-registry';
 import { resolveUserIdByEmail } from '../../common/email-lookup';
 import { SsoErrorCode } from './oidc-errors';
+import { LOCKED_TX_OPTIONS, lockEmployeeProfile, lockUser } from '../../common/identity-lock';
 
 import { SSO_PROVIDER } from './sso-provider';
 
@@ -136,7 +137,7 @@ export class SsoLoginService {
     let outcome: Decision | Applied | undefined;
     for (let attempt = 0; attempt < 2 && !outcome; attempt++) {
       try {
-        outcome = await this.prisma.$transaction((tx) => this.decideAndApply(tx, claims.sub, email));
+        outcome = await this.prisma.$transaction((tx) => this.decideAndApply(tx, claims.sub, email), LOCKED_TX_OPTIONS);
       } catch (err) {
         const retryable = err instanceof RetryableConflict || isUniqueViolation(err);
         if (!retryable || attempt === 1) throw err;
@@ -260,6 +261,20 @@ export class SsoLoginService {
     }
     const ctx = { ...ws, actorId: accountUser?.id ?? null, via };
     if (!profile || profile.workspaceId !== company.id) return deny('not_employee', 'not_in_roster', ctx);
+    // 跟離職、解除綁定、後台改 email 排隊（review S3）：拿到鎖之後重讀，下面的判斷看的是 commit 過的最新狀態。
+    // 順序跟 terminate 一樣：profile → user
+    await lockEmployeeProfile(tx, profile.id);
+    profile = await tx.employeeProfile.findUnique({ where: { id: profile.id }, select: PROFILE_SELECT });
+    if (!profile || profile.workspaceId !== company.id) return deny('not_employee', 'not_in_roster', ctx);
+    // 帳號路徑找到的 profile 在等鎖時被解除綁定 → 整段重跑（這次會走 email 路徑）
+    if (via === 'account' && profile.userId !== accountUser?.id) throw new RetryableConflict('profile unbound concurrently');
+    if (accountUser) {
+      await lockUser(tx, accountUser.id);
+      const fresh = await tx.user.findUnique({ where: { id: accountUser.id }, select: USER_SELECT });
+      if (!fresh || fresh.deletedAt || fresh.disabledAt) {
+        return deny('disabled', !fresh || fresh.deletedAt ? 'user_deleted' : 'user_disabled', ctx);
+      }
+    }
     if (profile.employmentStatus === 'terminated') return deny('terminated', 'terminated', ctx);
     // 從 email 找到、但已綁了別人（accountUser 沒有 profile，所以一定是別人）
     if (via === 'email' && profile.userId) return deny('profile_bound', 'profile_bound_to_other_user', ctx);
@@ -268,8 +283,17 @@ export class SsoLoginService {
     let userCreated = false;
     let boundExistingUser = false;
     if (!target) {
-      const existing = await this.findUserByEmail(tx, profile.email);
-      if (existing === 'ambiguous') return deny('server_error', 'ambiguous_email', ctx);
+      const found = await this.findUserByEmail(tx, profile.email);
+      if (found === 'ambiguous') return deny('server_error', 'ambiguous_email', ctx);
+      let existing = found;
+      if (existing) {
+        // 鎖住這位 User 再重讀停用狀態（review S3：同時被停用的話不綁）
+        await lockUser(tx, existing.id);
+        existing = await tx.user.findUnique({
+          where: { id: existing.id },
+          select: { ...USER_SELECT, botAccount: { select: { id: true } } },
+        });
+      }
       if (existing) {
         const who = { ...ctx, actorId: existing.id };
         if (existing.deletedAt) return deny('disabled', 'user_deleted', who);
@@ -323,8 +347,9 @@ export class SsoLoginService {
 
     let profileBound = false;
     if (!profile.userId) {
+      // 條件也帶「沒離職」：就算有沒拿鎖的寫入把它設成離職，也不會綁上去（review S3）
       const bound = await tx.employeeProfile.updateMany({
-        where: { id: profile.id, userId: null },
+        where: { id: profile.id, userId: null, employmentStatus: { not: 'terminated' } },
         data: { userId: target.id },
       });
       if (bound.count !== 1) throw new RetryableConflict('profile bound concurrently');

@@ -9,6 +9,8 @@ import { CompanyService } from '../company/company.service';
 const buildTx = () => ({
   workspaceInvite: { updateMany: jest.fn() },
   workspaceMember: { create: jest.fn() },
+  user: { findUnique: jest.fn().mockResolvedValue({ disabledAt: null, deletedAt: null }) },
+  $executeRaw: jest.fn().mockResolvedValue(1),
 });
 
 describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () => {
@@ -67,6 +69,14 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
         where: expect.objectContaining({ id: 'inv-1', consumedAt: null }),
       }),
     );
+    expect(tx.workspaceMember.create).not.toHaveBeenCalled();
+  });
+
+  it('H2 review S3: 帳號已停用（離職中）→ 在 user 鎖底下被擋，不消費 invite、不建 member', async () => {
+    tx.user.findUnique.mockResolvedValue({ disabledAt: new Date(), deletedAt: null });
+    await expect(service.accept('u-2', 'tok-1')).rejects.toThrow(ForbiddenException);
+    expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(tx.workspaceInvite.updateMany).not.toHaveBeenCalled();
     expect(tx.workspaceMember.create).not.toHaveBeenCalled();
   });
 

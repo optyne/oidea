@@ -43,8 +43,10 @@ describe('公司工作空間不接受邀請', () => {
       },
       user: {
         findFirst: jest.fn(async () => ({ id: 'u-bob', email: 'bob@x.com', username: 'bob', displayName: 'Bob' })),
+        findUnique: jest.fn(async ({ where }: any) => ({ id: where.id, disabledAt: null, deletedAt: null })),
       },
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
+      $executeRaw: jest.fn(async () => 1),
     };
     const company = new CompanyService(prisma);
     invites = new InvitesService(prisma, { record: jest.fn() } as any, company);
@@ -147,7 +149,9 @@ describe('公司工作空間的成員不能直接移除', () => {
         }),
         count: jest.fn(async () => 1),
       },
+      user: { findUnique: jest.fn(async ({ where }: any) => ({ id: where.id, disabledAt: null, deletedAt: null })) },
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
+      $executeRaw: jest.fn(async () => 1),
     };
     workspaces = new WorkspacesService(prisma, new CompanyService(prisma));
   });

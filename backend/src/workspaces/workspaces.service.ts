@@ -9,6 +9,17 @@ import { PERMISSIONS, WORKSPACE_ROLES, hasPermission } from '../common/permissio
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { COMPANY_REMOVE_FORBIDDEN, CompanyService } from '../company/company.service';
+import { LOCKED_TX_OPTIONS, lockUser } from '../common/identity-lock';
+
+/** 看得到 `pendingOwnerEmail`（待移交 owner 的 email）的角色：能管 owner 的人（H2 review S4）。 */
+const PENDING_OWNER_VISIBLE_ROLES = new Set(['owner', 'admin']);
+
+/** 移除 `pendingOwnerEmail`，除非呼叫者在這個工作空間是 owner／admin。 */
+function redactWorkspace<T extends { pendingOwnerEmail?: unknown }>(ws: T, role: string | null | undefined): T {
+  if (role && PENDING_OWNER_VISIBLE_ROLES.has(role)) return ws;
+  const { pendingOwnerEmail: _hidden, ...rest } = ws;
+  return rest as T;
+}
 
 /**
  * 成員管理的 owner 規則（spec §4.4）：
@@ -24,31 +35,42 @@ export class WorkspacesService {
   ) {}
 
   async create(userId: string, dto: CreateWorkspaceDto) {
-    return this.prisma.workspace.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        description: dto.description,
-        ownerId: userId,
-        members: {
-          create: { userId, role: 'owner' },
+    // 跟離職排隊（H2 review S3）：離職交易進行中送出的建立，要等它 commit、看到停用之後拒絕，
+    // 否則會留下「停用的人擁有工作空間」
+    return this.prisma.$transaction(async (tx: any) => {
+      await lockUser(tx, userId);
+      await this.assertActiveUser(tx, userId, '帳號已停用，不能建立工作空間');
+      return tx.workspace.create({
+        data: {
+          name: dto.name,
+          slug: dto.slug,
+          description: dto.description,
+          ownerId: userId,
+          members: {
+            create: { userId, role: 'owner' },
+          },
         },
-      },
-      include: { members: true },
-    });
+        include: { members: true },
+      });
+    }, LOCKED_TX_OPTIONS);
   }
 
   async findAll(userId: string) {
-    return this.prisma.workspace.findMany({
-      where: {
-        deletedAt: null,
-        members: { some: { userId } },
-      },
-      include: {
-        _count: { select: { members: true, channels: true, projects: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [rows, memberships] = await Promise.all([
+      this.prisma.workspace.findMany({
+        where: {
+          deletedAt: null,
+          members: { some: { userId } },
+        },
+        include: {
+          _count: { select: { members: true, channels: true, projects: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.workspaceMember.findMany({ where: { userId }, select: { workspaceId: true, role: true } }),
+    ]);
+    const roleOf = new Map<string, string>((memberships ?? []).map((m: { workspaceId: string; role: string }) => [m.workspaceId, m.role]));
+    return rows.map((w: any) => redactWorkspace(w, roleOf.get(w.id)));
   }
 
   async findById(userId: string, id: string) {
@@ -74,11 +96,12 @@ export class WorkspacesService {
     });
 
     if (!workspace) throw new NotFoundException('工作空間不存在');
-    if (!workspace.members.some((m: { userId: string }) => m.userId === userId)) {
+    const self = workspace.members.find((m: { userId: string }) => m.userId === userId);
+    if (!self) {
       throw new ForbiddenException('無權存取此工作空間');
     }
 
-    return workspace;
+    return redactWorkspace(workspace, (self as { role?: string }).role);
   }
 
   async update(userId: string, id: string, dto: UpdateWorkspaceDto) {
@@ -114,9 +137,14 @@ export class WorkspacesService {
     });
     if (existing) throw new ForbiddenException('使用者已是成員');
 
-    return this.prisma.workspaceMember.create({
-      data: { workspaceId, userId: targetUserId, role },
-    });
+    // 停用（離職）的人不能被加進工作空間；跟離職排隊（H2 review S3）
+    return this.prisma.$transaction(async (tx: any) => {
+      await lockUser(tx, targetUserId);
+      await this.assertActiveUser(tx, targetUserId, '使用者已停用，不能加入工作空間', true);
+      return tx.workspaceMember.create({
+        data: { workspaceId, userId: targetUserId, role },
+      });
+    }, LOCKED_TX_OPTIONS);
   }
 
   /**
@@ -153,12 +181,16 @@ export class WorkspacesService {
       throw new ForbiddenException(`${target.displayName} 已是成員`);
     }
 
-    const member = await this.prisma.workspaceMember.create({
-      data: { workspaceId, userId: target.id, role },
-      include: {
-        user: { select: { id: true, email: true, username: true, displayName: true, avatarUrl: true } },
-      },
-    });
+    const member = await this.prisma.$transaction(async (tx: any) => {
+      await lockUser(tx, target.id);
+      await this.assertActiveUser(tx, target.id, '使用者已停用，不能加入工作空間', true);
+      return tx.workspaceMember.create({
+        data: { workspaceId, userId: target.id, role },
+        include: {
+          user: { select: { id: true, email: true, username: true, displayName: true, avatarUrl: true } },
+        },
+      });
+    }, LOCKED_TX_OPTIONS);
     return member;
   }
 
@@ -193,15 +225,23 @@ export class WorkspacesService {
       await this.assertOwnerMayLoseRole(actorRole, workspaceId, targetUserId, '降級');
     }
 
-    return this.prisma.workspaceMember.update({
-      where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
-      data: { role },
-      include: {
-        user: {
-          select: { id: true, username: true, displayName: true, avatarUrl: true },
+    const apply = (db: any) =>
+      db.workspaceMember.update({
+        where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+        data: { role },
+        include: {
+          user: {
+            select: { id: true, username: true, displayName: true, avatarUrl: true },
+          },
         },
-      },
-    });
+      });
+    if (role !== 'owner') return apply(this.prisma);
+    // 升成 owner 跟離職排隊（H2 review S3）：不會在離職的 owner 檢查之後才變成 owner
+    return this.prisma.$transaction(async (tx: any) => {
+      await lockUser(tx, targetUserId);
+      await this.assertActiveUser(tx, targetUserId, '目標使用者已停用或不存在', true);
+      return apply(tx);
+    }, LOCKED_TX_OPTIONS);
   }
 
   /**
@@ -242,6 +282,14 @@ export class WorkspacesService {
     }
 
     await this.prisma.$transaction(async (tx: any) => {
+      // 跟目標的離職排隊（H2 review S3）：在鎖底下重讀，離職剛 commit 的話不移交（否則工作空間的 owner
+      // 是停用的人、也沒有 owner 成員列）
+      await lockUser(tx, targetUserId);
+      await this.assertActiveUser(tx, targetUserId, '目標使用者已停用或不存在', true);
+      const stillMember = await tx.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+      });
+      if (!stillMember) throw new NotFoundException('此使用者不是工作空間成員');
       await tx.workspaceMember.update({
         where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
         data: { role: 'owner' },
@@ -298,6 +346,14 @@ export class WorkspacesService {
   }
 
   // ─────────── helpers ───────────
+
+  /** 在 user 鎖底下確認帳號沒停用、沒刪除；`badRequest` 決定回 400 還是 403。 */
+  private async assertActiveUser(tx: any, userId: string, message: string, badRequest = false) {
+    const u = await tx.user.findUnique({ where: { id: userId }, select: { id: true, disabledAt: true, deletedAt: true } });
+    if (!u || u.disabledAt || u.deletedAt) {
+      throw badRequest ? new BadRequestException(message) : new ForbiddenException(message);
+    }
+  }
 
   /** 檢查呼叫者在此工作空間有 `key` 權限，回傳其角色。 */
   private async checkPermission(userId: string, workspaceId: string, key: string): Promise<string> {

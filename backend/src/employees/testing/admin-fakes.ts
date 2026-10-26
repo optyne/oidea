@@ -19,6 +19,7 @@ import { Clock } from '../../common/clock';
 import { fakeEmailQueryRaw, sqlText } from '../../common/testing/fake-email-raw';
 import { FakeSsoPrisma } from '../../auth/oidc/testing/sso-fakes';
 import { ORG_LOCK_KEY } from '../org-lock';
+import { PROFILE_LOCK_CLASS, USER_LOCK_CLASS } from '../../common/identity-lock';
 
 type Row = Record<string, any>;
 type TableName =
@@ -30,7 +31,10 @@ type TableName =
   | 'members'
   | 'bots'
   | 'refreshRows'
-  | 'auditLogs';
+  | 'auditLogs'
+  | 'channelMembers'
+  | 'scheduledMessages'
+  | 'automationRules';
 
 interface RelationSpec {
   table: TableName;
@@ -146,6 +150,7 @@ function flattenUnique(where: Row = {}): Row {
 interface TxContext {
   releases: (() => void)[];
   snapshot: Row;
+  held: Set<string>;
 }
 
 export class FakeAdminPrisma extends FakeSsoPrisma {
@@ -154,6 +159,12 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
   override bots: any[] = [];
   override auditLogs: any[] = [];
   departments: Row[] = [];
+  /** 離職要清的「以他身分動作」的資料（review S2） */
+  channelMembers: Row[] = [];
+  scheduledMessages: Row[] = [];
+  automationRules: Row[] = [];
+  /** 每次拿到的 advisory lock key（斷言有拿鎖） */
+  lockLog: string[] = [];
   /**
    * 每個 delegate 查詢延遲多久才執行（毫秒）。> 0 時，同時進來的兩個請求會在 DB 這一步交錯，
    * 用來證明「先讀整條鏈、再寫」在沒有鎖時會被同時的變更繞過。
@@ -527,6 +538,9 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
     }),
   };
   channel = { findMany: jest.fn(async () => []) };
+  channelMember = this.delegate('channelMembers');
+  scheduledMessage = this.delegate('scheduledMessages');
+  automationRule = this.delegate('automationRules');
 
   // ── raw SQL ──
   private readonly emailRawAdmin = fakeEmailQueryRaw(() => this.users);
@@ -572,14 +586,25 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
     return this.emailRawAdmin(strings, ...values);
   });
 
-  $executeRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+  override $executeRaw: any = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const sql = sqlText(strings);
     this.executed.push(sql);
+    let key: string | null = null;
     if (sql === 'SELECT pg_advisory_xact_lock(hashtext($?))') {
+      key = String(values[0]);
+      if (key !== ORG_LOCK_KEY) throw new Error(`FakeAdminPrisma: unexpected lock key ${key}`);
+    } else {
+      // identity-lock.ts：兩個 int4 的 key（class, hashtext(id)）
+      const m = /^SELECT pg_advisory_xact_lock\((\d+), hashtext\(\$\?\)\)$/.exec(sql);
+      if (m && (Number(m[1]) === USER_LOCK_CLASS || Number(m[1]) === PROFILE_LOCK_CLASS)) key = `${m[1]}:${String(values[0])}`;
+    }
+    if (key !== null) {
       const ctx = this.txContext.getStore();
       if (!ctx) throw new Error('FakeAdminPrisma: advisory xact lock outside a transaction');
-      const key = String(values[0]);
-      if (key !== ORG_LOCK_KEY) throw new Error(`FakeAdminPrisma: unexpected lock key ${key}`);
+      this.lockLog.push(key);
+      // 同一個交易重拿同一把鎖（Postgres 允許，可重入）
+      if (ctx.held.has(key)) return 1;
+      ctx.held.add(key);
       // 排在目前持有者後面；持有者的交易結束才放行
       const prev = this.locks.get(key) ?? Promise.resolve();
       let release!: () => void;
@@ -608,14 +633,17 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
       bots: this.bots,
       refreshRows: this.refreshRows,
       auditLogs: this.auditLogs,
+      channelMembers: this.channelMembers,
+      scheduledMessages: this.scheduledMessages,
+      automationRules: this.automationRules,
     });
   }
 
-  override async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+  override async $transaction<T>(fn: (tx: this) => Promise<T>, _options?: unknown): Promise<T> {
     this.transactions++;
     // rollback 用的快照：交易開始時拍；拿到鎖之後再重拍一次（排在前面的交易可能剛 commit，
     // 鎖是交易的第一個指令，重拍時這個交易還沒寫任何東西）
-    const ctx: TxContext = { releases: [], snapshot: this.snapshotAll() };
+    const ctx: TxContext = { releases: [], snapshot: this.snapshotAll(), held: new Set() };
     return this.txContext.run(ctx, async () => {
       try {
         return await fn(this);

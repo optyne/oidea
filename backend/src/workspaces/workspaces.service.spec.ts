@@ -82,6 +82,7 @@ function buildWorkspacePrisma(
       }),
     },
     $transaction: jest.fn(async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
+    $executeRaw: jest.fn(async () => 1),
   };
   return prisma;
 }
@@ -411,5 +412,76 @@ describe('WorkspacesService — H0 roles & owner rules', () => {
         expect(prisma.$transaction).not.toHaveBeenCalled();
       },
     );
+  });
+});
+
+describe('WorkspacesService — H2 review S3/S4', () => {
+  let service: WorkspacesService;
+  let prisma: any;
+
+  beforeEach(async () => {
+    prisma = buildWorkspacePrisma({ 'u-owner': 'owner', 'u-admin': 'admin', 'u-member': 'member' });
+    const row = { id: 'ws-1', ownerId: 'u-owner', isCompany: true, pendingOwnerEmail: 'boss@corp.com' };
+    prisma.workspace.findMany = jest.fn(async () => [{ ...row, _count: { members: 3, channels: 0, projects: 0 } }]);
+    const findUnique = prisma.workspace.findUnique;
+    prisma.workspace.findUnique = jest.fn(async (args: any) => {
+      const ws = await findUnique(args);
+      return ws ? { ...ws, isCompany: true, pendingOwnerEmail: 'boss@corp.com' } : ws;
+    });
+    prisma.workspaceMember.findMany = jest.fn(async ({ where }: any) =>
+      Object.entries(prisma.state.members)
+        .filter(([u]) => !where?.userId || u === where.userId)
+        .map(([userId, role]) => ({ workspaceId: 'ws-1', userId, role })),
+    );
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [WorkspacesService, CompanyService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    service = module.get(WorkspacesService);
+  });
+
+  it('S4: pendingOwnerEmail is only returned to owner/admin; isCompany stays', async () => {
+    const [asMember] = await service.findAll('u-member');
+    expect(asMember).not.toHaveProperty('pendingOwnerEmail');
+    expect(asMember).toMatchObject({ id: 'ws-1', isCompany: true });
+    expect((await service.findAll('u-admin'))[0]).toMatchObject({ pendingOwnerEmail: 'boss@corp.com' });
+    expect((await service.findAll('u-owner'))[0]).toMatchObject({ pendingOwnerEmail: 'boss@corp.com' });
+
+    const byIdMember = await service.findById('u-member', 'ws-1');
+    expect(byIdMember).not.toHaveProperty('pendingOwnerEmail');
+    expect(byIdMember).toMatchObject({ isCompany: true });
+    expect(await service.findById('u-admin', 'ws-1')).toMatchObject({ pendingOwnerEmail: 'boss@corp.com' });
+  });
+
+  it('S3: create takes the user lock and refuses a disabled (terminated) user', async () => {
+    prisma.state.userFlags['u-gone'] = { disabledAt: new Date() };
+    await expect(service.create('u-gone', { name: 'A', slug: 'a' } as any)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.workspace.create).not.toHaveBeenCalled();
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+  });
+
+  it('S3: transfer re-checks the target under the user lock (terminated meanwhile → 400, nothing written)', async () => {
+    const original = prisma.user.findUnique;
+    let calls = 0;
+    // 第一次（交易外的預檢）看到在職，第二次（鎖底下）看到剛被停用
+    prisma.user.findUnique = jest.fn(async (args: any) => {
+      const u = await original(args);
+      if (args.where.id === 'u-member' && ++calls >= 2) return { ...u, disabledAt: new Date() };
+      return u;
+    });
+    await expect(service.transferOwnership('u-owner', 'ws-1', 'u-member')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.state.ownerId).toBe('u-owner');
+    expect(prisma.state.members['u-member']).toBe('member');
+  });
+
+  it('S3: inviting or promoting to owner a disabled user is refused', async () => {
+    // 一般工作空間（公司工作空間本來就不能邀請）
+    prisma.workspace.findUnique = jest.fn(async ({ where }: any) =>
+      where.id === 'ws-1' ? { id: 'ws-1', ownerId: 'u-owner', isCompany: false } : null,
+    );
+    prisma.state.userFlags['u-gone'] = { disabledAt: new Date() };
+    await expect(service.inviteMember('u-owner', 'ws-1', 'u-gone')).rejects.toBeInstanceOf(BadRequestException);
+    prisma.state.userFlags['u-member'] = { disabledAt: new Date() };
+    await expect(service.updateMemberRole('u-owner', 'ws-1', 'u-member', 'owner')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.state.members['u-member']).toBe('member');
   });
 });

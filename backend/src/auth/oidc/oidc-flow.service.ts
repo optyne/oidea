@@ -11,6 +11,7 @@ import { AuthService, AuthTokens } from '../auth.service';
 import { describeOidcError, oidcEnvProblems, OidcClient, OidcProviderError } from './oidc-client';
 import { SsoErrorCode, SsoFlowError, ssoHttpError } from './oidc-errors';
 import { SsoLoginService } from './sso-login.service';
+import { LOCKED_TX_OPTIONS, lockUser } from '../../common/identity-lock';
 
 export type SsoClient = 'web' | 'mobile';
 
@@ -261,16 +262,20 @@ export class OidcFlowService {
       throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'invalid_ticket');
     }
 
-    // callback 之後到現在（≤ 60 秒）被停用、刪除或離職的話不發 token（review N5）
-    const user = await this.prisma.user.findUnique({
-      where: { id: stored.userId },
-      select: { id: true, email: true, disabledAt: true, deletedAt: true, tokenVersion: true },
-    });
+    // callback 之後到現在（≤ 60 秒）被停用、刪除或離職的話不發 token（review N5）。
+    // 在 user 鎖底下讀（H2 review S3）：正在進行的離職交易 commit 之後才判斷，不會發出一組馬上失效的 token
+    const { user, profile } = await this.prisma.$transaction(async (tx) => {
+      await lockUser(tx, stored.userId);
+      const u = await tx.user.findUnique({
+        where: { id: stored.userId },
+        select: { id: true, email: true, disabledAt: true, deletedAt: true, tokenVersion: true },
+      });
+      const p = u
+        ? await tx.employeeProfile.findUnique({ where: { userId: u.id }, select: { employmentStatus: true } })
+        : null;
+      return { user: u, profile: p };
+    }, LOCKED_TX_OPTIONS);
     if (!user || user.disabledAt || user.deletedAt) throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'disabled');
-    const profile = await this.prisma.employeeProfile.findUnique({
-      where: { userId: user.id },
-      select: { employmentStatus: true },
-    });
     if (!profile) throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'not_employee');
     if (profile.employmentStatus === 'terminated') throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'terminated');
 
