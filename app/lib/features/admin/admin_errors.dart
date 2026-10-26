@@ -18,7 +18,10 @@ const Map<String, String> _fallbackByCode = {
   'department_archived': '部門已封存，不能指派員工',
   'not_bound': '這位員工尚未綁定登入帳號',
   'invalid_date': '日期格式不正確，請使用 YYYY-MM-DD',
+  'invalid_csv': 'CSV 格式不正確：第一行必須是欄位名稱，且至少要有一筆資料',
 };
+// 後端 backend/src/employees/h2-app-contract.spec.ts 會讀這個檔，確認上面的鍵（加上下面特別處理的
+// owner_transfer_required）跟後端會送的 H2 錯誤碼完全相同。新增或移除錯誤碼時兩邊要一起改。
 
 /// 把 API 例外轉成給使用者看的繁體中文訊息。
 ///
@@ -30,6 +33,8 @@ String adminErrorMessage(Object error) {
 
   final data = error.response?.data;
   final status = error.response?.statusCode;
+  // 只有 CSV 匯入會遇到。超過 express 的請求大小上限時回應不是 JSON、訊息是英文，一律給固定說明。
+  if (status == 413) return '內容太大（上限 1 MB），請分批匯入';
   if (data is Map) {
     final code = data['code'];
     final message = _messageOf(data['message']);

@@ -373,6 +373,7 @@ class ImportResult {
     this.updated = 0,
     this.unchanged = 0,
     this.errors = const [],
+    this.dryRun = true,
   });
 
   final int created;
@@ -380,12 +381,16 @@ class ImportResult {
   final int unchanged;
   final List<ImportError> errors;
 
+  /// 後端回報這次是不是預覽（沒寫入）。缺欄位時當成預覽，不會誤以為已經匯入。
+  final bool dryRun;
+
   factory ImportResult.fromJson(Map<String, dynamic> j) {
     final raw = j['errors'];
     return ImportResult(
       created: _int(j['created']),
       updated: _int(j['updated']),
       unchanged: _int(j['unchanged']),
+      dryRun: j['dryRun'] != false,
       errors: raw is List
           ? raw
               .whereType<Map<String, dynamic>>()

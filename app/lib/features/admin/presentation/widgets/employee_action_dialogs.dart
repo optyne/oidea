@@ -156,6 +156,12 @@ class _EmployeeImportDialogState extends ConsumerState<EmployeeImportDialog> {
           _preview = result;
           _busy = false;
         });
+      } else if (result.dryRun) {
+        // 要求正式匯入，後端卻回報沒有寫入：不要當成成功關掉對話框
+        setState(() {
+          _busy = false;
+          _error = '伺服器沒有寫入任何資料，請重新預覽後再試';
+        });
       } else {
         Navigator.of(context).pop(true);
       }

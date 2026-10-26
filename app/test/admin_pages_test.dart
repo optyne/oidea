@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oidea/features/admin/admin_errors.dart';
@@ -357,15 +358,27 @@ void main() {
 
   group('成員與角色', () {
     final members = [
-      {
-        'role': 'owner',
-        'user': {'id': 'u-owner', 'displayName': '老闆', 'email': 'boss@corp.example'},
-      },
-      {
-        'role': 'member',
-        'user': {'id': 'u-1', 'displayName': '王小明', 'email': 'ming@corp.example'},
-      },
+      memberJson('u-owner', '老闆', role: 'owner', email: 'boss@corp.example'),
+      memberJson('u-1', '王小明', email: 'ming@corp.example'),
     ];
+
+    testWidgets('公司工作空間的成員只由員工生命週期決定：沒有邀請、沒有移除，只能改角色', (tester) async {
+      final api = FakeAdminApi()..members = members;
+      await tester.pumpWidget(adminApp(const RolesPage(), api: api, me: companyMe(ownerPerms, role: 'owner')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.textContaining('邀請'), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
+      expect(find.byIcon(Icons.person_remove), findsNothing);
+      await tester.tap(find.byTooltip('變更角色'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('移除'), findsNothing);
+      expect(find.textContaining('改為'), findsWidgets);
+      await tester.tapAt(Offset.zero); // 關掉選單
+      await tester.pumpAndSettle();
+      expect(api.calls, isEmpty);
+    });
 
     testWidgets('admin：可改角色，看不到移交擁有者', (tester) async {
       final api = FakeAdminApi()..members = members;
@@ -558,6 +571,25 @@ void main() {
       expect(adminErrorMessage(apiError(409, {'code': 'email_taken'})), contains('Email'));
       expect(adminErrorMessage(apiError(403, {'message': 'Forbidden resource'})), 'Forbidden resource');
       expect(adminErrorMessage(apiError(403, {})), '權限不足');
+    });
+
+    test('CSV 匯入的錯誤：invalid_csv 有備用文字；413 不論回應長怎樣都給固定說明', () {
+      expect(adminErrorMessage(apiError(400, {'code': 'invalid_csv'})), contains('CSV'));
+      expect(adminErrorMessage(apiError(400, {'code': 'invalid_csv', 'message': '缺少 email 欄'})), '缺少 email 欄');
+      expect(adminErrorMessage(apiError(413, {'message': 'request entity too large'})), contains('1 MB'));
+      final req = RequestOptions(path: 'x');
+      final html = DioException(
+        requestOptions: req,
+        response: Response(requestOptions: req, statusCode: 413, data: '<html>Payload Too Large</html>'),
+        type: DioExceptionType.badResponse,
+      );
+      expect(adminErrorMessage(html), contains('1 MB'));
+    });
+
+    test('ImportResult 解析 dryRun；缺欄位當成預覽', () {
+      expect(ImportResult.fromJson({'created': 1, 'dryRun': false}).dryRun, isFalse);
+      expect(ImportResult.fromJson({'created': 1, 'dryRun': true}).dryRun, isTrue);
+      expect(ImportResult.fromJson({'created': 1}).dryRun, isTrue);
     });
 
     test('日期與 Email 驗證', () {

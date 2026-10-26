@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../admin_errors.dart';
 import '../models/admin_models.dart';
 
 /// `GET /company/me`。換使用者（登入／登出）時重抓。
@@ -177,7 +178,7 @@ class AuditController extends StateNotifier<AuditState> {
         items: prev,
         nextCursor: cursor,
         filter: f,
-        error: e.toString(),
+        error: adminErrorMessage(e),
       );
     }
   }

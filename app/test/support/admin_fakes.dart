@@ -56,6 +56,8 @@ Map<String, dynamic> employeeJson(
       'phone': '',
       'userId': userId,
       'disabled': false,
+      'createdAt': '2026-10-01T00:00:00.000Z',
+      'updatedAt': '2026-10-01T00:00:00.000Z',
     };
 
 Map<String, dynamic> deptJson(
@@ -79,6 +81,29 @@ Map<String, dynamic> deptJson(
       'childCount': children,
     };
 
+/// `GET /workspaces/:id/members` 的一列（WorkspaceMember + include user，見 backend workspaces.service listMembers）。
+Map<String, dynamic> memberJson(
+  String userId,
+  String displayName, {
+  String role = 'member',
+  String workspaceId = 'ws-co',
+  String? email,
+}) =>
+    {
+      'id': 'm-$userId',
+      'workspaceId': workspaceId,
+      'userId': userId,
+      'role': role,
+      'joinedAt': '2026-10-01T00:00:00.000Z',
+      'user': {
+        'id': userId,
+        'username': userId,
+        'displayName': displayName,
+        'avatarUrl': null,
+        'email': email ?? '$userId@corp.example',
+      },
+    };
+
 DioException apiError(int status, Map<String, dynamic> body) {
   final req = RequestOptions(path: 'x');
   return DioException(
@@ -94,8 +119,9 @@ class FakeAdminApi extends Fake implements ApiClient {
   int employeesTotal = 2;
   List<Map<String, dynamic>> departments = [];
   List<dynamic> members = [];
-  Map<String, dynamic> importPreview = {'created': 1, 'updated': 0, 'unchanged': 0, 'errors': <dynamic>[]};
-  Map<String, dynamic> importFinal = {'created': 1, 'updated': 0, 'unchanged': 0, 'errors': <dynamic>[]};
+  // 形狀同 POST /admin/employees/import 的回應（backend employee-admin.service importCsv）
+  Map<String, dynamic> importPreview = {'created': 1, 'updated': 0, 'unchanged': 0, 'errors': <dynamic>[], 'dryRun': true};
+  Map<String, dynamic> importFinal = {'created': 1, 'updated': 0, 'unchanged': 0, 'errors': <dynamic>[], 'dryRun': false};
   Object? terminateError;
   Object? deleteDepartmentError;
 
@@ -166,6 +192,32 @@ class FakeAdminApi extends Fake implements ApiClient {
   Future<Map<String, dynamic>> transferWorkspaceOwner(String workspaceId, String newOwnerUserId) async {
     calls.add('transfer:$newOwnerUserId');
     return {};
+  }
+
+  @override
+  Future<void> removeMember(String workspaceId, String userId) async {
+    calls.add('remove:$workspaceId:$userId');
+  }
+
+  @override
+  Future<Map<String, dynamic>> inviteMemberByIdentifier(
+    String workspaceId, {
+    required String identifier,
+    String role = 'member',
+  }) async {
+    calls.add('invite:$workspaceId:$identifier:$role');
+    return memberJson('u-new', identifier, role: role, workspaceId: workspaceId);
+  }
+
+  @override
+  Future<Map<String, dynamic>> createWorkspaceInvite(
+    String workspaceId, {
+    String? email,
+    String role = 'member',
+    int expiresInDays = 7,
+  }) async {
+    calls.add('inviteLink:$workspaceId:$role:$expiresInDays');
+    return {'id': 'inv-1', 'workspaceId': workspaceId, 'token': 'tok-123', 'role': role};
   }
 
   @override
