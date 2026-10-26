@@ -85,6 +85,13 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
     expect(res.exchange!.status).toBe(201);
   });
 
+  it('review S6：mobile 的 authorize URL 帶 prompt=login（不沿用既有 IdP session），web 不帶', async () => {
+    const mobile = new URL((await h.start302('mobile', challengeOf(newVerifier()))).location);
+    expect(mobile.searchParams.get('prompt')).toBe('login');
+    const web = new URL((await h.start302('web', challengeOf(newVerifier()))).location);
+    expect(web.searchParams.has('prompt')).toBe(false);
+  });
+
   it('mobile 的錯誤走 ?error=', async () => {
     const res = await h.login({ ...alice, email: 'nobody@corp.com', sub: 'sub-nobody' }, 'mobile');
     expect(res.callback.location).toBe('oidea://auth?error=not_employee');
@@ -124,14 +131,15 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
 
     it('GET /auth/config 帶 IdP 的 end_session_endpoint', async () => {
       const body = await (await h.get('/auth/config')).json();
-      expect(body).toEqual({ sso: true, passwordLogin: true, endSessionUrl: idp.endSessionEndpoint });
+      expect(body).toEqual({ sso: true, passwordLogin: false, breakGlass: false, endSessionUrl: idp.endSessionEndpoint });
     });
 
     it('IdP 掛掉時 GET /auth/config 照常回應，endSessionUrl=null', async () => {
       idp.failDiscovery = true;
       const res = await h.get('/auth/config');
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ sso: true, passwordLogin: true, endSessionUrl: null });
+      // 有 OIDC_ISSUER、沒明確開啟 → 帳密登入預設關（review S4）
+      expect(await res.json()).toEqual({ sso: true, passwordLogin: false, breakGlass: false, endSessionUrl: null });
     });
   });
 
@@ -144,6 +152,15 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
       expect(res.callback.ticket).toBeUndefined();
       expect(h.prisma.counts()).toEqual(before);
       expect([...h.redis.store.keys()].filter((k) => k.startsWith('oidc:ticket:'))).toHaveLength(0);
+      if (expected === 'server_error') {
+        // review N2：id_token／token 驗證失敗也寫 auth.sso_denied（只有原因代碼）
+        expect(h.audits('auth.sso_denied')).toEqual([
+          expect.objectContaining({
+            workspaceId: COMPANY_WS,
+            metadata: expect.objectContaining({ reason: 'id_token_invalid', code: 'server_error' }),
+          }),
+        ]);
+      }
     };
 
     it('竄改 state → invalid_state（回 web callback）', async () => {
@@ -220,6 +237,13 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
       const res = await h.login({ ...alice, email_verified: false });
       expect(res.callback.error).toBe('email_unverified');
       expect(h.prisma.counts()).toEqual(before);
+      // review N2：寫 auth.sso_denied
+      expect(h.audits('auth.sso_denied')).toEqual([
+        expect.objectContaining({
+          workspaceId: COMPANY_WS,
+          metadata: expect.objectContaining({ reason: 'email_unverified', email: 'alice@corp.com' }),
+        }),
+      ]);
     });
 
     it('email_verified 是字串 "true"（不是 boolean）→ email_unverified', async () => {
@@ -316,6 +340,31 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
       expect(res.status).toBe(401);
       expect(res.body.code).toBe('disabled');
     });
+
+    it('review N5：callback 之後、exchange 之前被設成離職（terminated）→ 401 terminated，不發 token', async () => {
+      const { ticket, verifier } = await getTicket();
+      h.prisma.profiles.find((p) => p.email === 'alice@corp.com')!.employmentStatus = 'terminated';
+      const res = await h.exchange(ticket, verifier);
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('terminated');
+      expect(h.prisma.refreshRows).toHaveLength(0);
+    });
+
+    it('review N5：exchange 之前被刪除 → 401 disabled', async () => {
+      const { ticket, verifier } = await getTicket();
+      h.prisma.users.find((u) => u.email === 'alice@corp.com')!.deletedAt = new Date();
+      const res = await h.exchange(ticket, verifier);
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('disabled');
+    });
+
+    it('review N5：exchange 之前員工資料被解除綁定 → 401 not_employee', async () => {
+      const { ticket, verifier } = await getTicket();
+      h.prisma.profiles.find((p) => p.email === 'alice@corp.com')!.userId = null;
+      const res = await h.exchange(ticket, verifier);
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('not_employee');
+    });
   });
 
   describe('Redis 停掉時拒絕登入', () => {
@@ -367,7 +416,7 @@ describe('SSO 沒開或設定不完整', () => {
       expect((await h.get('/auth/oidc/callback?code=x&state=y')).status).toBe(404);
       expect((await h.post('/auth/oidc/exchange', { ticket: 'a'.repeat(43), app_verifier: 'b'.repeat(43) })).status).toBe(404);
       const cfg = await (await h.get('/auth/config')).json();
-      expect(cfg).toEqual({ sso: false, passwordLogin: true, endSessionUrl: null });
+      expect(cfg).toEqual({ sso: false, passwordLogin: true, breakGlass: false, endSessionUrl: null });
       expect(idp.discoveryHits).toBe(0);
     } finally {
       await h.close();

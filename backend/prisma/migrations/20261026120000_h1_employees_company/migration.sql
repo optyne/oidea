@@ -1,5 +1,6 @@
 -- AlterTable
-ALTER TABLE "users" ALTER COLUMN "passwordHash" DROP NOT NULL;
+ALTER TABLE "users" ADD COLUMN     "sessionsValidAfter" TIMESTAMP(3),
+ALTER COLUMN "passwordHash" DROP NOT NULL;
 
 -- AlterTable
 ALTER TABLE "workspaces" ADD COLUMN     "isCompany" BOOLEAN NOT NULL DEFAULT false,
@@ -108,3 +109,14 @@ CREATE UNIQUE INDEX "departments_root_name_key" ON "departments" ("workspaceId",
 -- 同一個上層部門底下，子部門不能同名（不分大小寫）
 CREATE UNIQUE INDEX "departments_child_name_key" ON "departments" ("workspaceId", "parentId", lower("name")) WHERE "parentId" IS NOT NULL;
 
+
+-- ============================================================
+-- H1 上線：強制所有人重新走 SSO 登入一次（review S1）
+--
+-- H0 與 H1 之間用帳密登入的人（包括非員工、離職員工、搶先用員工 email 註冊的帳號）手上的
+-- refresh token 會一直自動換發；員工對應只在 SSO 登入時檢查，所以這裡把它們全部撤銷。
+-- access token 最多再撐 15 分鐘（JWT_EXPIRATION），之後就要經 SSO（只有員工能登入）。
+-- bot token 不受影響（不是 refresh token）。只在這份 migration 跑一次。
+-- 時間用 UTC 寫進 TIMESTAMP(3)，跟 Prisma 寫入的值一致。
+-- ============================================================
+UPDATE "refresh_tokens" SET "revokedAt" = (NOW() AT TIME ZONE 'UTC') WHERE "revokedAt" IS NULL;

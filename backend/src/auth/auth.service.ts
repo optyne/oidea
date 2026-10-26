@@ -16,6 +16,9 @@ import { ACCESS_TOKEN_TYPE, AccessTokenPayload } from './token-types';
 import { AuthConfig, PublicAuthConfig } from '../common/auth-config';
 import { CompanyService } from '../company/company.service';
 import { OidcClient } from './oidc/oidc-client';
+import { Clock, SystemClock } from '../common/clock';
+
+const SYSTEM_CLOCK = new SystemClock();
 
 const BAD_CREDENTIALS = '信箱或密碼錯誤';
 
@@ -43,6 +46,7 @@ export class AuthService {
     private authConfig: AuthConfig,
     private company: CompanyService,
     @Optional() private oidcClient?: OidcClient,
+    @Optional() private clock?: Clock,
   ) {}
 
   /**
@@ -231,8 +235,10 @@ export class AuthService {
   }
 
   private signAccessToken(userId: string, email: string): string {
-    const payload: AccessTokenPayload = { sub: userId, email, typ: ACCESS_TOKEN_TYPE };
-    // 有效期由 JwtModule 的 signOptions（JWT_EXPIRATION，預設 15m）決定
+    // iat 用注入的時鐘（spec §6.4）：`sessionsValidAfter` 也是用同一個時鐘寫的，兩者才能比。
+    // 有效期由 JwtModule 的 signOptions（JWT_EXPIRATION，預設 15m）決定，從這個 iat 起算。
+    const iat = Math.floor((this.clock ?? SYSTEM_CLOCK).now().getTime() / 1000);
+    const payload: AccessTokenPayload = { sub: userId, email, typ: ACCESS_TOKEN_TYPE, iat };
     return this.jwtService.sign(payload);
   }
 

@@ -54,6 +54,56 @@ describe('EmployeesService.importRows', () => {
     expect(prisma.profiles[0]).toMatchObject({ fullName: '王愛麗（改名）', jobTitle: '資深工程師' });
   });
 
+  describe('review S10：重新匯入只寫有提供的欄位', () => {
+    it('CSV 沒有 departmentName／jobTitle 欄位 → 更新時不動原本的部門與職稱', async () => {
+      await service.importRows([row()]);
+      const before = { ...prisma.profiles[0] };
+      expect(before.departmentId).not.toBeNull();
+      const res = await service.importRows([
+        { employeeNo: 'E001', email: 'alice@corp.com', fullName: '王愛麗（改名）', hireDate: '2024-03-01' },
+      ]);
+      expect(res.updated).toBe(1);
+      expect(prisma.profiles[0]).toMatchObject({
+        fullName: '王愛麗（改名）',
+        departmentId: before.departmentId,
+        jobTitle: '工程師',
+      });
+      expect(prisma.employeeProfile.update.mock.calls.at(-1)![0].data).not.toHaveProperty('departmentId');
+      expect(prisma.employeeProfile.update.mock.calls.at(-1)![0].data).not.toHaveProperty('jobTitle');
+    });
+
+    it('欄位存在但留白 → 清掉部門與職稱（有文件說明的行為）', async () => {
+      await service.importRows([row()]);
+      await service.importRows([row({ departmentName: '', jobTitle: '' })]);
+      expect(prisma.profiles[0]).toMatchObject({ departmentId: null, jobTitle: '' });
+    });
+
+    it('新建時沒有這兩欄 → 沒有部門、職稱是空字串', async () => {
+      await service.importRows([{ employeeNo: 'E9', email: 'n@corp.com', fullName: 'N', hireDate: '2024-01-01' }]);
+      expect(prisma.profiles[0]).toMatchObject({ departmentId: null, jobTitle: '' });
+    });
+
+    it('已綁定帳號的員工：匯入不能改 email → 該列失敗，資料不動；其他欄位照樣可以更新', async () => {
+      await service.importRows([row()]);
+      prisma.profiles[0].userId = 'u-alice';
+      const res = await service.importRows([row({ email: 'alice.new@corp.com' }), row({ employeeNo: 'E002', email: 'b@corp.com' })]);
+      expect(res.results[0]).toMatchObject({ employeeNo: 'E001', status: 'error', reason: expect.stringContaining('H2') });
+      expect(res.results[1]).toMatchObject({ status: 'created' });
+      expect(prisma.profiles.find((p) => p.employeeNo === 'E001')!.email).toBe('alice@corp.com');
+
+      const same = await service.importRows([row({ fullName: '王愛麗二' })]);
+      expect(same.results[0].status).toBe('updated');
+      expect(prisma.profiles.find((p) => p.employeeNo === 'E001')!.fullName).toBe('王愛麗二');
+    });
+
+    it('還沒綁定的員工可以用匯入改 email', async () => {
+      await service.importRows([row()]);
+      const res = await service.importRows([row({ email: 'alice.new@corp.com' })]);
+      expect(res.results[0].status).toBe('updated');
+      expect(prisma.profiles[0].email).toBe('alice.new@corp.com');
+    });
+  });
+
   it('部門名稱不分大小寫比對既有根部門，不重複建立', async () => {
     const res = await service.importRows([
       row({ employeeNo: 'E1', email: 'a@corp.com', departmentName: 'Sales' }),

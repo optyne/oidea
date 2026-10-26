@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { WsAuthService } from './ws-auth';
 import { SocketRegistry } from './socket-registry';
-import { UserStatusService } from './user-status.service';
+import { AccessTokenCheck, UserStatusService } from './user-status.service';
 import { Clock, SystemClock } from '../common/clock';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
@@ -151,12 +151,12 @@ describe('socket.io 握手（真的 server）', () => {
     });
 
     it('S2：客戶端在非同步驗證途中斷線 → registry 不留項目', async () => {
-      let release!: (disabled: boolean) => void;
+      let release!: (check: AccessTokenCheck) => void;
       let entered!: () => void;
       const inCheck = new Promise<void>((r) => (entered = r));
-      const spy = jest.spyOn(userStatus, 'isDisabled').mockImplementationOnce(
+      const spy = jest.spyOn(userStatus, 'checkAccessToken').mockImplementationOnce(
         () =>
-          new Promise<boolean>((r) => {
+          new Promise<AccessTokenCheck>((r) => {
             release = r;
             entered();
           }),
@@ -172,7 +172,7 @@ describe('socket.io 握手（真的 server）', () => {
         sock.close();
         await closed;
         await new Promise((r) => setTimeout(r, 100)); // let the server see the close
-        release(false); // auth passes, but the connection is already gone
+        release('ok'); // auth passes, but the connection is already gone
         await new Promise((r) => setTimeout(r, 100));
         expect(registry.count('u-abort')).toBe(0);
       } finally {

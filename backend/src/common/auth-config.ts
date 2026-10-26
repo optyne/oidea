@@ -4,7 +4,8 @@ import { ConfigService } from '@nestjs/config';
 /**
  * 登入相關環境變數的唯一讀取點（spec §4.3、§4.5）。
  *
- * - `AUTH_PASSWORD_LOGIN_ENABLED`：帳密登入／註冊開關。沒設時：`NODE_ENV=production` 為 false，其他為 true。
+ * - `AUTH_PASSWORD_LOGIN_ENABLED`：帳密登入／註冊開關。沒設時 fail closed：有 `OIDC_ISSUER`
+ *   或 `NODE_ENV=production` 為 false，兩個都沒有（本機開發）才是 true。
  *   接受 true/false/1/0/yes/no/on/off（不分大小寫）；無法辨識的值一律當 false（寧可關）。
  * - `BREAK_GLASS_OWNER_EMAILS`：逗號分隔、不分大小寫。帳密登入關閉時，名單上且是公司工作空間 owner
  *   的帳號仍可用帳密登入（緊急登入）。
@@ -22,9 +23,18 @@ const FALSE_WORDS = new Set(['false', '0', 'no', 'off']);
 
 const clean = (raw: string | undefined): string => (typeof raw === 'string' ? raw.trim() : '');
 
+export function isProduction(read: EnvReader = processEnvReader): boolean {
+  return clean(read('NODE_ENV')).toLowerCase() === 'production';
+}
+
+/**
+ * 帳密登入／註冊開關。沒設 `AUTH_PASSWORD_LOGIN_ENABLED` 時 **fail closed**（review S4）：
+ * 設了 `OIDC_ISSUER`（有 SSO）或 `NODE_ENV=production` 就是關；兩個都沒有（本機開發）才開。
+ * 明確設定的值優先。
+ */
 export function isPasswordLoginEnabled(read: EnvReader = processEnvReader): boolean {
   const raw = clean(read('AUTH_PASSWORD_LOGIN_ENABLED')).toLowerCase();
-  if (raw === '') return clean(read('NODE_ENV')).toLowerCase() !== 'production';
+  if (raw === '') return !isProduction(read) && !isSsoConfigured(read);
   if (TRUE_WORDS.has(raw)) return true;
   if (FALSE_WORDS.has(raw)) return false;
   return false;
@@ -62,6 +72,8 @@ export interface OidcEnv {
   redirectUri: string;
   webCallbackUrl: string;
   mobileCallbackUrl: string;
+  /** `NODE_ENV=production`：callback URL 必須是 https（mobile 必須是自訂 scheme）。 */
+  production: boolean;
 }
 
 /** OIDC 流程用的設定。值可能是空字串（未設定）；由 OIDC 流程自己決定缺哪個要拒絕啟動。 */
@@ -73,16 +85,20 @@ export function readOidcEnv(read: EnvReader = processEnvReader): OidcEnv {
     redirectUri: clean(read('OIDC_REDIRECT_URI')),
     webCallbackUrl: clean(read('APP_WEB_CALLBACK_URL')),
     mobileCallbackUrl: clean(read('APP_MOBILE_CALLBACK_URL')),
+    production: isProduction(read),
   };
 }
 
 /**
  * 給 GET /auth/config：登入方式的布林值，加上 IdP discovery 的 `end_session_endpoint`
  * （公開資訊；SSO 沒開或拿不到時 null）。不含任何秘密。
+ * `breakGlass`：緊急登入開著（有設 BREAK_GLASS_OWNER_EMAILS、而且一般帳密登入是關的）。只透露
+ * 「現在是緊急狀態」，不透露名單上是誰；登入頁據此顯示「管理者緊急登入」（review S5）。
  */
 export interface PublicAuthConfig {
   sso: boolean;
   passwordLogin: boolean;
+  breakGlass: boolean;
   endSessionUrl: string | null;
 }
 
@@ -124,8 +140,18 @@ export class AuthConfig {
     return readOidcEnv(this.read);
   }
 
+  /** 緊急登入開著：有名單、而且一般帳密登入是關的（開著的話直接用一般登入）。 */
+  breakGlassActive(): boolean {
+    return !this.passwordLoginEnabled() && this.breakGlassOwnerEmails().length > 0;
+  }
+
   publicConfig(endSessionUrl: string | null = null): PublicAuthConfig {
     const sso = this.ssoEnabled();
-    return { sso, passwordLogin: this.passwordLoginEnabled(), endSessionUrl: sso ? endSessionUrl : null };
+    return {
+      sso,
+      passwordLogin: this.passwordLoginEnabled(),
+      breakGlass: this.breakGlassActive(),
+      endSessionUrl: sso ? endSessionUrl : null,
+    };
   }
 }

@@ -1,7 +1,10 @@
 import { CsvRecord, parseCsv } from './csv';
 import { EmployeeImportRow } from './employees.service';
 
-/** CSV 的欄位（檔頭必須有前四個；後兩個可省略）。比對時不分大小寫、忽略前後空白。 */
+/**
+ * CSV 的欄位（檔頭必須有前四個；後兩個可省略）。比對時不分大小寫、忽略前後空白。
+ * 省略的欄位在更新既有員工時不會被動到；有這一欄但留白 = 清掉（review S10）。
+ */
 export const EMPLOYEE_CSV_REQUIRED = ['employeeNo', 'email', 'fullName', 'hireDate'] as const;
 export const EMPLOYEE_CSV_OPTIONAL = ['departmentName', 'jobTitle'] as const;
 const ALL_COLUMNS = [...EMPLOYEE_CSV_REQUIRED, ...EMPLOYEE_CSV_OPTIONAL] as const;
@@ -40,14 +43,16 @@ export function parseEmployeeCsv(text: string): ParsedEmployeeCsv {
       continue;
     }
     const get = (col: Column) => (index[col] === undefined ? '' : rec.fields[index[col]!]);
+    // 可省略的欄位：檔頭沒有 → undefined（更新時不動），不要變成空字串（那會清掉資料）
+    const optional = (col: Column) => (index[col] === undefined ? undefined : rec.fields[index[col]!]);
     rows.push({
       line: rec.line,
       employeeNo: get('employeeNo'),
       email: get('email'),
       fullName: get('fullName'),
       hireDate: get('hireDate'),
-      departmentName: get('departmentName'),
-      jobTitle: get('jobTitle'),
+      departmentName: optional('departmentName'),
+      jobTitle: optional('jobTitle'),
     });
   }
   return { rows, malformed };

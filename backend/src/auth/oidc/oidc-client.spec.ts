@@ -58,4 +58,34 @@ describe('OidcClient helpers', () => {
     expect(oidcEnvProblems(env({ ...full, OIDC_REDIRECT_URI: 'ftp://x/' }))).toEqual(['OIDC_REDIRECT_URI']);
     expect(JSON.stringify(oidcEnvProblems(env({ ...full, OIDC_ISSUER: 'nope' })))).not.toContain('s3cret');
   });
+
+  it('review N4：NODE_ENV=production 時 callback 必須是 https、mobile 必須是自訂 scheme', () => {
+    const env = (o: Record<string, string>) => readOidcEnv((k) => o[k]);
+    const full = {
+      OIDC_ISSUER: 'https://auth.example/application/o/oidea/',
+      OIDC_CLIENT_ID: 'id',
+      OIDC_CLIENT_SECRET: 's3cret',
+      OIDC_REDIRECT_URI: 'http://api.example/api/auth/oidc/callback',
+      APP_WEB_CALLBACK_URL: 'http://app.example/auth/callback',
+      APP_MOBILE_CALLBACK_URL: 'https://app.example/mobile',
+    };
+    // 開發環境：http 可以（本機測試）
+    expect(oidcEnvProblems(env(full))).toEqual([]);
+    expect(oidcEnvProblems(env({ ...full, NODE_ENV: 'production' }))).toEqual([
+      'OIDC_REDIRECT_URI',
+      'APP_WEB_CALLBACK_URL',
+      'APP_MOBILE_CALLBACK_URL',
+    ]);
+    expect(
+      oidcEnvProblems(
+        env({
+          ...full,
+          NODE_ENV: 'production',
+          OIDC_REDIRECT_URI: 'https://api.example/api/auth/oidc/callback',
+          APP_WEB_CALLBACK_URL: 'https://app.example/auth/callback',
+          APP_MOBILE_CALLBACK_URL: 'oidea://auth',
+        }),
+      ),
+    ).toEqual([]);
+  });
 });

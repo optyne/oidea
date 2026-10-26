@@ -4,6 +4,8 @@ import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CompanyService } from './company.service';
 import { EmployeesService, normalizeEmail, normalizeEmployeeRow } from '../employees/employees.service';
+import { resolveUserIdByEmail } from '../common/email-lookup';
+import { SSO_PROVIDER } from '../auth/oidc/sso-login.service';
 
 export interface CompanyInitOptions {
   /** 指定既有工作空間（與 createName 二選一） */
@@ -20,20 +22,38 @@ export interface CompanyInitOptions {
   /** owner 還沒有員工資料時必填，YYYY-MM-DD */
   hireDate?: string;
   jobTitle?: string;
-  /** --create 且 owner 還沒有 User 時必填：暫時當 ownerId 的既有使用者 */
+  /** --create 且 owner 還沒綁定 SSO 時必填：暫時當 ownerId 的既有使用者 */
   executorEmail?: string;
+  /** --workspace 指向的工作空間已有 owner 以外的成員時，必須明確允許才沿用（review S7） */
+  allowExistingMembers?: boolean;
+}
+
+/** 既有工作空間的成員統計（只有數量，不含 email）。 */
+export interface ExistingMemberCounts {
+  /** 全部成員（含 owner） */
+  total: number;
+  /** owner 以外的成員 */
+  others: number;
+  /** 在這個工作空間沒有 EmployeeProfile 的成員 */
+  withoutProfile: number;
+  /** 角色是 owner／admin／hr／finance 的成員（成為公司工作空間後就是全公司的後台角色） */
+  privileged: number;
 }
 
 export interface CompanyInitResult {
   workspaceId: string;
   workspaceCreated: boolean;
-  /** owner 已有 User 時為他的 id（ownerId 已指向他） */
+  /** owner 已綁定 SSO 時為他的 id（ownerId 已指向他） */
   ownerUserId: string | null;
-  /** owner 還沒有 User：記在 Workspace.pendingOwnerEmail，等他第一次 SSO 登入時移交 */
+  /** owner 還沒綁定 SSO：記在 Workspace.pendingOwnerEmail，等他第一次 SSO 登入（會清掉舊密碼等）時移交 */
   pendingOwnerEmail: string | null;
   profile: 'created' | 'existing';
   profileId: string;
+  /** 指定的既有工作空間原本有 owner 以外的成員時（用 --allow-existing-members 沿用）的統計；否則 null */
+  existingMembers: ExistingMemberCounts | null;
 }
+
+const PRIVILEGED_ROLES = new Set(['owner', 'admin', 'hr', 'finance']);
 
 /** CLI 參數或狀態錯誤；訊息直接給操作者看。 */
 export class CompanyInitError extends Error {}
@@ -43,15 +63,22 @@ const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code ===
 interface ActiveUser {
   id: string;
   displayName: string;
+  /** 已有 `authentik` Account：經過 SSO 綁定（綁定時清過密碼、撤銷過 token／bot） */
+  ssoBound: boolean;
 }
 
 /**
  * `npm run company:init`（spec §4.3「員工對應」第 5 點）：
  * - 設定 `Workspace.isCompany`（已有別的公司工作空間就拒絕；同一個就冪等）。
  * - 確保 owner 的 EmployeeProfile（不綁 userId：第一次 SSO 登入時才綁，綁定流程會清密碼等）。
- * - owner 已有 User（email 不分大小寫）：`Workspace.ownerId` 指向他，並確保他是 owner 成員。
- * - owner 還沒有 User：把 email 記在 `Workspace.pendingOwnerEmail`；
- *   `--create` 時 ownerId 先指向 `--executor-email` 的使用者。
+ * - owner 的 User **已綁定 SSO**（有 authentik Account）：`Workspace.ownerId` 指向他，確保他是 owner 成員，
+ *   原本的 owner 降為 admin（跟 transferOwnership 一樣）。
+ * - 其他情況（沒有 User，或只有還沒綁 SSO 的帳密 User）：**不**直接給 owner（review B1：那可能是
+ *   搶先用老闆 email 註冊的人）。把 email 記在 `Workspace.pendingOwnerEmail`，等他第一次 SSO 登入、
+ *   經過綁定的清理流程之後才移交；`--create` 時 ownerId 先指向 `--executor-email` 的使用者。
+ * - email 比對：完全相同（小寫）優先，否則不分大小寫；只差大小寫的有兩個以上 → 拒絕。
+ * - `--workspace` 指向還不是公司工作空間、而且有 owner 以外成員的工作空間 → 拒絕，除非
+ *   `--allow-existing-members`（review S7）。
  */
 @Injectable()
 export class CompanyInitService {
@@ -73,13 +100,15 @@ export class CompanyInitService {
 
     const existingCompany = await this.company.findCompanyWorkspace();
     const ownerUser = await this.findActiveUser(ownerEmail, 'owner');
+    // 只有已綁定 SSO 的帳號能直接當 owner；其他一律等第一次 SSO 登入（review B1）
+    const boundOwner = ownerUser?.ssoBound ? ownerUser : null;
 
     // ── 1. 決定要用哪個工作空間（還不寫入） ──
-    let target: { id: string; name: string } | null = null;
+    let target: { id: string; name: string; ownerId: string; isCompany: boolean } | null = null;
     if (workspaceIdArg) {
       const ws = await this.prisma.workspace.findUnique({
         where: { id: workspaceIdArg },
-        select: { id: true, name: true, deletedAt: true },
+        select: { id: true, name: true, ownerId: true, isCompany: true, deletedAt: true },
       });
       if (!ws || ws.deletedAt) throw new CompanyInitError(`找不到工作空間 ${workspaceIdArg}`);
       if (existingCompany && existingCompany.id !== ws.id) {
@@ -94,23 +123,46 @@ export class CompanyInitService {
           `已經有公司工作空間（${existingCompany.id}「${existingCompany.name}」）；要更新它請改用 --workspace ${existingCompany.id}`,
         );
       }
-      target = existingCompany; // 同名重跑：冪等，不建第二個
+      target = { ...existingCompany, isCompany: true }; // 同名重跑：冪等，不建第二個
     }
 
     // ── 2. 先驗證 owner 的員工資料（避免建了工作空間才發現參數不足） ──
     const profilePlan = target
-      ? await this.planOwnerProfile(target.id, ownerEmail, opts, ownerUser)
-      : await this.planOwnerProfile(null, ownerEmail, opts, ownerUser);
+      ? await this.planOwnerProfile(target.id, ownerEmail, opts, boundOwner)
+      : await this.planOwnerProfile(null, ownerEmail, opts, boundOwner);
+
+    // 既有的專案工作空間第一次變成公司工作空間：原本的成員會直接變成公司成員（review S7）
+    let existingMembers: ExistingMemberCounts | null = null;
+    if (target && !target.isCompany) {
+      const counts = await this.countExistingMembers(target.id, [target.ownerId, boundOwner?.id]);
+      if (counts.others > 0) {
+        const summary =
+          `共 ${counts.total} 位成員，其中 ${counts.others} 位不是 owner；` +
+          `${counts.withoutProfile} 位不在員工主檔；${counts.privileged} 位的角色是 owner/admin/hr/finance`;
+        if (!opts.allowExistingMembers) {
+          throw new CompanyInitError(
+            `工作空間 ${target.id} 已有其他成員（${summary}）。成為公司工作空間後，他們都會是公司成員，` +
+              '角色就是全公司的後台角色。確認要沿用請加 --allow-existing-members，否則請改用 --create 建立新的公司工作空間',
+          );
+        }
+        existingMembers = counts;
+      }
+    }
 
     let executor: ActiveUser | null = null;
-    if (!target && !ownerUser) {
+    if (!target && !boundOwner) {
       if (!opts.executorEmail) {
         throw new CompanyInitError(
-          'owner 還沒有使用者帳號：建立新工作空間時必須用 --executor-email 指定一位既有使用者暫時擔任 owner',
+          'owner 還沒有綁定 SSO 的使用者帳號：建立新工作空間時必須用 --executor-email 指定一位既有使用者暫時擔任 owner',
         );
       }
       executor = await this.findActiveUser(normalizeEmail(opts.executorEmail), 'executor');
       if (!executor) throw new CompanyInitError('--executor-email 找不到可用的使用者');
+      if (ownerUser && executor.id === ownerUser.id) {
+        throw new CompanyInitError(
+          '--executor-email 不能是 owner 自己還沒綁定 SSO 的帳號（那正是要等第一次 SSO 登入清理的帳號），請指定另一位使用者',
+        );
+      }
     }
 
     // ── 3. 寫入 ──
@@ -121,19 +173,19 @@ export class CompanyInitService {
         workspaceId = target.id;
         await this.prisma.workspace.update({
           where: { id: workspaceId },
-          data: ownerUser
-            ? { isCompany: true, ownerId: ownerUser.id, pendingOwnerEmail: null }
+          data: boundOwner
+            ? { isCompany: true, ownerId: boundOwner.id, pendingOwnerEmail: null }
             : { isCompany: true, pendingOwnerEmail: ownerEmail },
         });
       } else {
-        const initialOwner = (ownerUser ?? executor)!;
+        const initialOwner = (boundOwner ?? executor)!;
         const ws = await this.prisma.workspace.create({
           data: {
             name: createName!,
             slug: await this.uniqueSlug(opts.slug?.trim() || slugify(createName!)),
             ownerId: initialOwner.id,
             isCompany: true,
-            pendingOwnerEmail: ownerUser ? null : ownerEmail,
+            pendingOwnerEmail: boundOwner ? null : ownerEmail,
             members: { create: { userId: initialOwner.id, role: 'owner' } },
           },
           select: { id: true },
@@ -148,12 +200,21 @@ export class CompanyInitService {
       throw err;
     }
 
-    if (ownerUser) {
+    let previousOwnerDemoted = false;
+    if (boundOwner) {
       await this.prisma.workspaceMember.upsert({
-        where: { workspaceId_userId: { workspaceId, userId: ownerUser.id } },
-        create: { workspaceId, userId: ownerUser.id, role: 'owner' },
+        where: { workspaceId_userId: { workspaceId, userId: boundOwner.id } },
+        create: { workspaceId, userId: boundOwner.id, role: 'owner' },
         update: { role: 'owner' },
       });
+      // 跟 transferOwnership 一樣：原本的主 owner 降為 admin（不留下永久的共同 owner）
+      if (target && target.ownerId !== boundOwner.id) {
+        const res = await this.prisma.workspaceMember.updateMany({
+          where: { workspaceId, userId: target.ownerId, role: 'owner' },
+          data: { role: 'admin' },
+        });
+        previousOwnerDemoted = res.count > 0;
+      }
     }
 
     let profileId: string;
@@ -177,32 +238,79 @@ export class CompanyInitService {
       metadata: {
         mode: workspaceIdArg ? 'workspace' : 'create',
         workspaceCreated,
-        ownerUserId: ownerUser?.id ?? null,
-        pendingOwner: !ownerUser,
+        ownerUserId: boundOwner?.id ?? null,
+        pendingOwner: !boundOwner,
+        /** owner 有帳號但還沒綁 SSO：不直接給 owner（review B1） */
+        ownerUserNotSsoBound: !!ownerUser && !boundOwner,
+        previousOwnerDemoted,
         profile: profilePlan.kind === 'create' ? 'created' : 'existing',
+        existingMembers,
       },
     });
 
     return {
       workspaceId,
       workspaceCreated,
-      ownerUserId: ownerUser?.id ?? null,
-      pendingOwnerEmail: ownerUser ? null : ownerEmail,
+      ownerUserId: boundOwner?.id ?? null,
+      pendingOwnerEmail: boundOwner ? null : ownerEmail,
       profile: profilePlan.kind === 'create' ? 'created' : 'existing',
       profileId,
+      existingMembers,
     };
   }
 
+  /**
+   * email → 可用的使用者（不含已刪除）。完全相同（小寫）優先，否則不分大小寫；
+   * 只差大小寫的有兩個以上 → 拒絕（不知道是誰）。比對走 email-lookup（不用 ILIKE，review S8）。
+   */
   private async findActiveUser(email: string, label: 'owner' | 'executor'): Promise<ActiveUser | null> {
-    const user = await this.prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
-      select: { id: true, displayName: true, disabledAt: true, botAccount: { select: { id: true } } },
+    const who = label === 'owner' ? 'owner' : '執行者';
+    const id = await resolveUserIdByEmail(this.prisma, email);
+    if (id === 'ambiguous') {
+      throw new CompanyInitError(
+        `${who}的 email 對到多個只差大小寫的使用者帳號，無法判斷是哪一個；請先在資料庫整理重複的帳號`,
+      );
+    }
+    if (!id) return null;
+    const user = await this.prisma.user.findUnique({
+      where: { id, deletedAt: null },
+      select: {
+        id: true,
+        displayName: true,
+        disabledAt: true,
+        botAccount: { select: { id: true } },
+        accounts: { where: { provider: SSO_PROVIDER }, select: { id: true } },
+      },
     });
     if (!user) return null;
-    const who = label === 'owner' ? 'owner' : '執行者';
     if (user.disabledAt) throw new CompanyInitError(`${who}的帳號已停用`);
     if (user.botAccount) throw new CompanyInitError(`${who}不能是 bot 帳號`);
-    return { id: user.id, displayName: user.displayName };
+    return { id: user.id, displayName: user.displayName, ssoBound: (user.accounts ?? []).length > 0 };
+  }
+
+  /** 工作空間的成員統計（只有數量）。`ownerIds` 不算進 others。 */
+  private async countExistingMembers(
+    workspaceId: string,
+    ownerIds: (string | null | undefined)[],
+  ): Promise<ExistingMemberCounts> {
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      select: { userId: true, role: true },
+    });
+    const owners = new Set(ownerIds.filter((x): x is string => !!x));
+    const profiled = members.length
+      ? await this.prisma.employeeProfile.findMany({
+          where: { workspaceId, userId: { in: members.map((m) => m.userId) } },
+          select: { userId: true },
+        })
+      : [];
+    const withProfile = new Set(profiled.map((p) => p.userId));
+    return {
+      total: members.length,
+      others: members.filter((m) => !owners.has(m.userId)).length,
+      withoutProfile: members.filter((m) => !withProfile.has(m.userId)).length,
+      privileged: members.filter((m) => PRIVILEGED_ROLES.has(m.role)).length,
+    };
   }
 
   private async planOwnerProfile(

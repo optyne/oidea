@@ -104,10 +104,29 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
       expect(actions()).not.toContain('auth.break_glass');
     });
 
-    it('GET /auth/config → { sso: false, passwordLogin: false, endSessionUrl: null }', async () => {
+    it('GET /auth/config → { sso: false, passwordLogin: false, breakGlass: false, endSessionUrl: null }', async () => {
       const res = await fetch(`${base}/auth/config`);
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ sso: false, passwordLogin: false, endSessionUrl: null });
+      expect(await res.json()).toEqual({ sso: false, passwordLogin: false, breakGlass: false, endSessionUrl: null });
+    });
+  });
+
+  describe('review S4：有 OIDC_ISSUER、但忘了設 NODE_ENV 與 AUTH_PASSWORD_LOGIN_ENABLED → 預設關（fail closed）', () => {
+    beforeEach(() => start({ OIDC_ISSUER: 'https://auth.example.com/application/o/oidea/' }));
+
+    it('POST /auth/register → 404', async () => {
+      expect((await register()).status).toBe(404);
+    });
+
+    it('POST /auth/login（帳密正確）→ 404，不發 token', async () => {
+      const res = await login('member@corp.com', 'member-pass');
+      expect(res.status).toBe(404);
+      expect(res.body.accessToken).toBeUndefined();
+      expect(actions()).not.toContain('auth.login');
+    });
+
+    it('GET /auth/config 的 passwordLogin=false', async () => {
+      expect(await (await fetch(`${base}/auth/config`)).json()).toMatchObject({ sso: true, passwordLogin: false });
     });
   });
 
@@ -157,8 +176,10 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
       expect((await register()).status).toBe(404);
     });
 
-    it('GET /auth/config 的 passwordLogin 仍是 false（緊急登入不對外顯示）', async () => {
-      expect(await (await fetch(`${base}/auth/config`)).json()).toEqual({ sso: false, passwordLogin: false, endSessionUrl: null });
+    it('GET /auth/config：passwordLogin 仍是 false；breakGlass=true（review S5：只透露「緊急登入開著」，不透露名單）', async () => {
+      const body = await (await fetch(`${base}/auth/config`)).json();
+      expect(body).toEqual({ sso: false, passwordLogin: false, breakGlass: true, endSessionUrl: null });
+      expect(JSON.stringify(body)).not.toMatch(/owner|member|co@/i);
     });
   });
 
@@ -168,7 +189,14 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
   });
 
   describe('帳密登入開啟（開發環境）', () => {
-    beforeEach(() => start({ NODE_ENV: 'development', OIDC_ISSUER: 'https://auth.example.com/application/o/oidea/' }));
+    beforeEach(() =>
+      start({
+        NODE_ENV: 'development',
+        OIDC_ISSUER: 'https://auth.example.com/application/o/oidea/',
+        // 有 OIDC_ISSUER 時要明確開啟（review S4）
+        AUTH_PASSWORD_LOGIN_ENABLED: 'true',
+      }),
+    );
 
     it('一般登入照常 201（不需要是 owner）', async () => {
       expect((await login('member@corp.com', 'member-pass')).status).toBe(201);
@@ -191,10 +219,10 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
       );
     });
 
-    it('GET /auth/config → { sso: true, passwordLogin: true, endSessionUrl }，只有這三個欄位、不含設定值', async () => {
+    it('GET /auth/config → { sso: true, passwordLogin: true, breakGlass: false, endSessionUrl }，只有這四個欄位、不含設定值', async () => {
       const body = await (await fetch(`${base}/auth/config`)).json();
       // 這個測試沒有 OidcClient（拿不到 discovery）→ endSessionUrl 是 null
-      expect(body).toEqual({ sso: true, passwordLogin: true, endSessionUrl: null });
+      expect(body).toEqual({ sso: true, passwordLogin: true, breakGlass: false, endSessionUrl: null });
       expect(JSON.stringify(body)).not.toContain('auth.example.com');
     });
   });

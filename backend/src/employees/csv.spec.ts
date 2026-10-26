@@ -91,10 +91,17 @@ describe('parseEmployeeCsv', () => {
         email: 'A@x.com',
         fullName: '王小明',
         hireDate: '2024-01-02',
-        departmentName: '',
-        jobTitle: '',
+        // review S10：檔頭沒有的選填欄位是 undefined（更新時不動），不是空字串（那會清掉）
+        departmentName: undefined,
+        jobTitle: undefined,
       },
     ]);
+    expect('departmentName' in rows[0] && rows[0].departmentName).toBeUndefined();
+  });
+
+  it('選填欄位在檔頭、但這一格留白 → 空字串（代表要清掉）', () => {
+    const { rows } = parseEmployeeCsv('employeeNo,email,fullName,hireDate,departmentName,jobTitle\nE1,a@x.com,A,2024-01-01,,\n');
+    expect(rows[0]).toMatchObject({ departmentName: '', jobTitle: '' });
   });
 
   it('缺必要欄位、不認得的欄位、重複欄位、空檔案 → EmployeeCsvHeaderError', () => {

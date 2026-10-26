@@ -134,6 +134,17 @@ describe.each(gateways)('$name gateway：握手驗身分（H0）', ({ build }) =
     expectRejected(await runMiddleware(mw, s), s);
   });
 
+  it('review S2：token 的 iat 早於 sessionsValidAfter（SSO 綁定前簽發）→ 拒絕；之後簽發的通過', async () => {
+    prisma.users.get('u-1')!.sessionsValidAfter = new Date(NOW);
+    const old = new FakeSocket({ auth: { token: access({ iat: nowSec - 60 }) } });
+    const err: any = await runMiddleware(mw, old);
+    expectRejected(err, old);
+    expect(err.reason).toBe('token_revoked');
+    const fresh = new FakeSocket({ auth: { token: access({ iat: nowSec }) } });
+    expect(await runMiddleware(mw, fresh)).toBeUndefined();
+    expect(fresh.data.userId).toBe('u-1');
+  });
+
   it('有效 access token → 通過；userId 取自 token，不理會 handshake 的 userId', async () => {
     const s = new FakeSocket({ auth: { token: `Bearer ${access()}`, userId: 'u-2' } });
     expect(await runMiddleware(mw, s)).toBeUndefined();

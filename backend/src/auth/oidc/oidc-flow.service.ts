@@ -3,7 +3,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import * as oidc from 'openid-client';
 import { RedisService } from '../../common/redis.service';
 import { Clock } from '../../common/clock';
-import { AuditRequestContext } from '../../audit/audit.service';
+import { AuditRequestContext, AuditService } from '../../audit/audit.service';
+import { CompanyService } from '../../company/company.service';
 import { PrismaService } from '../../common/prisma.service';
 import { AuthConfig } from '../../common/auth-config';
 import { AuthService, AuthTokens } from '../auth.service';
@@ -87,7 +88,33 @@ export class OidcFlowService {
     private readonly auth: AuthService,
     private readonly prisma: PrismaService,
     private readonly authConfig: AuthConfig,
+    private readonly audit: AuditService,
+    private readonly company: CompanyService,
   ) {}
+
+  /**
+   * IdP 那一段就被拒絕的登入（email 沒驗證、id_token／token 驗證失敗）也寫 `auth.sso_denied`
+   * （review N2）。metadata 只有原因代碼，不含 token、code 或 claims。
+   */
+  private async auditDenied(
+    reason: 'email_unverified' | 'id_token_invalid',
+    metadata: Record<string, unknown>,
+    req?: AuditRequestContext,
+  ): Promise<void> {
+    let workspaceId: string | null = null;
+    try {
+      workspaceId = (await this.company.findCompanyWorkspace())?.id ?? null;
+    } catch {
+      workspaceId = null;
+    }
+    await this.audit.record({
+      actorId: null,
+      workspaceId,
+      action: 'auth.sso_denied',
+      metadata: { reason, ...metadata },
+      req,
+    });
+  }
 
   /** SSO 沒開（沒設 OIDC_ISSUER）→ 404；開了但設定不完整 → 503（設定錯誤，記 log）。 */
   assertEnabled(): void {
@@ -113,7 +140,15 @@ export class OidcFlowService {
       const nonce = oidc.randomNonce();
       const codeVerifier = oidc.randomPKCECodeVerifier();
       const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
-      const url = await this.oidcClient.authorizationUrl({ state, nonce, codeChallenge });
+      // 行動版：自訂 scheme `oidea://` 可能被別的 App 搶註冊，那個 App 可以自己發起登入、帶自己的
+      // app_challenge。要求 IdP 重新登入（prompt=login），使用者已有的 IdP session 就不會被靜默沿用
+      // （review S6；長期解法是 Android App Links，見 DEPLOY_DOKPLOY.md）。
+      const url = await this.oidcClient.authorizationUrl({
+        state,
+        nonce,
+        codeChallenge,
+        ...(client === 'mobile' ? { prompt: 'login' as const } : {}),
+      });
       const stored: StoredState = { client, appChallenge, nonce, codeVerifier, createdAt: this.clock.now().getTime() };
       await this.redisCall(this.redis.set(stateKey(state), JSON.stringify(stored), OIDC_STATE_TTL_SECONDS));
       return url.toString();
@@ -162,7 +197,13 @@ export class OidcFlowService {
         codeVerifier: stored.codeVerifier,
       });
       if (!identity.emailVerified || !identity.email) {
-        throw new SsoFlowError('email_unverified', identity.email ? 'email_not_verified' : 'missing_email');
+        const detail = identity.email ? 'email_not_verified' : 'missing_email';
+        await this.auditDenied(
+          'email_unverified',
+          { code: 'email_unverified', detail, client, ...(identity.email ? { email: identity.email.trim().toLowerCase() } : {}) },
+          req,
+        );
+        throw new SsoFlowError('email_unverified', detail);
       }
 
       const result = await this.ssoLogin.loginWithOidc({ sub: identity.sub, email: identity.email }, req);
@@ -187,6 +228,11 @@ export class OidcFlowService {
             : describeOidcError(err);
       if (code === 'server_error') this.logger.error(`SSO callback failed (${detail})`);
       else this.logger.warn(`SSO callback rejected (${detail})`);
+      // token endpoint 或 id_token 驗證失敗（簽章、nonce、aud、alg…）：可能是竄改，寫 audit
+      // （discovery 失敗是 IdP 掛掉，不算拒絕登入）
+      if (err instanceof OidcProviderError && err.stage !== 'discovery') {
+        await this.auditDenied('id_token_invalid', { code, stage: err.stage, client }, req).catch(() => undefined);
+      }
       return this.appRedirect(client, { error: code });
     }
   }
@@ -215,12 +261,18 @@ export class OidcFlowService {
       throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'invalid_ticket');
     }
 
-    // callback 之後到現在（≤ 60 秒）被停用的話不發 token
+    // callback 之後到現在（≤ 60 秒）被停用、刪除或離職的話不發 token（review N5）
     const user = await this.prisma.user.findUnique({
       where: { id: stored.userId },
       select: { id: true, email: true, disabledAt: true, deletedAt: true },
     });
     if (!user || user.disabledAt || user.deletedAt) throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'disabled');
+    const profile = await this.prisma.employeeProfile.findUnique({
+      where: { userId: user.id },
+      select: { employmentStatus: true },
+    });
+    if (!profile) throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'not_employee');
+    if (profile.employmentStatus === 'terminated') throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'terminated');
 
     return this.auth.completeSsoLogin(user.id, user.email, req);
   }

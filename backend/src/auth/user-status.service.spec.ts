@@ -19,7 +19,7 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
     await expect(svc.isDisabled('u-1')).resolves.toBe(false);
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'u-1' },
-      select: { disabledAt: true, deletedAt: true },
+      select: { disabledAt: true, deletedAt: true, sessionsValidAfter: true },
     });
     expect(redis.setNx).toHaveBeenCalledWith(key, '0', USER_STATUS_CACHE_TTL_SECONDS);
     expect(redis.store.get(key)).toBe('0');
@@ -132,6 +132,85 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
     it('markDisabled 時 Redis 出錯 → 回 false，不拋錯', async () => {
       redis.mode = 'throw';
       await expect(svc.markDisabled('u-1')).resolves.toBe(false);
+    });
+  });
+
+  describe('review S2：sessionsValidAfter（SSO 綁定後舊 access token 失效）', () => {
+    const at = (sec: number) => new Date(sec * 1000 + 250); // 毫秒部分：cutoff 要無條件捨去到秒
+    const CUTOFF = 1_760_000_000;
+
+    it('沒設 cutoff：任何 iat 都放行，快取仍寫 "0"（跟 H0 的值相容）', async () => {
+      await expect(svc.checkAccessToken('u-1', 1)).resolves.toBe('ok');
+      expect(redis.store.get(key)).toBe('0');
+    });
+
+    it('iat 早於 cutoff → stale；同一秒或之後 → ok；快取記成 0:<秒>', async () => {
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
+      expect(redis.store.get(key)).toBe(`0:${CUTOFF}`);
+      prisma.user.findUnique.mockClear();
+      await expect(svc.checkAccessToken('u-1', CUTOFF)).resolves.toBe('ok');
+      await expect(svc.checkAccessToken('u-1', CUTOFF + 60)).resolves.toBe('ok');
+      expect(prisma.user.findUnique).not.toHaveBeenCalled(); // 快取命中
+    });
+
+    it('有 cutoff 但 token 沒有 iat（或不是數字）→ stale', async () => {
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      await expect(svc.checkAccessToken('u-1', undefined)).resolves.toBe('stale');
+      await expect(svc.checkAccessToken('u-1', '9999999999')).resolves.toBe('stale');
+    });
+
+    it('停用優先於 cutoff', async () => {
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      prisma.users.get('u-1')!.disabledAt = new Date();
+      await expect(svc.checkAccessToken('u-1', CUTOFF + 1)).resolves.toBe('disabled');
+    });
+
+    it('快取裡的 0:<秒> 格式壞掉 → 當成 miss 回 DB', async () => {
+      redis.store.set(key, '0:abc');
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
+    });
+
+    it('refresh 覆寫快取：舊的「沒 cutoff」快取立刻被換掉', async () => {
+      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('ok'); // 快取 "0"
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF); // SSO 綁定
+      await expect(svc.refresh('u-1')).resolves.toBe(true);
+      expect(redis.set).toHaveBeenLastCalledWith(key, `0:${CUTOFF}`, USER_STATUS_CACHE_TTL_SECONDS);
+      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
+    });
+
+    it('refresh 之後才到的舊 NX 寫入（綁定前讀的 DB）蓋不掉 cutoff', async () => {
+      let release!: () => void;
+      let entered!: () => void;
+      const inRead = new Promise<void>((r) => (entered = r));
+      prisma.user.findUnique.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve({ disabledAt: null, deletedAt: null, sessionsValidAfter: null });
+            entered();
+          }) as any,
+      );
+      const pending = svc.checkAccessToken('u-1', CUTOFF - 1); // 請求 R：綁定前讀 DB
+      await inRead;
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      await svc.refresh('u-1');
+      release();
+      await expect(pending).resolves.toBe('ok'); // R 本身已在途
+      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
+    });
+
+    it('isIssuedBeforeCutoff（bot token 用建立時間比）', async () => {
+      await expect(svc.isIssuedBeforeCutoff('u-1', at(CUTOFF - 10))).resolves.toBe(false);
+      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      await svc.refresh('u-1');
+      await expect(svc.isIssuedBeforeCutoff('u-1', at(CUTOFF - 10))).resolves.toBe(true);
+      await expect(svc.isIssuedBeforeCutoff('u-1', at(CUTOFF))).resolves.toBe(false);
+    });
+
+    it('refresh 時 Redis 出錯 → 回 false，不拋錯', async () => {
+      redis.mode = 'throw';
+      await expect(svc.refresh('u-1')).resolves.toBe(false);
     });
   });
 

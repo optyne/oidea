@@ -8,7 +8,9 @@ export interface EmployeesImportDeps extends CliIo {
   readFile: (path: string) => Promise<Uint8Array>;
 }
 
-export const EMPLOYEES_IMPORT_USAGE = '用法：npm run employees:import -- <員工.csv>（UTF-8，第一行為檔頭：employeeNo,email,fullName,hireDate,departmentName,jobTitle）';
+export const EMPLOYEES_IMPORT_USAGE =
+  '用法：npm run employees:import -- <員工.csv>（UTF-8，第一行為檔頭：employeeNo,email,fullName,hireDate,departmentName,jobTitle）\n' +
+  'departmentName、jobTitle 可省略：檔頭沒有的欄位不會改到既有員工；有這一欄但留白 = 清掉。已綁定帳號的員工不能用匯入改 email。';
 
 /**
  * `npm run employees:import -- <csv>`。回傳 exit code：全部成功 0，有任何一列失敗或檔案錯誤 1。

@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'crypto';
 import { Clock } from '../../../common/clock';
+import { fakeEmailQueryRaw } from '../../../common/testing/fake-email-raw';
 
 export interface SsoUserRow {
   id: string;
@@ -17,6 +18,7 @@ export interface SsoUserRow {
   passwordHash: string | null;
   disabledAt: Date | null;
   deletedAt: Date | null;
+  sessionsValidAfter: Date | null;
   createdAt: Date;
 }
 export interface SsoAccountRow {
@@ -96,11 +98,13 @@ function matchValue(actual: any, cond: any): boolean {
   if (cond instanceof Date) return actual instanceof Date && actual.getTime() === cond.getTime();
   if (typeof cond !== 'object') return actual === cond;
   if ('equals' in cond) {
+    // email 不分大小寫比對必須走 email-lookup.ts 的 $queryRaw（review S8）；Prisma 的 insensitive 在這裡直接丟錯
+    if (cond.mode === 'insensitive') throw new Error('FakeSsoPrisma: mode=insensitive is not allowed (use email-lookup)');
     if (typeof actual !== 'string') return false;
-    return cond.mode === 'insensitive'
-      ? actual.toLowerCase() === String(cond.equals).toLowerCase()
-      : actual === cond.equals;
+    return actual === cond.equals;
   }
+  if ('in' in cond) return Array.isArray(cond.in) && cond.in.includes(actual);
+  if ('lt' in cond) return actual instanceof Date && actual.getTime() < cond.lt.getTime();
   if ('startsWith' in cond) return typeof actual === 'string' && actual.startsWith(cond.startsWith);
   if ('not' in cond) return cond.not === null ? actual !== null && actual !== undefined : actual !== cond.not;
   throw new Error(`FakeSsoPrisma: unsupported condition ${JSON.stringify(cond)}`);
@@ -134,6 +138,9 @@ export class FakeSsoPrisma implements Tables {
 
   constructor(private readonly clock: Clock) {}
 
+  /** email-lookup.ts 的 `lower("email") = lower($1)`（不把 `_`、`%` 當萬用字元）。 */
+  $queryRaw = fakeEmailQueryRaw(() => this.users);
+
   // ── seed helpers ──
   addUser(p: Partial<SsoUserRow> & { id: string; email: string }): SsoUserRow {
     const row: SsoUserRow = {
@@ -142,6 +149,7 @@ export class FakeSsoPrisma implements Tables {
       passwordHash: null,
       disabledAt: null,
       deletedAt: null,
+      sessionsValidAfter: null,
       createdAt: this.clock.now(),
       ...p,
     };
@@ -281,7 +289,12 @@ export class FakeSsoPrisma implements Tables {
   user = {
     findUnique: jest.fn(async ({ where, select }: any) => {
       const row = this.users.find((u) => u.id === where.id && (where.deletedAt !== null || u.deletedAt === null));
-      return pick(row, select);
+      const out: any = pick(row, select);
+      if (out && select?.botAccount) {
+        const bot = this.bots.find((b) => b.userId === row!.id);
+        out.botAccount = bot ? { id: bot.id } : null;
+      }
+      return out;
     }),
     findMany: jest.fn(async ({ where, select, take }: any) => {
       const rows = this.users.filter((u) => matchWhere(u, where)).slice(0, take ?? undefined);
@@ -300,6 +313,7 @@ export class FakeSsoPrisma implements Tables {
         passwordHash: null,
         disabledAt: null,
         deletedAt: null,
+        sessionsValidAfter: null,
         createdAt: this.clock.now(),
         ...data,
       };
@@ -338,6 +352,16 @@ export class FakeSsoPrisma implements Tables {
       if (!row) throw p2025();
       Object.assign(row, data);
       return { ...row };
+    }),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      let count = 0;
+      for (const m of this.members) {
+        if (matchWhere(m, where)) {
+          Object.assign(m, data);
+          count++;
+        }
+      }
+      return { count };
     }),
   };
 

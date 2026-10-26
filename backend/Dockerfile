@@ -23,6 +23,11 @@ RUN apk add --no-cache dumb-init wget
 
 WORKDIR /app
 
+# 正式環境（review S4）：帳密登入／註冊預設關、OIDC callback 必須 https。只設在這個 stage：
+# builder 的 npm ci 仍會裝 devDependencies（build 要用）；這個 stage 不跑 npm install，
+# entrypoint 的 `npx --yes prisma migrate deploy` 照舊（NODE_ENV 只影響「要不要裝 devDependencies」）。
+ENV NODE_ENV=production
+
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma

@@ -102,8 +102,12 @@ export class WsAuthService {
     if (!isAccessPayload(payload) || typeof payload.exp !== 'number') {
       throw new WsAuthError('wrong_token_type');
     }
-    if (await this.userStatus.isDisabled(payload.sub)) {
+    const check = await this.userStatus.checkAccessToken(payload.sub, payload.iat);
+    if (check === 'disabled') {
       throw new WsAuthError('user_disabled');
+    }
+    if (check === 'stale') {
+      throw new WsAuthError('token_revoked');
     }
     return { userId: payload.sub, email: payload.email, exp: payload.exp };
   }

@@ -75,6 +75,20 @@ describe('JwtAuthGuard — bot token path (characterization)', () => {
     expect(req.user).toBeUndefined();
   });
 
+  it('review S2：建立者的帳號在 SSO 綁定時重設過，bot 建立時間早於 sessionsValidAfter → 401', async () => {
+    const createdAt = new Date('2026-10-01T00:00:00Z');
+    prisma.botAccount.findUnique.mockResolvedValue({ ...BOT, createdAt });
+    const isIssuedBeforeCutoff = jest.fn().mockResolvedValue(true);
+    guard = new JwtAuthGuard(prisma, { ...userStatus, isIssuedBeforeCutoff } as any);
+    const req: any = { headers: { authorization: 'Bearer bot_abcdef.s3cret' } };
+    await expect(guard.canActivate(ctxFor(req))).rejects.toThrow(UnauthorizedException);
+    expect(isIssuedBeforeCutoff).toHaveBeenCalledWith('creator-1', createdAt);
+    expect(req.user).toBeUndefined();
+
+    isIssuedBeforeCutoff.mockResolvedValue(false);
+    await expect(guard.canActivate(ctxFor(req))).resolves.toBe(true);
+  });
+
   it('查停用狀態出錯 → 拒絕（fail closed）', async () => {
     userStatus.isDisabled.mockRejectedValue(new Error('db down'));
     const req: any = { headers: { authorization: 'Bearer bot_abcdef.s3cret' } };

@@ -49,7 +49,7 @@ describe('RefreshTokenService + AuthService.refresh/logout（H0 token 改造）'
     };
     // H1：AuthConfig（帳密登入開關）沒設 → 非 production 預設開啟；CompanyService 只在緊急登入用到
     auth = new AuthService(users as any, jwt, audit as any, refresh, new AuthConfig(config()), {} as any);
-    strategy = new JwtStrategy(config(), { isDisabled: async () => false } as any);
+    strategy = new JwtStrategy(config(), { checkAccessToken: async () => 'ok' } as any);
   });
 
   const accessWorks = async (accessToken: string) => {

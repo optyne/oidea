@@ -50,6 +50,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
           userId: true,
           workspaceId: true,
           createdById: true,
+          createdAt: true,
         },
       });
       if (!bot || bot.revokedAt) {
@@ -64,6 +65,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       // bot 的建立者被停用（離職）→ bot 一起失效；與 JwtStrategy 共用同一套快取
       if (await this.userStatus.isDisabled(bot.createdById)) {
         throw new UnauthorizedException('Bot 建立者已停用');
+      }
+      // 建立者的帳號在 SSO 綁定時重設過（sessionsValidAfter）→ 綁定前建的 bot 一律無效。
+      // 綁定交易本來就會撤銷這些 bot；這裡是同一個 cutoff 的第二道防線。
+      if (bot.createdAt instanceof Date && (await this.userStatus.isIssuedBeforeCutoff(bot.createdById, bot.createdAt))) {
+        throw new UnauthorizedException('無效或已撤銷的 bot token');
       }
 
       // lastUsedAt 非關鍵；失敗不擋主流程

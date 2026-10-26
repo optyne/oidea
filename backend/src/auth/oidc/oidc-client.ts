@@ -47,15 +47,23 @@ const isUrl = (v: string, schemes?: string[]) => {
 /**
  * OIDC 設定哪裡有問題（缺少或格式不對）。只回變數名稱，不回值。
  * `APP_MOBILE_CALLBACK_URL` 可省略（預設 `oidea://auth`）。
+ * `NODE_ENV=production`（review N4）：`OIDC_REDIRECT_URI`、`APP_WEB_CALLBACK_URL` 必須是 https；
+ * `APP_MOBILE_CALLBACK_URL` 不能是 http(s)（mobile 的 ticket 放在 query，http(s) 會進伺服器 log）。
  */
 export function oidcEnvProblems(env: OidcEnv): string[] {
   const problems: string[] = [];
+  const web = env.production ? ['https:'] : ['https:', 'http:'];
   if (!isUrl(env.issuer, ['https:', 'http:'])) problems.push('OIDC_ISSUER');
   if (!env.clientId) problems.push('OIDC_CLIENT_ID');
   if (!env.clientSecret) problems.push('OIDC_CLIENT_SECRET');
-  if (!isUrl(env.redirectUri, ['https:', 'http:'])) problems.push('OIDC_REDIRECT_URI');
-  if (!isUrl(env.webCallbackUrl, ['https:', 'http:'])) problems.push('APP_WEB_CALLBACK_URL');
-  if (env.mobileCallbackUrl && !isUrl(env.mobileCallbackUrl)) problems.push('APP_MOBILE_CALLBACK_URL');
+  if (!isUrl(env.redirectUri, web)) problems.push('OIDC_REDIRECT_URI');
+  if (!isUrl(env.webCallbackUrl, web)) problems.push('APP_WEB_CALLBACK_URL');
+  if (
+    env.mobileCallbackUrl &&
+    (!isUrl(env.mobileCallbackUrl) || (env.production && isUrl(env.mobileCallbackUrl, ['https:', 'http:'])))
+  ) {
+    problems.push('APP_MOBILE_CALLBACK_URL');
+  }
   return problems;
 }
 
@@ -202,7 +210,15 @@ export class OidcClient {
     }
   }
 
-  async authorizationUrl(params: { state: string; nonce: string; codeChallenge: string }): Promise<URL> {
+  /**
+   * `prompt: 'login'`：要求 IdP 重新驗證使用者、不沿用既有的 IdP session（行動版用，review S6）。
+   */
+  async authorizationUrl(params: {
+    state: string;
+    nonce: string;
+    codeChallenge: string;
+    prompt?: 'login';
+  }): Promise<URL> {
     const config = await this.configuration();
     return oidc.buildAuthorizationUrl(config, {
       redirect_uri: this.env().redirectUri,
@@ -212,6 +228,7 @@ export class OidcClient {
       nonce: params.nonce,
       code_challenge: params.codeChallenge,
       code_challenge_method: 'S256',
+      ...(params.prompt ? { prompt: params.prompt } : {}),
     });
   }
 

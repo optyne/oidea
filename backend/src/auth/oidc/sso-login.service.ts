@@ -6,6 +6,8 @@ import { AuditRequestContext, AuditService } from '../../audit/audit.service';
 import { normalizeEmail } from '../../employees/employees.service';
 import { RefreshTokenService } from '../refresh-token.service';
 import { UserStatusService } from '../user-status.service';
+import { SocketRegistry } from '../socket-registry';
+import { resolveUserIdByEmail } from '../../common/email-lookup';
 import { SsoErrorCode } from './oidc-errors';
 
 /** Account.provider 的值（`Account(provider, providerId)` 唯一）。 */
@@ -51,7 +53,7 @@ interface Applied {
   boundExistingUser: boolean;
   profileBound: boolean;
   revokedBots: number;
-  ownerTransfer: { fromUserId: string } | null;
+  ownerTransfer: { fromUserId: string; previousOwnerDemoted: boolean } | null;
 }
 
 /** 交易中途發現被併發的登入搶先（profile 已被綁走等），整段重跑一次。 */
@@ -69,10 +71,30 @@ const PROFILE_SELECT = {
   employmentStatus: true,
 } as const;
 
-/** email 的 @ 前面那段 → 小寫、只保留 [a-z0-9._-]；空的話用 user。 */
+/** 註冊的 username 規則（RegisterDto：3–30 字）。 */
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 30;
+
+/**
+ * email 的 @ 前面那段 → 小寫、`.` 與 `-` 換成 `_`、只保留 `[a-z0-9_]`（跟 `@username` 提及的
+ * `[A-Za-z0-9_]` 一致，`@john.doe` 不會被解析成 `@john`）。長度照註冊規則：最多 30；
+ * 不到 3 個字就補 `_user`（空的話用 user）。
+ */
 export function usernameBase(email: string): string {
-  const local = (email.split('@')[0] ?? '').toLowerCase().replace(/[^a-z0-9._-]/g, '');
-  return local.slice(0, 40) || 'user';
+  const local = (email.split('@')[0] ?? '')
+    .toLowerCase()
+    .replace(/[.-]/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, USERNAME_MAX);
+  if (local.length >= USERNAME_MIN) return local;
+  return local ? `${local}_user` : 'user';
+}
+
+/** 第 n 個候選（n ≥ 2 加 `_n`），截斷 base 讓總長度不超過 30。 */
+export function usernameCandidate(base: string, n: number): string {
+  if (n <= 1) return base;
+  const suffix = `_${n}`;
+  return `${base.slice(0, USERNAME_MAX - suffix.length)}${suffix}`;
 }
 
 /**
@@ -85,11 +107,13 @@ export function usernameBase(email: string): string {
  * 2. 從 email 找到的 profile 已綁了別的 User → `profile_bound`（hr 解除綁定後再登入）。
  * 3. profile 還沒綁：
  *    - 已有同 email（不分大小寫）的 User → 綁定它，並清掉 passwordHash、撤銷他全部 refresh token、
- *      撤銷他建立的所有 BotAccount、刪除他其他的 Account；
+ *      撤銷他建立的所有 BotAccount、刪除他其他的 Account；設 `sessionsValidAfter`＝現在
+ *      （舊的 access token 失效），commit 後斷開他的 socket；
  *    - 沒有 → 新建 User（username 取 email 的 local part，撞名加 -2、-3…）；
  *    - 建 Account、回填 `EmployeeProfile.userId`。
  * 4. upsert 公司工作空間的 WorkspaceMember（新加入 role=member；已有就不動角色）。
- *    `Workspace.pendingOwnerEmail` 等於這位員工的 email → 移交 owner（只會發生一次）。
+ *    `Workspace.pendingOwnerEmail` 等於這位員工的 email → 移交 owner（只會發生一次），
+ *    原本的 ownerId（company:init 的執行者）降為 admin，除非他就是這位員工。
  *
  * 被拒寫 audit `auth.sso_denied`（workspaceId = 公司工作空間，metadata.reason）。
  */
@@ -103,6 +127,7 @@ export class SsoLoginService {
     private readonly audit: AuditService,
     private readonly refreshTokens: RefreshTokenService,
     private readonly userStatus: UserStatusService,
+    private readonly socketRegistry: SocketRegistry,
   ) {}
 
   async loginWithOidc(claims: SsoClaims, req?: AuditRequestContext): Promise<SsoLoginResult> {
@@ -130,10 +155,18 @@ export class SsoLoginService {
       return { ok: false, code: outcome.code, reason: outcome.reason };
     }
 
-    // 交易 commit 之後再撤銷一次：撈出交易期間才 commit 的 refresh token 換發
-    if (outcome.boundExistingUser) await this.refreshTokens.revokeAllForUser(outcome.userId);
-    // 復職等情況下快取可能還留著舊的「停用」，DB 已確認沒停用 → 清掉
-    await this.userStatus.invalidate(outcome.userId);
+    if (outcome.boundExistingUser) {
+      // 交易 commit 之後再撤銷一次：撈出交易期間才 commit 的 refresh token 換發
+      await this.refreshTokens.revokeAllForUser(outcome.userId);
+    }
+    // 重讀 DB 並覆寫停用快取：綁定時新設的 sessionsValidAfter 立刻生效（不會被在途的舊 NX 寫入蓋掉）；
+    // 復職等情況下快取裡舊的「停用」也一併換掉
+    await this.userStatus.refresh(outcome.userId);
+    if (outcome.boundExistingUser) {
+      // 綁定前就連上的 socket（舊的 access token）全部斷開（review S2）
+      const disconnected = this.socketRegistry.disconnectUser(outcome.userId);
+      if (disconnected > 0) this.logger.log(`SSO bind: disconnected ${disconnected} socket(s) of user ${outcome.userId}`);
+    }
 
     if (outcome.profileBound) {
       await this.audit.record({
@@ -160,6 +193,7 @@ export class SsoLoginService {
         metadata: {
           fromUserId: outcome.ownerTransfer.fromUserId,
           toUserId: outcome.userId,
+          previousOwnerDemotedTo: outcome.ownerTransfer.previousOwnerDemoted ? 'admin' : null,
           reason: 'pending_owner_first_sso',
         },
         req,
@@ -261,8 +295,9 @@ export class SsoLoginService {
       });
       userCreated = true;
     } else if (boundExistingUser) {
-      // 防止有人先用員工的 email 註冊、之後搶走帳號或留下後門
-      await tx.user.update({ where: { id: target.id }, data: { passwordHash: null } });
+      // 防止有人先用員工的 email 註冊、之後搶走帳號或留下後門。
+      // sessionsValidAfter：綁定前簽發的 access token（最多 15 分鐘）與 socket 一律失效（review S2）
+      await tx.user.update({ where: { id: target.id }, data: { passwordHash: null, sessionsValidAfter: now } });
       await this.refreshTokens.revokeAllForUser(target.id, tx);
       const bots = await tx.botAccount.updateMany({
         where: { createdById: target.id, revokedAt: null },
@@ -302,7 +337,17 @@ export class SsoLoginService {
       });
       if (moved.count === 1) {
         await tx.workspaceMember.update({ where: memberKey, data: { role: 'owner' } });
-        ownerTransfer = { fromUserId: company.ownerId };
+        // 跟 transferOwnership 一樣：原本的 owner（company:init 的暫時執行者）降為 admin（review S3），
+        // 否則他會一直是共同 owner（可以設緊急登入密碼、用緊急登入）。執行者就是新 owner 本人時不動。
+        let demoted = false;
+        if (company.ownerId !== target.id) {
+          const res = await tx.workspaceMember.updateMany({
+            where: { workspaceId: company.id, userId: company.ownerId, role: 'owner' },
+            data: { role: 'admin' },
+          });
+          demoted = res.count > 0;
+        }
+        ownerTransfer = { fromUserId: company.ownerId, previousOwnerDemoted: demoted };
       }
     }
 
@@ -323,30 +368,30 @@ export class SsoLoginService {
   /**
    * 不分大小寫找 User（含已刪除的：email 欄位的唯一性包含它們，新建會撞）。
    * 有完全相同（小寫）的優先；只差大小寫的有兩個以上 → 'ambiguous'。
+   * 比對走 `email-lookup.ts`（`lower(email) = lower($1)`，不用 ILIKE，review S8）。
    */
   private async findUserByEmail(tx: Tx, email: string) {
-    const candidates = await tx.user.findMany({
-      where: { email: { equals: email, mode: 'insensitive' } },
+    const id = await resolveUserIdByEmail(tx, email, { includeDeleted: true });
+    if (id === null || id === 'ambiguous') return id;
+    return tx.user.findUnique({
+      where: { id },
       select: { ...USER_SELECT, botAccount: { select: { id: true } } },
-      take: 5,
     });
-    const exact = candidates.find((u) => u.email === email);
-    if (exact) return exact;
-    if (candidates.length > 1) return 'ambiguous' as const;
-    return candidates[0] ?? null;
   }
 
   private async uniqueUsername(tx: Tx, email: string): Promise<string> {
     const base = usernameBase(email);
-    const rows = await tx.user.findMany({
-      where: { username: { startsWith: base } },
-      select: { username: true },
-    });
-    const taken = new Set(rows.map((r) => r.username));
-    if (!taken.has(base)) return base;
-    for (let n = 2; ; n++) {
-      const candidate = `${base}-${n}`;
-      if (!taken.has(candidate)) return candidate;
+    const BATCH = 50;
+    for (let start = 1; start <= 1000; start += BATCH) {
+      const candidates = Array.from({ length: BATCH }, (_, i) => usernameCandidate(base, start + i));
+      const rows = await tx.user.findMany({
+        where: { username: { in: candidates } },
+        select: { username: true },
+      });
+      const taken = new Set(rows.map((r) => r.username));
+      const free = candidates.find((c) => !taken.has(c));
+      if (free) return free;
     }
+    throw new Error('sso login: no free username');
   }
 }

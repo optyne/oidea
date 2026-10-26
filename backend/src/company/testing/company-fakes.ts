@@ -6,6 +6,7 @@
  * 只給 *.spec.ts 使用。
  */
 import { randomUUID } from 'crypto';
+import { fakeEmailQueryRaw } from '../../common/testing/fake-email-raw';
 
 export interface FakeWorkspaceRow {
   id: string;
@@ -25,6 +26,8 @@ export interface FakeUserRow {
   disabledAt: Date | null;
   deletedAt: Date | null;
   isBot?: boolean;
+  /** 有 authentik Account（經過 SSO 綁定） */
+  ssoBound?: boolean;
 }
 
 export interface FakeProfileRow {
@@ -159,16 +162,41 @@ export class FakeCompanyPrisma {
       this.members.push({ ...create });
       return { ...create };
     }),
+    findMany: jest.fn(async ({ where, select }: any) =>
+      this.members.filter((m) => m.workspaceId === where.workspaceId).map((m) => pick(m, select)),
+    ),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      let count = 0;
+      for (const m of this.members) {
+        if (
+          m.workspaceId === where.workspaceId &&
+          (where.userId === undefined || m.userId === where.userId) &&
+          (where.role === undefined || m.role === where.role)
+        ) {
+          Object.assign(m, data);
+          count++;
+        }
+      }
+      return { count };
+    }),
   };
 
+  /** email-lookup.ts 的 `lower("email") = lower($1)`（不把 `_`、`%` 當萬用字元）。 */
+  $queryRaw = fakeEmailQueryRaw(() => this.users);
+
   user = {
-    findFirst: jest.fn(async ({ where, select }: any) => {
-      const u = this.users.find(
-        (x) => emailMatches(x.email, where.email) && (where.deletedAt !== null || x.deletedAt === null),
-      );
+    findFirst: jest.fn(async () => {
+      throw new Error('FakeCompanyPrisma: user lookups by email must go through email-lookup ($queryRaw)');
+    }),
+    findUnique: jest.fn(async ({ where, select }: any) => {
+      const u = this.users.find((x) => x.id === where.id && (where.deletedAt !== null || x.deletedAt === null));
       if (!u) return null;
       const out: any = pick(u, select);
       if (select?.botAccount) out.botAccount = u.isBot ? { id: `bot-${u.id}` } : null;
+      if (select?.accounts) {
+        if (select.accounts.where?.provider !== 'authentik') throw new Error('FakeCompanyPrisma: unexpected accounts filter');
+        out.accounts = u.ssoBound ? [{ id: `acc-${u.id}` }] : [];
+      }
       return out;
     }),
     update: jest.fn(async ({ where, data }: any) => {
@@ -193,6 +221,15 @@ export class FakeCompanyPrisma {
       }
       return pick(row, select);
     }),
+    findMany: jest.fn(async ({ where, select }: any) =>
+      this.profiles
+        .filter(
+          (p) =>
+            p.workspaceId === where.workspaceId &&
+            (where.userId?.in === undefined || (p.userId !== null && where.userId.in.includes(p.userId))),
+        )
+        .map((p) => pick(p, select)),
+    ),
     create: jest.fn(async ({ data, select }: any) => {
       const row: FakeProfileRow = {
         id: randomUUID(),

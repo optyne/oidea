@@ -20,6 +20,46 @@ describe('auth-config', () => {
     expect(isPasswordLoginEnabled(env({}))).toBe(true);
   });
 
+  it.each([
+    // [NODE_ENV, OIDC_ISSUER, AUTH_PASSWORD_LOGIN_ENABLED, 預期]
+    [undefined, undefined, undefined, true], // 本機開發
+    ['development', undefined, undefined, true],
+    [undefined, 'https://auth.example/application/o/oidea/', undefined, false], // review S4：忘了設 NODE_ENV
+    ['development', 'https://auth.example/application/o/oidea/', undefined, false],
+    ['production', undefined, undefined, false],
+    ['production', 'https://auth.example/application/o/oidea/', undefined, false],
+    [undefined, '   ', undefined, true], // 空白的 OIDC_ISSUER 等於沒設
+    [undefined, 'https://auth.example/application/o/oidea/', 'true', true], // 明確開啟優先
+    ['production', undefined, 'on', true],
+    [undefined, undefined, 'false', false],
+  ])('預設值矩陣：NODE_ENV=%p OIDC_ISSUER=%p AUTH_PASSWORD_LOGIN_ENABLED=%p → %p', (nodeEnv, issuer, flag, expected) => {
+    const values: Record<string, string> = {};
+    if (nodeEnv !== undefined) values.NODE_ENV = nodeEnv;
+    if (issuer !== undefined) values.OIDC_ISSUER = issuer;
+    if (flag !== undefined) values.AUTH_PASSWORD_LOGIN_ENABLED = flag;
+    expect(isPasswordLoginEnabled(env(values))).toBe(expected);
+  });
+
+  it('review S5：breakGlass = 有名單而且一般帳密登入關著；不含名單內容', () => {
+    const cfg = (values: Record<string, string>) => new AuthConfig({ get: (k: string) => values[k] } as any);
+    const issuer = 'https://auth.example/application/o/oidea/';
+    expect(cfg({ OIDC_ISSUER: issuer }).publicConfig()).toEqual({
+      sso: true,
+      passwordLogin: false,
+      breakGlass: false,
+      endSessionUrl: null,
+    });
+    const emergency = cfg({ OIDC_ISSUER: issuer, BREAK_GLASS_OWNER_EMAILS: 'boss@corp.com' }).publicConfig();
+    expect(emergency).toMatchObject({ passwordLogin: false, breakGlass: true });
+    expect(JSON.stringify(emergency)).not.toContain('boss');
+    // 一般帳密登入開著時不需要緊急登入
+    expect(cfg({ BREAK_GLASS_OWNER_EMAILS: 'boss@corp.com' }).publicConfig()).toMatchObject({
+      passwordLogin: true,
+      breakGlass: false,
+    });
+    expect(cfg({ OIDC_ISSUER: issuer, BREAK_GLASS_OWNER_EMAILS: ' , ' }).publicConfig().breakGlass).toBe(false);
+  });
+
   it('明確設定優先於 NODE_ENV；無法辨識的值當 false', () => {
     expect(isPasswordLoginEnabled(env({ NODE_ENV: 'production', AUTH_PASSWORD_LOGIN_ENABLED: 'true' }))).toBe(true);
     expect(isPasswordLoginEnabled(env({ NODE_ENV: 'development', AUTH_PASSWORD_LOGIN_ENABLED: '0' }))).toBe(false);
@@ -50,7 +90,9 @@ describe('auth-config', () => {
       redirectUri: '',
       webCallbackUrl: '',
       mobileCallbackUrl: 'oidea://auth',
+      production: false,
     });
+    expect(readOidcEnv(env({ NODE_ENV: 'production' })).production).toBe(true);
   });
 
   it('COMPANY_TIMEZONE 預設 Asia/Taipei，無效值退回預設', () => {

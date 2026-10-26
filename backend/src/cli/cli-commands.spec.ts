@@ -128,6 +128,7 @@ describe('npm run company:init（參數解析）', () => {
       pendingOwnerEmail: 'boss@corp.com',
       profile: 'created' as const,
       profileId: 'p-1',
+      existingMembers: null,
     }));
     const out: string[] = [];
     const code = await runCompanyInit(
@@ -154,9 +155,30 @@ describe('npm run company:init（參數解析）', () => {
         fullName: '老闆',
         hireDate: '2020-01-01',
         createName: undefined,
+        allowExistingMembers: false,
       }),
     );
     expect(out.join('\n')).toContain('待移交');
+  });
+
+  it('--allow-existing-members 傳進去；沿用既有成員時印出數量警告（不含 email）', async () => {
+    const init = jest.fn(async () => ({
+      workspaceId: 'ws-1',
+      workspaceCreated: false,
+      ownerUserId: null,
+      pendingOwnerEmail: 'boss@corp.com',
+      profile: 'created' as const,
+      profileId: 'p-1',
+      existingMembers: { total: 5, others: 4, withoutProfile: 4, privileged: 2 },
+    }));
+    const err: string[] = [];
+    const code = await runCompanyInit(
+      ['--workspace', 'ws-1', '--owner-email', 'boss@corp.com', '--allow-existing-members'],
+      { out: () => undefined, err: (l) => err.push(l), init },
+    );
+    expect(code).toBe(0);
+    expect(init).toHaveBeenCalledWith(expect.objectContaining({ allowExistingMembers: true }));
+    expect(err.join('\n')).toMatch(/共 5 位，其中 4 位不是 owner；4 位不在員工主檔；2 位的角色是 owner\/admin\/hr\/finance/);
   });
 
   it('未知旗標、缺 --owner-email → exit 1 並印用法；CompanyInitError → exit 1', async () => {

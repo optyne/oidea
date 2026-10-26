@@ -26,6 +26,8 @@ model User {
   deletedAt     DateTime?
   /// 停用（離職）時間；有值即視為停用，JwtStrategy / bot / socket 都會拒絕
   disabledAt    DateTime?
+  /// 早於這個時間簽發的 access token 一律拒絕（SSO 綁定既有帳號時設成「現在」，讓舊 token 與 socket 失效）
+  sessionsValidAfter DateTime?
 
   // Relations
   accounts           Account[]

@@ -1,8 +1,12 @@
 import { FakeIdp } from './testing/fake-idp';
 import { COMPANY_WS, SsoHarness } from './testing/sso-harness';
-import { usernameBase } from './sso-login.service';
+import { JwtService } from '@nestjs/jwt';
+import { USERNAME_MAX, USERNAME_MIN, usernameBase, usernameCandidate } from './sso-login.service';
 import { UserStatusService } from '../user-status.service';
 import { RefreshTokenService } from '../refresh-token.service';
+import { SocketRegistry } from '../socket-registry';
+import { CompanyService } from '../../company/company.service';
+import { extractMentionTokens } from '../../common/mentions.util';
 
 /**
  * H1 驗收：員工對應（spec §4.3「員工對應」1–4），全部走真的 start → callback → exchange。
@@ -112,7 +116,7 @@ describe('SSO 員工對應', () => {
     expect(h.audits('employee.sso_bind')[0].metadata).toMatchObject({ boundExistingUser: true, revokedBots: 1 });
   });
 
-  it('username 撞名時加 -2', async () => {
+  it('username 撞名時加 _2', async () => {
     await boot((h) => {
       h.prisma.addUser({ id: 'u-other-alice', email: 'alice@elsewhere.com', username: 'alice' });
       h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'Alice+Ops@corp.com'.toLowerCase(), employeeNo: 'E010' });
@@ -121,7 +125,73 @@ describe('SSO 員工對應', () => {
     h.prisma.addUser({ id: 'u-aliceops', email: 'x@y.com', username: 'aliceops' });
     const res = await h.login({ sub: 'sub-a', email: 'alice+ops@corp.com' });
     expect(res.exchange!.status).toBe(201);
-    expect(h.prisma.users.find((u) => u.id === res.exchange!.body.user.id)!.username).toBe('aliceops-2');
+    expect(h.prisma.users.find((u) => u.id === res.exchange!.body.user.id)!.username).toBe('aliceops_2');
+  });
+
+  it('產生的 username 照註冊規則（3–30 字）而且 @提及安全（只有 [a-z0-9_]）', () => {
+    expect(usernameBase('John.Doe-X@corp.com')).toBe('john_doe_x');
+    expect(usernameBase('ab@corp.com')).toBe('ab_user');
+    expect(usernameBase('+++@corp.com')).toBe('user');
+    const long = usernameBase(`${'a'.repeat(45)}@corp.com`);
+    expect(long).toHaveLength(USERNAME_MAX);
+    expect(usernameCandidate(long, 12)).toHaveLength(USERNAME_MAX);
+    expect(usernameCandidate(long, 12).endsWith('_12')).toBe(true);
+    for (const email of ['john.doe@corp.com', 'mary-jane@corp.com', `${'x.'.repeat(30)}@corp.com`, 'ab@corp.com']) {
+      for (const n of [1, 2, 123]) {
+        const name = usernameCandidate(usernameBase(email), n);
+        expect(name.length).toBeGreaterThanOrEqual(USERNAME_MIN);
+        expect(name.length).toBeLessThanOrEqual(USERNAME_MAX);
+        expect(name).toMatch(/^[a-z0-9_]+$/);
+        // 純文字 @username 會整個被解析出來（不會截成別人的 username）
+        expect(extractMentionTokens(`hi @${name} !`).usernames).toEqual([name]);
+      }
+    }
+  });
+
+  it('review S2：綁定既有帳號後，他綁定前拿到的 access token 立刻失效、socket 被斷開；新 token 可用', async () => {
+    await boot((h) => {
+      h.prisma.addUser({ id: 'u-sq', email: 'sq@corp.com', username: 'sq', passwordHash: 'hash:squatter' });
+      h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'sq@corp.com', employeeNo: 'E060' });
+    });
+    // 搶先註冊的人手上的 access token（跟 AuthService 一樣用注入的時鐘簽 iat）
+    const oldAccess = h.app
+      .get(JwtService)
+      .sign({ sub: 'u-sq', email: 'sq@corp.com', typ: 'access', iat: Math.floor(h.clock.now().getTime() / 1000) });
+    h.secrets.push(oldAccess);
+    const sock = { id: 'sock-sq', disconnect: jest.fn() };
+    const registry = h.app.get(SocketRegistry);
+    registry.add('u-sq', sock);
+
+    const path = `/attendance/today?workspaceId=${COMPANY_WS}`;
+    expect((await h.get(path, bearer(oldAccess))).status).toBe(403); // 已登入，但還不是公司成員
+
+    h.clock.advance(2_000);
+    const res = await h.login({ sub: 'sub-sq', email: 'sq@corp.com' });
+    expect(res.exchange!.status).toBe(201);
+    expect(res.exchange!.body.user.id).toBe('u-sq');
+    expect(h.prisma.users.find((u) => u.id === 'u-sq')!.sessionsValidAfter).toEqual(h.clock.now());
+
+    // 現在他是公司成員了：舊 token 不能拿來用
+    expect((await h.get(path, bearer(oldAccess))).status).toBe(401);
+    expect(sock.disconnect).toHaveBeenCalledWith(true);
+    expect(registry.count('u-sq')).toBe(0);
+    // SSO 換到的新 token 正常
+    expect((await h.get(path, bearer(res.exchange!.body.accessToken))).status).toBe(200);
+  });
+
+  it('review M32：從 Account 找到的 profile 不在公司工作空間 → not_employee（沒有任何寫入）', async () => {
+    await boot((h) => {
+      h.prisma.addUser({ id: 'u-x', email: 'x@corp.com' });
+      h.prisma.addAccount('u-x', 'authentik', 'sub-x');
+      h.prisma.addProfile({ workspaceId: 'ws-other', email: 'x@corp.com', employeeNo: 'E070', userId: 'u-x' });
+    });
+    const before = h.prisma.counts();
+    const res = await h.login({ sub: 'sub-x', email: 'x@corp.com' });
+    expect(res.callback.error).toBe('not_employee');
+    expect(h.prisma.counts()).toEqual(before);
+    expect(deniedAudits()).toEqual([
+      expect.objectContaining({ metadata: expect.objectContaining({ reason: 'not_in_roster', via: 'account' }) }),
+    ]);
   });
 
   describe('拒絕（寫 audit auth.sso_denied，而且完全沒有新增 User、Account、WorkspaceMember）', () => {
@@ -205,7 +275,7 @@ describe('SSO 員工對應', () => {
     });
   });
 
-  it('pending owner：第一次 SSO 登入時移交 owner（只發生一次），原執行者的角色不變', async () => {
+  it('pending owner：第一次 SSO 登入時移交 owner（只發生一次），原執行者降為 admin（review S3）', async () => {
     await boot(
       (h) => h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'boss@corp.com', employeeNo: 'E000' }),
       'boss@corp.com',
@@ -217,17 +287,46 @@ describe('SSO 員工對應', () => {
     expect(ws.ownerId).toBe(bossId);
     expect(ws.pendingOwnerEmail).toBeNull();
     expect(h.prisma.members.find((m) => m.userId === bossId)!.role).toBe('owner');
-    expect(h.prisma.members.find((m) => m.userId === 'u-founder')!.role).toBe('owner');
+    expect(h.prisma.members.find((m) => m.userId === 'u-founder')!.role).toBe('admin');
+    expect(await h.app.get(CompanyService).isCompanyOwner('u-founder')).toBe(false);
     expect(h.audits('owner.transfer')).toEqual([
       expect.objectContaining({
         workspaceId: COMPANY_WS,
-        metadata: expect.objectContaining({ fromUserId: 'u-founder', toUserId: bossId }),
+        metadata: expect.objectContaining({ fromUserId: 'u-founder', toUserId: bossId, previousOwnerDemotedTo: 'admin' }),
       }),
     ]);
 
     await h.login({ sub: 'sub-boss', email: 'boss@corp.com' });
     expect(h.audits('owner.transfer')).toHaveLength(1);
     expect(ws.ownerId).toBe(bossId);
+  });
+
+  it('review B1：company:init 留下的 pending owner 有既有帳密 User → 第一次 SSO 時經綁定清理（密碼清掉）才成為 owner', async () => {
+    await boot((h) => {
+      h.prisma.addUser({ id: 'u-ceo', email: 'CEO@corp.com', username: 'ceo', passwordHash: 'hash:squatter' });
+      h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'ceo@corp.com', employeeNo: 'E000' });
+    }, 'ceo@corp.com');
+    // 綁定之前：他不是公司 owner
+    expect(await h.app.get(CompanyService).isCompanyOwner('u-ceo')).toBe(false);
+    const res = await h.login({ sub: 'sub-ceo', email: 'ceo@corp.com' });
+    expect(res.exchange!.body.user.id).toBe('u-ceo');
+    expect(h.prisma.users.find((u) => u.id === 'u-ceo')!.passwordHash).toBeNull();
+    expect(h.prisma.workspaces.find((w) => w.id === COMPANY_WS)!.ownerId).toBe('u-ceo');
+    expect(await h.app.get(CompanyService).isCompanyOwner('u-ceo')).toBe(true);
+    expect(h.prisma.members.find((m) => m.userId === 'u-founder')!.role).toBe('admin');
+  });
+
+  it('pending owner 就是執行者本人（綁定他自己的帳號）：成為 owner，不被降級', async () => {
+    await boot(
+      (h) => h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'founder@corp.com', employeeNo: 'E001' }),
+      'founder@corp.com',
+    );
+    const res = await h.login({ sub: 'sub-founder', email: 'founder@corp.com' });
+    expect(res.exchange!.body.user.id).toBe('u-founder');
+    const ws = h.prisma.workspaces.find((w) => w.id === COMPANY_WS)!;
+    expect(ws).toMatchObject({ ownerId: 'u-founder', pendingOwnerEmail: null });
+    expect(h.prisma.members.filter((m) => m.userId === 'u-founder')).toEqual([expect.objectContaining({ role: 'owner' })]);
+    expect(h.audits('owner.transfer')[0].metadata).toMatchObject({ previousOwnerDemotedTo: null });
   });
 
   it('pending owner 是別人時，一般員工登入不會拿到 owner', async () => {

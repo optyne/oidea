@@ -15,6 +15,7 @@ import { AuthService } from '../../auth.service';
 import { RefreshTokenService } from '../../refresh-token.service';
 import { UserStatusService } from '../../user-status.service';
 import { JwtStrategy } from '../../strategies/jwt.strategy';
+import { SocketRegistry } from '../../socket-registry';
 import { UsersService } from '../../../users/users.service';
 import { AuditService } from '../../../audit/audit.service';
 import { PrismaService } from '../../../common/prisma.service';
@@ -152,6 +153,7 @@ export class SsoHarness {
         SsoLoginService,
         RefreshTokenService,
         UserStatusService,
+        SocketRegistry,
         JwtStrategy,
         AuditService,
         AuthConfig,

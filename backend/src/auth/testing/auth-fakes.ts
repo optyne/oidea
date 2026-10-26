@@ -13,6 +13,7 @@ export interface FakeUser {
   passwordHash: string | null;
   disabledAt: Date | null;
   deletedAt: Date | null;
+  sessionsValidAfter?: Date | null;
 }
 
 export interface FakeRefreshRow {
@@ -34,6 +35,7 @@ export interface FakeBot {
   userId: string;
   workspaceId: string;
   createdById: string;
+  createdAt?: Date;
 }
 
 const matches = (row: Record<string, any>, where: Record<string, any>) =>

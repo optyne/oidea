@@ -13,8 +13,13 @@ export interface EmployeeImportRow {
   fullName: string;
   /** YYYY-MM-DD */
   hireDate: string;
-  /** 根部門名稱（不分大小寫比對；沒有就建立）。空字串 = 不指定部門 */
+  /**
+   * 根部門名稱（不分大小寫比對；沒有就建立）。
+   * undefined = 這一欄不存在（CSV 檔頭沒有）：更新時**不動**原本的部門（review S10）；
+   * 空字串 = 欄位存在但留白：新建時沒有部門，更新時**清掉**部門。
+   */
   departmentName?: string;
+  /** 同上：undefined = 不動；空字串 = 清成空字串。 */
   jobTitle?: string;
 }
 
@@ -42,8 +47,10 @@ export interface NormalizedEmployee {
   email: string;
   fullName: string;
   hireDate: Date;
-  departmentName: string;
-  jobTitle: string;
+  /** undefined = 欄位不存在（更新時不動） */
+  departmentName: string | undefined;
+  /** undefined = 欄位不存在（更新時不動） */
+  jobTitle: string | undefined;
 }
 
 const MAX_LEN = { employeeNo: 64, email: 254, fullName: 100, departmentName: 100, jobTitle: 100 };
@@ -70,8 +77,8 @@ export function normalizeEmployeeRow(row: EmployeeImportRow): { value: Normalize
   const employeeNo = (row.employeeNo ?? '').trim();
   const email = normalizeEmail(row.email);
   const fullName = (row.fullName ?? '').trim();
-  const departmentName = (row.departmentName ?? '').trim();
-  const jobTitle = (row.jobTitle ?? '').trim();
+  const departmentName = typeof row.departmentName === 'string' ? row.departmentName.trim() : undefined;
+  const jobTitle = typeof row.jobTitle === 'string' ? row.jobTitle.trim() : undefined;
 
   const missing: string[] = [];
   if (!employeeNo) missing.push('employeeNo');
@@ -84,7 +91,7 @@ export function normalizeEmployeeRow(row: EmployeeImportRow): { value: Normalize
   const hireDate = parseIsoDate(row.hireDate);
   if (!hireDate) return { error: 'hireDate 必須是有效的 YYYY-MM-DD 日期' };
   for (const [key, value] of Object.entries({ employeeNo, fullName, departmentName, jobTitle })) {
-    if (value.length > MAX_LEN[key as keyof typeof MAX_LEN]) {
+    if (value !== undefined && value.length > MAX_LEN[key as keyof typeof MAX_LEN]) {
       return { error: `${key} 太長（上限 ${MAX_LEN[key as keyof typeof MAX_LEN]} 字）` };
     }
   }
@@ -101,6 +108,8 @@ const isUniqueViolation = (err: unknown) => (err as { code?: string })?.code ===
  *
  * - upsert 依據 (workspaceId, employeeNo)；email 一律小寫。
  * - 同一個 email 已屬於另一個 employeeNo → 該列失敗（不搶別人的 email）。
+ * - 更新既有員工時只寫有提供的欄位：departmentName／jobTitle 欄位不存在就不動（review S10）。
+ * - 已綁定使用者帳號（userId 有值）的員工不能用匯入改 email → 該列失敗（要在 H2 後台處理）。
  * - 部門只處理根部門：依名稱不分大小寫比對，沒有就建立。
  * - 每一列各自成敗；整批結束寫一筆 audit `employee.import`（只有數量，不含個資）。
  */
@@ -202,22 +211,31 @@ export class EmployeesService {
       throw new EmployeeRowError(`此 email 已屬於另一位員工（員工編號 ${byEmail.employeeNo}）`);
     }
 
-    const departmentId = value.departmentName
-      ? await this.findOrCreateRootDepartment(workspaceId, value.departmentName, departmentCache)
-      : null;
+    const existing = await this.prisma.employeeProfile.findUnique({
+      where: { workspaceId_employeeNo: { workspaceId, employeeNo: value.employeeNo } },
+      select: { id: true, email: true, userId: true },
+    });
+    if (existing && existing.userId && existing.email !== value.email) {
+      // 綁定是用 email 對應的；改 email 會讓這位員工的 SSO 對應改變，要在後台確認後處理
+      throw new EmployeeRowError('已綁定帳號的員工不能用匯入改 email，請在後台（H2）處理');
+    }
+
+    // undefined = CSV 沒有這一欄 → 不動；'' = 清掉
+    const departmentId =
+      value.departmentName === undefined
+        ? undefined
+        : value.departmentName
+          ? await this.findOrCreateRootDepartment(workspaceId, value.departmentName, departmentCache)
+          : null;
 
     const data = {
       email: value.email,
       fullName: value.fullName,
       hireDate: value.hireDate,
-      jobTitle: value.jobTitle,
-      departmentId,
+      ...(value.jobTitle !== undefined ? { jobTitle: value.jobTitle } : {}),
+      ...(departmentId !== undefined ? { departmentId } : {}),
     };
 
-    const existing = await this.prisma.employeeProfile.findUnique({
-      where: { workspaceId_employeeNo: { workspaceId, employeeNo: value.employeeNo } },
-      select: { id: true },
-    });
     if (existing) {
       const row = await this.prisma.employeeProfile.update({
         where: { id: existing.id },
@@ -227,7 +245,7 @@ export class EmployeesService {
       return { status: 'updated', profileId: row.id };
     }
     const row = await this.prisma.employeeProfile.create({
-      data: { workspaceId, employeeNo: value.employeeNo, ...data },
+      data: { workspaceId, employeeNo: value.employeeNo, jobTitle: '', departmentId: null, ...data },
       select: { id: true },
     });
     return { status: 'created', profileId: row.id };
