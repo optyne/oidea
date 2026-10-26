@@ -14,7 +14,7 @@ export class BreakGlassPasswordError extends Error {}
 
 /**
  * `npm run auth:set-break-glass-password -- <email>`（spec §4.3「開發與緊急登入」）。
- * 只允許公司工作空間的 owner；密碼由呼叫端從 stdin 讀進來，這裡只做 bcrypt（cost 12，跟註冊相同）。
+ * 只允許已綁定 SSO 的公司工作空間 owner；密碼由呼叫端從 stdin 讀進來，這裡只做 bcrypt（cost 12，跟註冊相同）。
  * 要能真的登入，email 還必須在 BREAK_GLASS_OWNER_EMAILS 裡（或帳密登入是開著的）。
  */
 @Injectable()
@@ -52,6 +52,10 @@ export class BreakGlassPasswordService {
     const company = await this.company.findCompanyOwnership(user.id);
     if (!company) {
       throw new BreakGlassPasswordError('只有公司工作空間的 owner 可以設定緊急登入密碼');
+    }
+    // 還沒綁定 SSO 的帳號（可能是搶先用老闆 email 註冊的）不能設；請本人先用 SSO 登入一次（review R2）
+    if (!(await this.company.isSsoBound(user.id))) {
+      throw new BreakGlassPasswordError('這個 owner 帳號還沒綁定 SSO：請先用 SSO 登入一次，再設定緊急登入密碼');
     }
 
     const passwordHash = await bcrypt.hash(password, 12);

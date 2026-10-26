@@ -96,7 +96,7 @@ describe('SSO 員工對應', () => {
       });
       h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'bob@corp.com', employeeNo: 'E003' });
     });
-    const oldRefresh = await h.app.get(RefreshTokenService).issueNewFamily('u-bob');
+    const oldRefresh = await h.app.get(RefreshTokenService).issueNewFamily('u-bob', 0);
     h.secrets.push(oldRefresh);
 
     const res = await h.login({ sub: 'sub-bob', email: 'bob@corp.com' });
@@ -148,15 +148,19 @@ describe('SSO 員工對應', () => {
     }
   });
 
-  it('review S2：綁定既有帳號後，他綁定前拿到的 access token 立刻失效、socket 被斷開；新 token 可用', async () => {
+  it('review S2/R1：綁定既有帳號後，他綁定前（同一秒）拿到的 access token 立刻失效、socket 被斷開；新 token 可用', async () => {
     await boot((h) => {
       h.prisma.addUser({ id: 'u-sq', email: 'sq@corp.com', username: 'sq', passwordHash: 'hash:squatter' });
       h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'sq@corp.com', employeeNo: 'E060' });
     });
-    // 搶先註冊的人手上的 access token（跟 AuthService 一樣用注入的時鐘簽 iat）
-    const oldAccess = h.app
-      .get(JwtService)
-      .sign({ sub: 'u-sq', email: 'sq@corp.com', typ: 'access', iat: Math.floor(h.clock.now().getTime() / 1000) });
+    // 搶先註冊的人手上的 access token：跟 AuthService 一樣帶 tv（現在的 tokenVersion），iat 跟綁定同一秒
+    const oldAccess = h.app.get(JwtService).sign({
+      sub: 'u-sq',
+      email: 'sq@corp.com',
+      typ: 'access',
+      tv: 0,
+      iat: Math.floor(h.clock.now().getTime() / 1000),
+    });
     h.secrets.push(oldAccess);
     const sock = { id: 'sock-sq', disconnect: jest.fn() };
     const registry = h.app.get(SocketRegistry);
@@ -165,18 +169,89 @@ describe('SSO 員工對應', () => {
     const path = `/attendance/today?workspaceId=${COMPANY_WS}`;
     expect((await h.get(path, bearer(oldAccess))).status).toBe(403); // 已登入，但還不是公司成員
 
-    h.clock.advance(2_000);
+    // 時鐘不動：綁定跟 token 簽發在同一秒
     const res = await h.login({ sub: 'sub-sq', email: 'sq@corp.com' });
     expect(res.exchange!.status).toBe(201);
     expect(res.exchange!.body.user.id).toBe('u-sq');
-    expect(h.prisma.users.find((u) => u.id === 'u-sq')!.sessionsValidAfter).toEqual(h.clock.now());
+    expect(h.prisma.users.find((u) => u.id === 'u-sq')!.tokenVersion).toBe(1);
+    expect(h.app.get(JwtService).decode(res.exchange!.body.accessToken).tv).toBe(1);
 
-    // 現在他是公司成員了：舊 token 不能拿來用
+    // 現在他是公司成員了：舊 token 不能拿來用（HTTP 與 socket 握手都一樣）
     expect((await h.get(path, bearer(oldAccess))).status).toBe(401);
     expect(sock.disconnect).toHaveBeenCalledWith(true);
     expect(registry.count('u-sq')).toBe(0);
     // SSO 換到的新 token 正常
     expect((await h.get(path, bearer(res.exchange!.body.accessToken))).status).toBe(200);
+  });
+
+  it('review R1：一直 refresh 的搶註者在綁定的同一秒就失去存取：迴圈拿到的每張 access token 都 401、refresh 也換不出新的', async () => {
+    await boot((h) => {
+      h.prisma.addUser({ id: 'u-loop', email: 'loop@corp.com', username: 'loop', passwordHash: 'hash:squatter' });
+      h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'loop@corp.com', employeeNo: 'E061' });
+    });
+    let current = await h.app.get(RefreshTokenService).issueNewFamily('u-loop', 0);
+    h.secrets.push(current);
+    const path = `/attendance/today?workspaceId=${COMPANY_WS}`;
+
+    // 綁定期間不停地 refresh（時鐘不動：全部都在同一秒）
+    const minted: string[] = [];
+    let stop = false;
+    let loopStatus = 0;
+    const loop = (async () => {
+      while (!stop) {
+        const r = await h.post('/auth/refresh', { refreshToken: current });
+        if (r.status !== 201) {
+          loopStatus = r.status;
+          return;
+        }
+        current = r.body.refreshToken;
+        minted.push(r.body.accessToken);
+        h.secrets.push(r.body.refreshToken, r.body.accessToken);
+      }
+    })();
+    // 綁定前至少換到一張
+    while (minted.length === 0) await new Promise((r) => setTimeout(r, 1));
+    const res = await h.login({ sub: 'sub-loop', email: 'loop@corp.com' });
+    stop = true;
+    await loop;
+    expect(res.exchange!.status).toBe(201);
+    expect(res.exchange!.body.user.id).toBe('u-loop');
+
+    expect(minted.length).toBeGreaterThan(0);
+    for (const token of minted) {
+      expect((await h.get(path, bearer(token))).status).toBe(401);
+    }
+    // 迴圈要嘛在綁定後被擋（401），要嘛手上的最後一張 refresh token 現在換不出來
+    expect([0, 401]).toContain(loopStatus);
+    expect((await h.post('/auth/refresh', { refreshToken: current })).status).toBe(401);
+    expect((await h.get(path, bearer(res.exchange!.body.accessToken))).status).toBe(200);
+  });
+
+  it('review R1：綁定 commit 之後才 commit 的 bot（綁定途中用舊 token 建的）也會被撤銷', async () => {
+    await boot((h) => {
+      h.prisma.addUser({ id: 'u-bots', email: 'bots@corp.com', username: 'bots', passwordHash: 'hash:x' });
+      h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'bots@corp.com', employeeNo: 'E062' });
+    });
+    // 模擬：綁定交易撤銷 bot 之後、commit 之前，另一個請求才 insert 一個 bot
+    const prisma = h.prisma;
+    const origTx = prisma.$transaction.bind(prisma);
+    jest.spyOn(prisma, '$transaction').mockImplementation(async (fn: any) => {
+      const out = await origTx(fn);
+      if (prisma.bots.some((b) => b.id === 'bot-late')) return out;
+      prisma.bots.push({
+        id: 'bot-late',
+        workspaceId: 'ws-side',
+        userId: 'u-late-bot',
+        tokenPrefix: 'bot_late00',
+        tokenHash: 'x',
+        createdById: 'u-bots',
+        revokedAt: null,
+      });
+      return out;
+    });
+    const res = await h.login({ sub: 'sub-bots', email: 'bots@corp.com' });
+    expect(res.exchange!.status).toBe(201);
+    expect(prisma.bots.find((b) => b.id === 'bot-late')!.revokedAt).not.toBeNull();
   });
 
   it('review M32：從 Account 找到的 profile 不在公司工作空間 → not_employee（沒有任何寫入）', async () => {

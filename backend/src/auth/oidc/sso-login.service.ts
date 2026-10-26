@@ -10,8 +10,9 @@ import { SocketRegistry } from '../socket-registry';
 import { resolveUserIdByEmail } from '../../common/email-lookup';
 import { SsoErrorCode } from './oidc-errors';
 
-/** Account.provider 的值（`Account(provider, providerId)` 唯一）。 */
-export const SSO_PROVIDER = 'authentik';
+import { SSO_PROVIDER } from './sso-provider';
+
+export { SSO_PROVIDER };
 
 export interface SsoClaims {
   /** id_token 的 sub */
@@ -107,8 +108,8 @@ export function usernameCandidate(base: string, n: number): string {
  * 2. 從 email 找到的 profile 已綁了別的 User → `profile_bound`（hr 解除綁定後再登入）。
  * 3. profile 還沒綁：
  *    - 已有同 email（不分大小寫）的 User → 綁定它，並清掉 passwordHash、撤銷他全部 refresh token、
- *      撤銷他建立的所有 BotAccount、刪除他其他的 Account；設 `sessionsValidAfter`＝現在
- *      （舊的 access token 失效），commit 後斷開他的 socket；
+ *      撤銷他建立的所有 BotAccount、刪除他其他的 Account；`tokenVersion` +1
+ *      （舊的 access／refresh token 失效），commit 後再撤銷一次、覆寫狀態快取、斷開他的 socket；
  *    - 沒有 → 新建 User（username 取 email 的 local part，撞名加 -2、-3…）；
  *    - 建 Account、回填 `EmployeeProfile.userId`。
  * 4. upsert 公司工作空間的 WorkspaceMember（新加入 role=member；已有就不動角色）。
@@ -156,10 +157,15 @@ export class SsoLoginService {
     }
 
     if (outcome.boundExistingUser) {
-      // 交易 commit 之後再撤銷一次：撈出交易期間才 commit 的 refresh token 換發
+      // 交易 commit 之後再撤銷一次：撈出交易期間才 commit 的 refresh token 換發與新建的 bot
+      // （他綁定前的 access token 還有效時建的；bot token 不帶 tokenVersion，只能靠撤銷）
       await this.refreshTokens.revokeAllForUser(outcome.userId);
+      await this.prisma.botAccount.updateMany({
+        where: { createdById: outcome.userId, revokedAt: null },
+        data: { revokedAt: this.clock.now() },
+      });
     }
-    // 重讀 DB 並覆寫停用快取：綁定時新設的 sessionsValidAfter 立刻生效（不會被在途的舊 NX 寫入蓋掉）；
+    // 重讀 DB 並覆寫停用快取：綁定時 +1 的 tokenVersion 立刻生效（不會被在途的舊 NX 寫入蓋掉）；
     // 復職等情況下快取裡舊的「停用」也一併換掉
     await this.userStatus.refresh(outcome.userId);
     if (outcome.boundExistingUser) {
@@ -296,8 +302,12 @@ export class SsoLoginService {
       userCreated = true;
     } else if (boundExistingUser) {
       // 防止有人先用員工的 email 註冊、之後搶走帳號或留下後門。
-      // sessionsValidAfter：綁定前簽發的 access token（最多 15 分鐘）與 socket 一律失效（review S2）
-      await tx.user.update({ where: { id: target.id }, data: { passwordHash: null, sessionsValidAfter: now } });
+      // tokenVersion +1：綁定前簽發的 access token、refresh token（含躲過撤銷的換發）與 socket 一律失效
+      // （review S2、R1；整數比對，沒有「同一秒」的空窗）
+      await tx.user.update({
+        where: { id: target.id },
+        data: { passwordHash: null, tokenVersion: { increment: 1 } },
+      });
       await this.refreshTokens.revokeAllForUser(target.id, tx);
       const bots = await tx.botAccount.updateMany({
         where: { createdById: target.id, revokedAt: null },

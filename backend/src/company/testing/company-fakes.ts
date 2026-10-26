@@ -6,7 +6,7 @@
  * 只給 *.spec.ts 使用。
  */
 import { randomUUID } from 'crypto';
-import { fakeEmailQueryRaw } from '../../common/testing/fake-email-raw';
+import { fakeEmailQueryRaw, sqlText } from '../../common/testing/fake-email-raw';
 
 export interface FakeWorkspaceRow {
   id: string;
@@ -67,6 +67,12 @@ const emailMatches = (actual: string, cond: any) => {
     return cond.mode === 'insensitive' ? actual.toLowerCase() === String(cond.equals).toLowerCase() : actual === cond.equals;
   }
   return false;
+};
+
+/** Postgres `ILIKE`（沒有 ESCAPE）：`_` 對一個字元、`%` 對任意長度，不分大小寫。 */
+const ilike = (actual: string, pattern: string) => {
+  const re = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/_/g, '.').replace(/%/g, '.*');
+  return new RegExp(`^${re}$`, 'is').test(actual);
 };
 
 export class FakeCompanyPrisma {
@@ -181,8 +187,25 @@ export class FakeCompanyPrisma {
     }),
   };
 
-  /** email-lookup.ts 的 `lower("email") = lower($1)`（不把 `_`、`%` 當萬用字元）。 */
-  $queryRaw = fakeEmailQueryRaw(() => this.users);
+  private readonly emailRaw = fakeEmailQueryRaw(() => this.users);
+
+  /**
+   * 兩種 `$queryRaw`：email-lookup.ts 的 `lower("email") = lower($1)`，以及 employees.service 找根部門的
+   * `lower("name") = lower($1)`（review N-a）。都是「整串小寫後相等」，不把 `_`、`%` 當萬用字元。其他 SQL 丟錯。
+   */
+  $queryRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const sql = sqlText(strings);
+    const rootDept =
+      /^SELECT "id", "archivedAt" FROM "departments" WHERE "workspaceId" = \$\? AND "parentId" IS NULL AND lower\("name"\) = lower\(\$\?\) LIMIT 1$/;
+    if (rootDept.test(sql)) {
+      const [workspaceId, name] = values as [string, string];
+      return this.departments
+        .filter((d) => d.workspaceId === workspaceId && d.parentId === null && d.name.toLowerCase() === String(name).toLowerCase())
+        .slice(0, 1)
+        .map((d) => ({ id: d.id, archivedAt: d.archivedAt }));
+    }
+    return this.emailRaw(strings, ...values);
+  });
 
   user = {
     findFirst: jest.fn(async () => {
@@ -262,11 +285,17 @@ export class FakeCompanyPrisma {
 
   department = {
     findFirst: jest.fn(async ({ where, select }: any) => {
+      // 照 Postgres 模擬：`mode: 'insensitive'` 的 equals 是 ILIKE，`_`／`%` 是萬用字元（review N-a）。
+      // 正式程式不該再走這裡（改用 $queryRaw 的 lower() = lower()），留著讓「改回 insensitive」的回歸測試看得出來。
+      const nameMatches = (actual: string, cond: any) =>
+        cond && typeof cond === 'object' && cond.mode === 'insensitive'
+          ? ilike(actual, String(cond.equals))
+          : emailMatches(actual, cond);
       const row = this.departments.find(
         (d) =>
           d.workspaceId === where.workspaceId &&
           d.parentId === (where.parentId ?? null) &&
-          emailMatches(d.name, where.name),
+          nameMatches(d.name, where.name),
       );
       return pick(row, select);
     }),

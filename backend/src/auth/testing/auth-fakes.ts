@@ -13,7 +13,7 @@ export interface FakeUser {
   passwordHash: string | null;
   disabledAt: Date | null;
   deletedAt: Date | null;
-  sessionsValidAfter?: Date | null;
+  tokenVersion: number;
 }
 
 export interface FakeRefreshRow {
@@ -24,6 +24,7 @@ export interface FakeRefreshRow {
   expiresAt: Date;
   revokedAt: Date | null;
   rotatedAt: Date | null;
+  tokenVersion: number;
   createdAt: Date;
 }
 
@@ -66,6 +67,7 @@ export class FakePrisma {
       passwordHash: 'hashed:pw',
       disabledAt: null,
       deletedAt: null,
+      tokenVersion: 0,
       ...partial,
     };
     this.users.set(u.id, u);
@@ -85,6 +87,7 @@ export class FakePrisma {
         id: randomUUID(),
         revokedAt: null,
         rotatedAt: null,
+        tokenVersion: 0,
         createdAt: this.clock.now(),
         ...data,
       };

@@ -1,6 +1,9 @@
 -- AlterTable
-ALTER TABLE "users" ADD COLUMN     "sessionsValidAfter" TIMESTAMP(3),
+ALTER TABLE "users" ADD COLUMN     "tokenVersion" INTEGER NOT NULL DEFAULT 0,
 ALTER COLUMN "passwordHash" DROP NOT NULL;
+
+-- AlterTable
+ALTER TABLE "refresh_tokens" ADD COLUMN     "tokenVersion" INTEGER NOT NULL DEFAULT 0;
 
 -- AlterTable
 ALTER TABLE "workspaces" ADD COLUMN     "isCompany" BOOLEAN NOT NULL DEFAULT false,
@@ -115,8 +118,19 @@ CREATE UNIQUE INDEX "departments_child_name_key" ON "departments" ("workspaceId"
 --
 -- H0 與 H1 之間用帳密登入的人（包括非員工、離職員工、搶先用員工 email 註冊的帳號）手上的
 -- refresh token 會一直自動換發；員工對應只在 SSO 登入時檢查，所以這裡把它們全部撤銷。
--- access token 最多再撐 15 分鐘（JWT_EXPIRATION），之後就要經 SSO（只有員工能登入）。
--- bot token 不受影響（不是 refresh token）。只在這份 migration 跑一次。
--- 時間用 UTC 寫進 TIMESTAMP(3)，跟 Prisma 寫入的值一致。
+-- access token 也會立刻失效：H1 起 access token 必須帶 `tv`（User.tokenVersion，review R1），
+-- H0 簽的 token 沒有這個 claim。之後就要經 SSO（只有員工能登入）。
+-- 只在這份 migration 跑一次。時間用 UTC 寫進 TIMESTAMP(3)，跟 Prisma 寫入的值一致。
+--
+-- 滾動部署時，還在服務的 H0 container 可能在這兩個 UPDATE 之後再發出新的 refresh token／建 bot：
+-- 先停掉舊的 backend container 再讓新的跑 migration，或切換完成後手動重跑這兩個 UPDATE
+-- （見 docs/DEPLOY_DOKPLOY.md「H1 上線注意」）。
 -- ============================================================
+
+-- 既有的 API bot 全部撤銷（review R3）：它們都是 SSO 之前的帳號建的（可能是非員工、離職員工或
+-- 搶先用員工 email 註冊的人），bot token 不會過期、也不經 SSO。員工綁定 SSO 時本來就會撤銷他
+-- 自己建的 bot（spec §4.3 員工對應第 3 點），所以上線後一律重建。撤銷的表示法跟綁定流程相同：設 revokedAt。
+UPDATE "bot_accounts" SET "revokedAt" = (NOW() AT TIME ZONE 'UTC') WHERE "revokedAt" IS NULL;
+
+-- 全部 refresh token 撤銷（review S1），保持最後一步
 UPDATE "refresh_tokens" SET "revokedAt" = (NOW() AT TIME ZONE 'UTC') WHERE "revokedAt" IS NULL;

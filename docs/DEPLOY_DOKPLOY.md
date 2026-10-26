@@ -106,7 +106,11 @@ APP_MOBILE_CALLBACK_URL=oidea://auth
 - `DATABASE_URL` 的 host 用 Dokploy 內部網路名（**不是 localhost**），port 用 **5432**（容器內部通訊不經過 5433 映射）
 - `JWT_SECRET` **絕對要換**，不然任何人都能偽造 token
 - `JWT_EXPIRATION` 是 access token 的有效期（建議 15m）；`JWT_REFRESH_EXPIRATION` 是 refresh token 的有效期（不透明字串、存在 `refresh_tokens` 資料表，每次 refresh 換發並重新起算；格式 `7d`／`12h`／`30m`／秒數）
-- **H1 上線注意**：H1 的 migration（`20261026120000_h1_employees_company`）最後一步會**撤銷所有 refresh token**（`UPDATE "refresh_tokens" SET "revokedAt" = ...`）。上線後每個人都要用公司帳號（SSO）重新登入一次；不在員工主檔的人（含以前自行註冊的帳號）就登不進來了。手上的 access token 最多再用 15 分鐘（`JWT_EXPIRATION`）。bot token 不受影響。這點要寫進 H1 的 PR 描述與上線公告。
+- **H1 上線注意**：
+  - H1 的 migration（`20261026120000_h1_employees_company`）最後會**撤銷所有 bot token 與所有 refresh token**（`UPDATE "bot_accounts" SET "revokedAt" = ...`、`UPDATE "refresh_tokens" SET "revokedAt" = ...`）。上線後每個人都要用公司帳號（SSO）重新登入一次；不在員工主檔的人（含以前自行註冊的帳號）就登不進來了。H0 簽的 access token 沒有 `tv`（登入版本）claim，上線後也立刻失效。
+  - **所有 API bot 上線後都要重建**（由綁定過 SSO 的員工重新建立、把新的 token 換到外部服務）。上線前的 bot 都是 SSO 之前的帳號建的，可能屬於非員工、離職員工或搶先用員工 email 註冊的人；員工第一次 SSO 綁定時本來也會撤銷他自己建的 bot。
+  - **先停掉舊的 backend container，再讓新的跑 migration**（Dokploy 預設是先起新的再停舊的）。否則還在服務的 H0 container 可能在 migration 之後又換發 refresh token 或建 bot。做不到的話，切換完成、舊 container 停掉之後，用 `psql` 手動再跑一次 migration 最後那兩個 `UPDATE`（只動 `revokedAt` 還是 null 的列；代價是切換後已經 SSO 登入的人要再登入一次，所以要在重建 bot 之前、越早越好）。
+  - 這些要寫進 H1 的 PR 描述與上線公告。
 - **H0 上線注意**：H0 改了 token 格式（access token 要有 `typ: "access"`，refresh token 改成不透明字串），上線後舊的 access／refresh token 全部失效，**所有人都要重新登入一次**。WebSocket 也改成要在握手帶 access token（`auth.token`），舊版 App 連不上即時訊息與白板，前後端要一起上線。
 - `CORS_ORIGIN` 是逗號分隔的白名單，讓你的 Flutter Web / 其他前端可以打 API（SSO 的 `POST /api/auth/oidc/exchange` 也需要；Authentik 網域不用加）
 
@@ -169,7 +173,7 @@ APP_MOBILE_CALLBACK_URL=oidea://auth
 - callback 的回應帶 `Referrer-Policy: no-referrer` 與 `Cache-Control: no-store`；Web 的 ticket 放在 URL fragment，不會進 nginx access log 或 Referer。
 - 登出：Web 登出時 App 會導到 `endSessionUrl`（Authentik 的 end-session），否則下次會不經詢問自動登入。Mailcow 本身的 session 不在本系統控制範圍。
 
-**員工對應**（第一次 SSO 登入時）：只有員工主檔（`employee_profiles`，公司工作空間）裡的人能登入，email 不分大小寫。已有同 email 的帳密帳號時會綁定它，並清掉密碼、撤銷它的 refresh token 與它建立的 bot、刪除它其他的登入方式；綁定前發出的 access token 立刻失效（`users.sessionsValidAfter`），他當下的 Socket 連線也會被斷開。email 比對用 `lower(email) = lower(...)`（不是 `ILIKE`，`_`、`%` 不是萬用字元）；只差大小寫的帳號有兩個以上時拒絕。每次登入成功都確保他是公司工作空間成員（新加入為 member，已有角色不動）。
+**員工對應**（第一次 SSO 登入時）：只有員工主檔（`employee_profiles`，公司工作空間）裡的人能登入，email 不分大小寫。已有同 email 的帳密帳號時會綁定它，並清掉密碼、撤銷它的 refresh token 與它建立的 bot、刪除它其他的登入方式；綁定前發出的 access token 與 refresh token 立刻失效（綁定時 `users.tokenVersion` +1；access token 的 `tv` claim 與 refresh token 記的版本都必須等於它，就算是同一秒簽發的也一樣），他當下的 Socket 連線也會被斷開。email 比對用 `lower(email) = lower(...)`（不是 `ILIKE`，`_`、`%` 不是萬用字元）；只差大小寫的帳號有兩個以上時拒絕。每次登入成功都確保他是公司工作空間成員（新加入為 member，已有角色不動）。
 
 App 收到的錯誤碼：
 
@@ -198,6 +202,7 @@ npm run company:init -- --create <名稱> --owner-email <owner 公司信箱> --e
 - owner 的帳號**已經綁定 SSO**（登入過一次）時，`ownerId` 直接指向他，原本的 owner 降為 admin。其他情況（還沒有帳號，或只有以前用帳密註冊、還沒綁定 SSO 的帳號）一律記成「待移交」（`workspaces.pendingOwnerEmail`），等他第一次 SSO 登入、經過綁定的清理（清密碼、撤銷 token 與 bot）之後才成為 owner。這是為了防止有人先用老闆的 email 註冊帳號、搶到 owner。用 `--create` 時要用 `--executor-email` 指定另一位既有帳號暫時擔任 owner；移交時執行者降為 admin（執行者就是 owner 本人時不降）。
 - email 比對：完全相同（小寫）優先，否則不分大小寫；只差大小寫的帳號有兩個以上時拒絕，要先整理重複帳號。
 - `--workspace` 指向一個已有其他成員的工作空間（還不是公司工作空間）時會拒絕，並印出數量（成員總數、不在員工主檔的人數、owner/admin/hr/finance 的人數；不印 email）。這些人會直接變成公司成員，角色就是全公司的後台角色。確認要沿用請加 `--allow-existing-members`（會印同樣的數量當警告並寫進 audit），否則改用 `--create`。
+- `--workspace` 執行後的每一位 owner（`ownerId` 與角色是 owner 的成員）都必須**已綁定 SSO**，或就是 `--owner-email` 那位（待移交的 owner 本人，第一次 SSO 登入時會經綁定清理）；否則拒絕並只印人數。上線時還沒有人綁定過 SSO，所以這個工作空間的 owner 必須就是 `--owner-email` 本人、而且沒有其他 owner；不是的話先把其他 owner 降為 admin，或改用 `--create --executor-email`。
 - 匯入員工主檔：`npm run employees:import -- /path/員工.csv`（UTF-8，第一行檔頭 `employeeNo,email,fullName,hireDate,departmentName,jobTitle`；後兩欄可省略）。重新匯入時只寫檔頭有的欄位：省略 `departmentName`／`jobTitle` 欄就不會動到既有員工的部門與職稱；**有這一欄但留白會清掉**。已綁定帳號的員工不能用匯入改 email（該列失敗，要在 H2 後台處理）。有任何一列失敗時 exit code 非 0，會逐列印出行號與原因。
 - 本機開發要先 `npm run build`，這三個指令跑的是 `dist/cli/*.js`。
 - 公司工作空間不能刪除，也不能發邀請或手動加人（403）；成員由 SSO 登入（加入）與離職（移出）決定。
@@ -208,8 +213,8 @@ npm run company:init -- --create <名稱> --owner-email <owner 公司信箱> --e
    ```bash
    npm run auth:set-break-glass-password -- owner@example.com
    ```
-   只有公司工作空間的 owner 能設定。注意：帳號第一次 SSO 綁定時會清掉舊密碼，所以要在 owner 第一次 SSO 登入**之後**再設。
-2. 緊急時在 Dokploy 設 `BREAK_GLASS_OWNER_EMAILS=owner@example.com`（逗號分隔）並重新部署。這段期間只有名單上、且是公司工作空間 owner 的帳號能用帳密登入，其他人仍回 404；每次登入寫 audit `auth.break_glass`。App 的登入頁會多一個「管理者緊急登入」的文字按鈕，點開就是帳密表單（`/auth/config` 的 `breakGlass` 為 true 時才顯示）；不在名單上的人一律顯示「帳號或密碼錯誤」。
+   只有**已綁定 SSO**（至少用公司帳號登入過一次）的公司工作空間 owner 能設定；還沒綁定的帳號會被拒絕（它的密碼可能是搶先註冊的人設的，綁定時本來就會清掉）。
+2. 緊急時在 Dokploy 設 `BREAK_GLASS_OWNER_EMAILS=owner@example.com`（逗號分隔）並重新部署。這段期間只有名單上、是公司工作空間 owner、而且已綁定 SSO 的帳號能用帳密登入，其他人仍回 404；每次登入寫 audit `auth.break_glass`。App 的登入頁會多一個「管理者緊急登入」的文字按鈕，點開就是帳密表單（`/auth/config` 的 `breakGlass` 為 true 時才顯示）；不在名單上的人一律顯示「帳號或密碼錯誤」。
    注意：company:init 的暫時執行者在 owner 第一次 SSO 登入後會降為 admin，就不再能用緊急登入。
 3. 有設這個變數時，啟動與每天 09:00（`COMPANY_TIMEZONE`）都會在 log 印 warning。**緊急狀況解除後把變數拿掉並重新部署。**
 

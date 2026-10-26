@@ -117,6 +117,23 @@ describe('EmployeesService.importRows', () => {
     expect(new Set(prisma.profiles.map((p) => p.departmentId))).toEqual(new Set([prisma.departments[0].id]));
   });
 
+  it('review N-a：部門名稱裡的 _ 與 % 不是萬用字元（A_B 不會掛到既有的 AxB，% 不會對到任何部門）', async () => {
+    prisma.departments.push({ id: 'd-axb', workspaceId: 'ws-co', name: 'AxB', parentId: null, archivedAt: null });
+    const res = await service.importRows([
+      row({ employeeNo: 'E1', email: 'a@corp.com', departmentName: 'A_B' }),
+      row({ employeeNo: 'E2', email: 'b@corp.com', departmentName: '%' }),
+    ]);
+    expect(res.created).toBe(2);
+    expect(prisma.departments.map((d) => d.name).sort()).toEqual(['%', 'A_B', 'AxB']);
+    const deptOf = (no: string) => prisma.departments.find((d) => d.id === prisma.profiles.find((p) => p.employeeNo === no)!.departmentId)!;
+    expect(deptOf('E1').name).toBe('A_B');
+    expect(deptOf('E2').name).toBe('%');
+    // 查詢是參數化的（值不拼進 SQL 字串）
+    for (const call of prisma.$queryRaw.mock.calls) {
+      expect(Array.from(call[0] as TemplateStringsArray).join('')).not.toMatch(/A_B|%'/);
+    }
+  });
+
   it('departmentName 空白 → 不指定部門', async () => {
     await service.importRows([row({ departmentName: '  ' })]);
     expect(prisma.profiles[0].departmentId).toBeNull();

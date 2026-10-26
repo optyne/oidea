@@ -18,7 +18,7 @@ export interface SsoUserRow {
   passwordHash: string | null;
   disabledAt: Date | null;
   deletedAt: Date | null;
-  sessionsValidAfter: Date | null;
+  tokenVersion: number;
   createdAt: Date;
 }
 export interface SsoAccountRow {
@@ -67,6 +67,7 @@ export interface SsoRefreshRow {
   expiresAt: Date;
   revokedAt: Date | null;
   rotatedAt: Date | null;
+  tokenVersion: number;
   createdAt: Date;
 }
 export interface SsoAuditRow {
@@ -149,7 +150,7 @@ export class FakeSsoPrisma implements Tables {
       passwordHash: null,
       disabledAt: null,
       deletedAt: null,
-      sessionsValidAfter: null,
+      tokenVersion: 0,
       createdAt: this.clock.now(),
       ...p,
     };
@@ -313,7 +314,7 @@ export class FakeSsoPrisma implements Tables {
         passwordHash: null,
         disabledAt: null,
         deletedAt: null,
-        sessionsValidAfter: null,
+        tokenVersion: 0,
         createdAt: this.clock.now(),
         ...data,
       };
@@ -324,8 +325,18 @@ export class FakeSsoPrisma implements Tables {
     update: jest.fn(async ({ where, data, select }: any) => {
       const row = this.users.find((u) => u.id === where.id);
       if (!row) throw p2025();
-      this.assertUserUnique({ ...row, ...data });
-      Object.assign(row, data);
+      // 跟 Prisma 一樣支援數字欄位的 `{ increment: n }`
+      const next: Record<string, any> = { ...data };
+      for (const [k, v] of Object.entries(next)) {
+        if (v && typeof v === 'object' && !(v instanceof Date)) {
+          if (typeof (v as any).increment !== 'number' || typeof (row as any)[k] !== 'number') {
+            throw new Error(`FakeSsoPrisma: unsupported update ${k}=${JSON.stringify(v)}`);
+          }
+          next[k] = (row as any)[k] + (v as any).increment;
+        }
+      }
+      this.assertUserUnique({ ...row, ...next });
+      Object.assign(row, next);
       return pick(row, select);
     }),
   };
@@ -388,6 +399,7 @@ export class FakeSsoPrisma implements Tables {
         id: randomUUID(),
         revokedAt: null,
         rotatedAt: null,
+        tokenVersion: 0,
         createdAt: this.clock.now(),
         ...data,
       };

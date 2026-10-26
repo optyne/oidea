@@ -50,7 +50,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
           userId: true,
           workspaceId: true,
           createdById: true,
-          createdAt: true,
         },
       });
       if (!bot || bot.revokedAt) {
@@ -66,11 +65,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       if (await this.userStatus.isDisabled(bot.createdById)) {
         throw new UnauthorizedException('Bot 建立者已停用');
       }
-      // 建立者的帳號在 SSO 綁定時重設過（sessionsValidAfter）→ 綁定前建的 bot 一律無效。
-      // 綁定交易本來就會撤銷這些 bot；這裡是同一個 cutoff 的第二道防線。
-      if (bot.createdAt instanceof Date && (await this.userStatus.isIssuedBeforeCutoff(bot.createdById, bot.createdAt))) {
-        throw new UnauthorizedException('無效或已撤銷的 bot token');
-      }
+      // 建立者的帳號在 SSO 綁定時重設過：綁定交易撤銷他建的所有 bot（revokedAt），commit 之後再撤銷一次
+      // （撈出綁定途中才 commit 的新 bot，見 SsoLoginService）；H1 migration 也撤銷了上線前的全部 bot。
+      // 這裡只看 revokedAt（review R1：不再用時間 cutoff）。
 
       // lastUsedAt 非關鍵；失敗不擋主流程
       this.prisma.botAccount

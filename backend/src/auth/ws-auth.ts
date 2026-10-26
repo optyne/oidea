@@ -49,7 +49,7 @@ export interface VerifiedAccessToken extends AuthenticatedUser {
  *
  * - 只讀 `handshake.auth.token`（access token，可帶或不帶 `Bearer ` 前綴）；
  *   客戶端自報的 userId 欄位一律不看，身分只來自驗證過的 token。
- * - 驗簽、驗 exp（用注入的時鐘）、只接受 `typ: "access"`、檢查使用者是否停用。
+ * - 驗簽、驗 exp（用注入的時鐘）、只接受 `typ: "access"`、檢查使用者是否停用、`tv` 是否等於現在的 tokenVersion（review R1）。
  * - middleware 只驗 token，成功後 `socket.data.userId` / `socket.data.email` / `socket.data.tokenExp` 有值。
  * - 登記到 SocketRegistry（H2 離職時斷線用）與排到期計時器，要等 gateway 的 handleConnection
  *   呼叫 `onConnected()` 才做，因為 handleConnection 只在握手真的完成後才跑。若在 middleware 裡做，
@@ -102,7 +102,7 @@ export class WsAuthService {
     if (!isAccessPayload(payload) || typeof payload.exp !== 'number') {
       throw new WsAuthError('wrong_token_type');
     }
-    const check = await this.userStatus.checkAccessToken(payload.sub, payload.iat);
+    const check = await this.userStatus.checkAccessToken(payload.sub, payload.tv);
     if (check === 'disabled') {
       throw new WsAuthError('user_disabled');
     }

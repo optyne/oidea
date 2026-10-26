@@ -59,14 +59,19 @@ export class AuthService {
   }
 
   /** SSO exchange 成功：寫 audit `auth.login`（method=sso）並發一組新的 token（新的 refresh family）。 */
-  async completeSsoLogin(userId: string, email: string, req?: AuditRequestContext): Promise<AuthTokens> {
+  async completeSsoLogin(
+    userId: string,
+    email: string,
+    tokenVersion: number,
+    req?: AuditRequestContext,
+  ): Promise<AuthTokens> {
     await this.audit.record({
       actorId: userId,
       action: 'auth.login',
       metadata: { method: 'sso' },
       req,
     });
-    return this.generateTokens(userId, email);
+    return this.generateTokens(userId, email, tokenVersion);
   }
 
   async register(dto: RegisterDto) {
@@ -91,7 +96,7 @@ export class AuthService {
       passwordHash,
     });
 
-    return this.generateTokens(user.id, user.email);
+    return this.generateTokens(user.id, user.email, user.tokenVersion);
   }
 
   /**
@@ -108,12 +113,12 @@ export class AuthService {
       action: 'auth.login',
       req,
     });
-    return this.generateTokens(user.id, user.email);
+    return this.generateTokens(user.id, user.email, user.tokenVersion);
   }
 
   /**
    * 緊急登入（spec §4.3 break-glass）：帳密登入關閉時，只有 BREAK_GLASS_OWNER_EMAILS 名單上、
-   * 而且是公司工作空間 owner 的帳號能用帳密登入；每次成功都寫 audit `auth.break_glass`。
+   * 是公司工作空間 owner、而且已綁定 SSO（有 authentik Account）的帳號能用帳密登入；每次成功都寫 audit `auth.break_glass`。
    * 任何不符合的情況都回同一個 404（跟「帳密登入關閉」一樣）。
    */
   private async breakGlassLogin(dto: LoginDto, req?: AuditRequestContext): Promise<AuthTokens> {
@@ -139,6 +144,17 @@ export class AuthService {
       });
       throw passwordLoginNotFound();
     }
+    // 只有綁定過 SSO 的 owner（密碼是 auth:set-break-glass-password 設的）能用；還沒綁定的帳號
+    // 可能是搶先用老闆 email 註冊的人，他的密碼不能拿來緊急登入（review R2）
+    if (!(await this.company.isSsoBound(user.id))) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: 'break_glass_not_sso_bound' },
+        req,
+      });
+      throw passwordLoginNotFound();
+    }
 
     await this.audit.record({
       actorId: user.id,
@@ -149,7 +165,7 @@ export class AuthService {
       req,
     });
     this.logger.warn(`緊急登入（break-glass）成功：user ${user.id}`);
-    return this.generateTokens(user.id, user.email);
+    return this.generateTokens(user.id, user.email, user.tokenVersion);
   }
 
   /**
@@ -208,7 +224,7 @@ export class AuthService {
   async refresh(refreshToken: string, req?: AuditRequestContext): Promise<AuthTokens> {
     const rotated = await this.refreshTokens.rotate(refreshToken, req);
     return {
-      accessToken: this.signAccessToken(rotated.userId, rotated.email),
+      accessToken: this.signAccessToken(rotated.userId, rotated.email, rotated.tokenVersion),
       refreshToken: rotated.refreshToken,
       user: { id: rotated.userId, email: rotated.email },
     };
@@ -234,18 +250,21 @@ export class AuthService {
     return this.usersService.findById(userId);
   }
 
-  private signAccessToken(userId: string, email: string): string {
-    // iat 用注入的時鐘（spec §6.4）：`sessionsValidAfter` 也是用同一個時鐘寫的，兩者才能比。
-    // 有效期由 JwtModule 的 signOptions（JWT_EXPIRATION，預設 15m）決定，從這個 iat 起算。
+  /**
+   * `tv` = 簽發時的 `User.tokenVersion`（review R1）：SSO 綁定把它 +1 之後這張 token 立刻失效
+   * （整數相等比對，沒有「同一秒簽發」的空窗）。
+   */
+  private signAccessToken(userId: string, email: string, tokenVersion: number): string {
+    // iat 用注入的時鐘（spec §6.4）；有效期由 JwtModule 的 signOptions（JWT_EXPIRATION，預設 15m）決定，從這個 iat 起算。
     const iat = Math.floor((this.clock ?? SYSTEM_CLOCK).now().getTime() / 1000);
-    const payload: AccessTokenPayload = { sub: userId, email, typ: ACCESS_TOKEN_TYPE, iat };
+    const payload: AccessTokenPayload = { sub: userId, email, typ: ACCESS_TOKEN_TYPE, tv: tokenVersion, iat };
     return this.jwtService.sign(payload);
   }
 
-  private async generateTokens(userId: string, email: string): Promise<AuthTokens> {
+  private async generateTokens(userId: string, email: string, tokenVersion: number): Promise<AuthTokens> {
     return {
-      accessToken: this.signAccessToken(userId, email),
-      refreshToken: await this.refreshTokens.issueNewFamily(userId),
+      accessToken: this.signAccessToken(userId, email, tokenVersion),
+      refreshToken: await this.refreshTokens.issueNewFamily(userId, tokenVersion),
       user: { id: userId, email },
     };
   }

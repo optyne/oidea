@@ -32,6 +32,8 @@ export type RefreshTokenDb = Pick<Prisma.TransactionClient, 'refreshToken'>;
 export interface RotatedRefreshToken {
   userId: string;
   email: string;
+  /** 使用者現在的 `User.tokenVersion`（新的 access token 用它簽 `tv`） */
+  tokenVersion: number;
   refreshToken: string;
 }
 
@@ -46,6 +48,8 @@ export interface RotatedRefreshToken {
  *   換發方建好新 row（已 commit）之後，檢查 family 裡有沒有被撤銷的 row，有就把新 row 也撤銷並回 401；
  *   撤銷方做完第一次 updateMany 之後再做一次，撈出撤銷途中才 commit 的新 row。
  *   在 READ COMMITTED 下兩個「讀」至少有一個看得到對方的「寫」，所以兩種交錯都擋得住。
+ * - 每個 row 記簽發時的 `User.tokenVersion`（換發沿用）。跟使用者現在的值不同 → 換發一律拒絕（review R1）：
+ *   SSO 綁定把版本 +1 之後，就算有 row 躲過撤銷（例如綁定途中才 commit 的換發），也換不出新的 token。
  */
 @Injectable()
 export class RefreshTokenService {
@@ -62,9 +66,9 @@ export class RefreshTokenService {
     this.ttlMs = parseDurationMs(raw) ?? parseDurationMs(DEFAULT_REFRESH_TTL)!;
   }
 
-  /** 新登入：開一個新的 family。 */
-  async issueNewFamily(userId: string): Promise<string> {
-    return this.issue(userId, randomUUID());
+  /** 新登入：開一個新的 family。`tokenVersion` = 使用者現在的 `User.tokenVersion`（跟 access token 的 `tv` 相同）。 */
+  async issueNewFamily(userId: string, tokenVersion: number): Promise<string> {
+    return this.issue(userId, randomUUID(), tokenVersion);
   }
 
   async rotate(token: string, req?: AuditRequestContext): Promise<RotatedRefreshToken> {
@@ -137,13 +141,17 @@ export class RefreshTokenService {
     }
     const row = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: hashRefreshToken(token) },
-      include: { user: { select: { id: true, email: true, disabledAt: true, deletedAt: true } } },
+      include: { user: { select: { id: true, email: true, disabledAt: true, deletedAt: true, tokenVersion: true } } },
     });
     if (!row || row.revokedAt || row.expiresAt.getTime() <= now.getTime()) {
       throw new UnauthorizedException('Refresh token 無效或已過期');
     }
     if (!row.user || row.user.disabledAt || row.user.deletedAt) {
       throw new UnauthorizedException('帳號已停用');
+    }
+    // 簽發之後登入版本變了（SSO 綁定）→ 這個 family 作廢（review R1）
+    if (!Number.isSafeInteger(row.tokenVersion) || row.tokenVersion !== row.user.tokenVersion) {
+      throw new UnauthorizedException('Refresh token 已失效，請重新登入');
     }
     return row;
   }
@@ -170,9 +178,9 @@ export class RefreshTokenService {
 
   /** rotate 換發：建好新 row 之後確認 family 沒被同時撤銷；被撤銷了就連新 row 一起撤銷並回 401。 */
   private async issueFor(
-    row: { userId: string; familyId: string; user: { email: string } },
+    row: { userId: string; familyId: string; tokenVersion: number; user: { email: string } },
   ): Promise<RotatedRefreshToken> {
-    const refreshToken = await this.issue(row.userId, row.familyId);
+    const refreshToken = await this.issue(row.userId, row.familyId, row.tokenVersion);
     const revokedInFamily = await this.prisma.refreshToken.count({
       where: { familyId: row.familyId, revokedAt: { not: null } },
     });
@@ -183,15 +191,17 @@ export class RefreshTokenService {
       });
       throw new UnauthorizedException('Refresh token 已失效，請重新登入');
     }
-    return { userId: row.userId, email: row.user.email, refreshToken };
+    // findUsable 已確認 row.tokenVersion 等於使用者現在的值
+    return { userId: row.userId, email: row.user.email, tokenVersion: row.tokenVersion, refreshToken };
   }
 
-  private async issue(userId: string, familyId: string): Promise<string> {
+  private async issue(userId: string, familyId: string, tokenVersion: number): Promise<string> {
     const token = randomBytes(32).toString('base64url');
     await this.prisma.refreshToken.create({
       data: {
         userId,
         familyId,
+        tokenVersion,
         tokenHash: hashRefreshToken(token),
         expiresAt: new Date(this.clock.now().getTime() + this.ttlMs),
       },

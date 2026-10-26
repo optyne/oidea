@@ -264,7 +264,7 @@ export class OidcFlowService {
     // callback 之後到現在（≤ 60 秒）被停用、刪除或離職的話不發 token（review N5）
     const user = await this.prisma.user.findUnique({
       where: { id: stored.userId },
-      select: { id: true, email: true, disabledAt: true, deletedAt: true },
+      select: { id: true, email: true, disabledAt: true, deletedAt: true, tokenVersion: true },
     });
     if (!user || user.disabledAt || user.deletedAt) throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'disabled');
     const profile = await this.prisma.employeeProfile.findUnique({
@@ -274,7 +274,8 @@ export class OidcFlowService {
     if (!profile) throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'not_employee');
     if (profile.employmentStatus === 'terminated') throw ssoHttpError(HttpStatus.UNAUTHORIZED, 'terminated');
 
-    return this.auth.completeSsoLogin(user.id, user.email, req);
+    // 用現在的 tokenVersion 簽（綁定交易已經 +1 過）
+    return this.auth.completeSsoLogin(user.id, user.email, user.tokenVersion, req);
   }
 
   /** App 的 callback URL。web：`#ticket=`／`#error=`（fragment）；mobile：`?ticket=`／`?error=`。 */

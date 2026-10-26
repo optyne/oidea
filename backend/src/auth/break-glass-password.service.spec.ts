@@ -16,8 +16,10 @@ describe('BreakGlassPasswordService + auth:set-break-glass-password', () => {
 
   beforeEach(() => {
     prisma = new FakeCompanyPrisma();
-    prisma.addUser({ id: 'u-owner', email: 'owner@corp.com' });
-    prisma.addUser({ id: 'u-co', email: 'co@corp.com' });
+    prisma.addUser({ id: 'u-owner', email: 'owner@corp.com', ssoBound: true });
+    prisma.addUser({ id: 'u-co', email: 'co@corp.com', ssoBound: true });
+    // 公司共同 owner，但還沒綁定 SSO（review R2）
+    prisma.addUser({ id: 'u-unbound', email: 'unbound@corp.com' });
     prisma.addUser({ id: 'u-admin', email: 'admin@corp.com' });
     prisma.addUser({ id: 'u-side', email: 'side@corp.com' });
     prisma.addUser({ id: 'u-dis', email: 'dis@corp.com', disabledAt: new Date() });
@@ -25,6 +27,7 @@ describe('BreakGlassPasswordService + auth:set-break-glass-password', () => {
     prisma.addMember('ws-co', 'u-owner', 'owner');
     prisma.addMember('ws-co', 'u-co', 'owner');
     prisma.addMember('ws-co', 'u-admin', 'admin');
+    prisma.addMember('ws-co', 'u-unbound', 'owner');
     prisma.addWorkspace({ id: 'ws-side', ownerId: 'u-side' });
     prisma.addMember('ws-side', 'u-side', 'owner');
     audit = { record: jest.fn().mockResolvedValue(undefined) };
@@ -95,6 +98,7 @@ describe('BreakGlassPasswordService + auth:set-break-glass-password', () => {
     ['其他工作空間的 owner', 'side@corp.com'],
     ['停用帳號', 'dis@corp.com'],
     ['不存在的帳號', 'ghost@corp.com'],
+    ['review R2：還沒綁定 SSO 的公司 owner', 'unbound@corp.com'],
   ])('%s → 拒絕（exit 1），不改密碼', async (_label, email) => {
     const res = await run(email, SECRET);
     expect(res.code).toBe(1);

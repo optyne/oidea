@@ -7,50 +7,55 @@ export const USER_STATUS_CACHE_TTL_SECONDS = 30;
 /** Redis 斷線時 ioredis 會把指令排隊等重連；超過這個時間就當成快取 miss 回 DB 查。 */
 export const USER_STATUS_REDIS_TIMEOUT_MS = 200;
 
-/** 快取值：停用 */
+/** 快取值：停用（H0 起就用的值，相容） */
 const DISABLED = '1';
-/** 快取值：沒停用、沒有 sessionsValidAfter（H0 起就用的值，相容） */
-const ACTIVE = '0';
-/** 快取值前綴：沒停用、`sessionsValidAfter` 的 epoch 秒，例如 `0:1760000000` */
-const ACTIVE_WITH_CUTOFF = '0:';
+/**
+ * 快取值前綴：沒停用、後面接 `User.tokenVersion`，例如 `t:3`（review R1）。
+ * H0 的 `'0'`（沒停用、不知道版本）與 H1 早期的 `'0:<秒>'` 一律看不懂 → 當成 miss 回 DB 查。
+ */
+const ACTIVE_WITH_VERSION = 't:';
+const VERSION_PATTERN = /^\d{1,10}$/;
 
 export interface UserStatus {
   /** 停用、刪除或不存在 */
   disabled: boolean;
   /**
-   * `User.sessionsValidAfter` 的 epoch 秒（無條件捨去）；null = 沒設。
-   * `iat` 小於這個值的 access token 一律拒絕（同一秒簽發的放行：iat 只有秒的精度）。
+   * `User.tokenVersion`；停用時是 null。access token 的 `tv` claim 必須完全相等（review R1）。
    */
-  sessionsValidAfterSec: number | null;
+  tokenVersion: number | null;
 }
 
 export type AccessTokenCheck = 'ok' | 'disabled' | 'stale';
 
 function encode(status: UserStatus): string {
-  if (status.disabled) return DISABLED;
-  return status.sessionsValidAfterSec === null ? ACTIVE : `${ACTIVE_WITH_CUTOFF}${status.sessionsValidAfterSec}`;
+  if (status.disabled || status.tokenVersion === null) return DISABLED;
+  return `${ACTIVE_WITH_VERSION}${status.tokenVersion}`;
 }
 
 function decode(raw: string | null): UserStatus | null {
-  if (raw === DISABLED) return { disabled: true, sessionsValidAfterSec: null };
-  if (raw === ACTIVE) return { disabled: false, sessionsValidAfterSec: null };
-  if (typeof raw === 'string' && raw.startsWith(ACTIVE_WITH_CUTOFF)) {
-    const rest = raw.slice(ACTIVE_WITH_CUTOFF.length);
-    if (/^\d{1,12}$/.test(rest)) return { disabled: false, sessionsValidAfterSec: Number(rest) };
+  if (raw === DISABLED) return { disabled: true, tokenVersion: null };
+  if (typeof raw === 'string' && raw.startsWith(ACTIVE_WITH_VERSION)) {
+    const rest = raw.slice(ACTIVE_WITH_VERSION.length);
+    if (VERSION_PATTERN.test(rest)) return { disabled: false, tokenVersion: Number(rest) };
   }
-  return null; // 沒有或看不懂 → 當成 miss
+  return null; // 沒有或看不懂（含 H0 的 '0'）→ 當成 miss
+}
+
+/** access token 的 `tv` claim 是否為合法的版本號（非負整數）。 */
+export function isTokenVersion(tv: unknown): tv is number {
+  return typeof tv === 'number' && Number.isSafeInteger(tv) && tv >= 0;
 }
 
 /**
- * 使用者是否已停用，以及 access token 的最早簽發時間（spec §4.3「停用（離職）」；review S2）。
+ * 使用者是否已停用，以及現在的登入版本 `tokenVersion`（spec §4.3「停用（離職）」；review S2、R1）。
  *
- * - 快取的是「查 DB 得到的結果」：停用與沒停用都記，TTL 30 秒。沒停用時連同 `sessionsValidAfter` 一起記。
+ * - 快取的是「查 DB 得到的結果」：停用與沒停用都記，TTL 30 秒。沒停用時連同 `tokenVersion` 一起記。
  * - 「沒停用」用 `SET NX` 寫（key 已存在就不寫），「停用」直接覆寫。這樣讀 DB 之後才到的舊
  *   「沒停用」結果，蓋不掉停用流程剛寫的 `markDisabled()`。
  * - 停用流程（H2）：先在 DB 設 `disabledAt`，再呼叫 `markDisabled()`。只呼叫 `invalidate()`
  *   的話，一個在停用前就讀了 DB 的請求，仍可能在 DEL 之後寫回「沒停用」，最多再撐 30 秒。
- * - SSO 綁定既有帳號（設了 `sessionsValidAfter`）：交易 commit 之後呼叫 `refresh()`：重讀 DB 並**覆寫**
- *   快取，理由同上（DEL 之後仍可能被舊的 NX 寫回沒有 cutoff 的結果）。
+ * - SSO 綁定既有帳號（`tokenVersion` +1）：交易 commit 之後呼叫 `refresh()`：重讀 DB 並**覆寫**
+ *   快取，理由同上（DEL 之後仍可能被舊的 NX 寫回舊版本）。
  * - 快取沒有資料、值看不懂、Redis 出錯或逾時 → **一律回 DB 用主鍵查**；
  *   絕不把「快取沒有」當成「沒停用」。
  * - 使用者不存在或已刪除（deletedAt）也視為停用。
@@ -74,23 +79,14 @@ export class UserStatusService {
   }
 
   /**
-   * access token（HTTP 與 socket 共用）：停用 → 'disabled'；`iat` 早於 `sessionsValidAfter` → 'stale'。
-   * `iat` 缺少或不是數字、而且有設 cutoff → 'stale'（寧可拒絕）。
+   * access token（HTTP 與 socket 共用）：停用 → 'disabled'；`tv` 不等於現在的 `tokenVersion` → 'stale'。
+   * `tv` 缺少或不是非負整數（例如 H0 簽的 token）→ 'stale'。
    */
-  async checkAccessToken(userId: string, iat: unknown): Promise<AccessTokenCheck> {
+  async checkAccessToken(userId: string, tv: unknown): Promise<AccessTokenCheck> {
     const status = await this.getStatus(userId);
-    if (status.disabled) return 'disabled';
-    if (status.sessionsValidAfterSec !== null) {
-      if (typeof iat !== 'number' || !Number.isFinite(iat) || iat < status.sessionsValidAfterSec) return 'stale';
-    }
+    if (status.disabled || status.tokenVersion === null) return 'disabled';
+    if (!isTokenVersion(tv) || tv !== status.tokenVersion) return 'stale';
     return 'ok';
-  }
-
-  /** 不是 access token 的憑證（bot token）：用它的建立時間比。 */
-  async isIssuedBeforeCutoff(userId: string, issuedAt: Date): Promise<boolean> {
-    const status = await this.getStatus(userId);
-    if (status.sessionsValidAfterSec === null) return false;
-    return Math.floor(issuedAt.getTime() / 1000) < status.sessionsValidAfterSec;
   }
 
   async getStatus(userId: string): Promise<UserStatus> {
@@ -137,7 +133,7 @@ export class UserStatusService {
   }
 
   /**
-   * DB 已經改了（例如 SSO 綁定設了 `sessionsValidAfter`、復職清了 `disabledAt`）之後呼叫：
+   * DB 已經改了（例如 SSO 綁定把 `tokenVersion` +1、復職清了 `disabledAt`）之後呼叫：
    * 重讀 DB 並覆寫快取（不是 NX），讓變更立刻生效、也蓋得過在途的舊 NX 寫入。
    * Redis 出錯時退而 DEL；兩個都失敗回 false 並記 log（最壞情況舊結果最多再留 30 秒）。DB 出錯往上拋。
    */
@@ -171,14 +167,12 @@ export class UserStatusService {
   private async readDb(userId: string): Promise<UserStatus> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { disabledAt: true, deletedAt: true, sessionsValidAfter: true },
+      select: { disabledAt: true, deletedAt: true, tokenVersion: true },
     });
-    const disabled = !user || user.disabledAt != null || user.deletedAt != null;
-    const cutoff = user?.sessionsValidAfter;
-    return {
-      disabled,
-      sessionsValidAfterSec: !disabled && cutoff instanceof Date ? Math.floor(cutoff.getTime() / 1000) : null,
-    };
+    const version = user?.tokenVersion;
+    // 版本讀不到（不該發生）也當成停用：寧可拒絕
+    const disabled = !user || user.disabledAt != null || user.deletedAt != null || !isTokenVersion(version);
+    return { disabled, tokenVersion: disabled ? null : (version as number) };
   }
 
   private withTimeout<T>(p: Promise<T>): Promise<T> {

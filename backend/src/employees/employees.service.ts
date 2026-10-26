@@ -261,11 +261,13 @@ export class EmployeesService {
     const cached = cache.get(key);
     if (cached) return cached;
 
-    const find = () =>
-      this.prisma.department.findFirst({
-        where: { workspaceId, parentId: null, name: { equals: name, mode: 'insensitive' } },
-        select: { id: true, archivedAt: true },
-      });
+    // 不用 Prisma 的 `mode: 'insensitive'`：在 Postgres 上是 ILIKE，`_`／`%` 會被當萬用字元
+    // （CSV 的部門 `A_B` 會掛到既有的 `AxB`，review N-a）。改用參數化的 `lower("name") = lower($1)`，
+    // 跟 migration 的 partial unique index `departments_root_name_key` 用同一個運算式。
+    const find = async () => {
+      const rows = await this.prisma.$queryRaw<{ id: string; archivedAt: Date | null }[]>`SELECT "id", "archivedAt" FROM "departments" WHERE "workspaceId" = ${workspaceId} AND "parentId" IS NULL AND lower("name") = lower(${name}) LIMIT 1`;
+      return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    };
 
     let dept = await find();
     if (!dept) {

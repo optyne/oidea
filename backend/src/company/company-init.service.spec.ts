@@ -23,7 +23,8 @@ describe('CompanyInitService（npm run company:init）', () => {
 
   describe('--workspace <id>（指定既有工作空間）', () => {
     beforeEach(() => {
-      prisma.addUser({ id: 'u-old', email: 'old@corp.com' });
+      // 原本的 owner 已綁定 SSO（review R2：沒綁定、又不是 pending owner 本人的 owner 會被拒絕，見下面的測試）
+      prisma.addUser({ id: 'u-old', email: 'old@corp.com', ssoBound: true });
       prisma.addWorkspace({ id: 'ws-1', name: 'Oadpiz', ownerId: 'u-old' });
       prisma.addMember('ws-1', 'u-old', 'owner');
     });
@@ -186,6 +187,68 @@ describe('CompanyInitService（npm run company:init）', () => {
     it('只有 owner 一位成員：不需要 --allow-existing-members', async () => {
       const res = await service.init({ workspaceId: 'ws-1', ownerEmail: 'boss@corp.com', ...PROFILE });
       expect(res.existingMembers).toBeNull();
+    });
+
+    describe('review R2：執行後的 owner 都必須已綁定 SSO 或是 pending owner 本人', () => {
+      const expectNothingWritten = () => {
+        expect(prisma.workspace.update).not.toHaveBeenCalled();
+        expect(prisma.workspaces.find((w) => w.id === 'ws-1')).toMatchObject({ isCompany: false, pendingOwnerEmail: null });
+        expect(prisma.profiles).toHaveLength(0);
+        expect(audit.record).not.toHaveBeenCalled();
+      };
+
+      it('主 owner 沒綁定 SSO、又不是 --owner-email 的人（pending）→ 拒絕，只印數量，什麼都不改', async () => {
+        prisma.users.find((u) => u.id === 'u-old')!.ssoBound = false;
+        const err = await service.init({ workspaceId: 'ws-1', ownerEmail: 'boss@corp.com', ...PROFILE }).catch((e) => e);
+        expect(err).toBeInstanceOf(CompanyInitError);
+        expect(err.message).toContain('1 位 owner 還沒綁定 SSO（主 owner 1 位、角色是 owner 的成員 0 位）');
+        expect(err.message).not.toMatch(/@/);
+        expectNothingWritten();
+      });
+
+      it('主 owner 就是 owner email 本人還沒綁定的帳號（B1 的情境）→ 可以：他是 pending owner，第一次 SSO 時經綁定清理', async () => {
+        prisma.addUser({ id: 'u-boss-pw', email: 'boss@corp.com', passwordHash: 'hash:pw' });
+        prisma.addWorkspace({ id: 'ws-2', name: 'Boss', ownerId: 'u-boss-pw' });
+        prisma.addMember('ws-2', 'u-boss-pw', 'owner');
+        const res = await service.init({ workspaceId: 'ws-2', ownerEmail: 'boss@corp.com', ...PROFILE });
+        expect(res).toMatchObject({ ownerUserId: null, pendingOwnerEmail: 'boss@corp.com' });
+        expect(prisma.workspaces.find((w) => w.id === 'ws-2')).toMatchObject({ isCompany: true, ownerId: 'u-boss-pw' });
+      });
+
+      it('用 --allow-existing-members 沿用、但有沒綁定 SSO 的共同 owner → 拒絕（pending 與已綁定 owner 兩種都一樣）', async () => {
+        prisma.addUser({ id: 'u-co', email: 'co@corp.com' });
+        prisma.addMember('ws-1', 'u-co', 'owner');
+        for (const ownerEmail of ['boss@corp.com', 'bound@corp.com']) {
+          if (ownerEmail === 'bound@corp.com') prisma.addUser({ id: 'u-bound', email: ownerEmail, ssoBound: true });
+          const err = await service
+            .init({ workspaceId: 'ws-1', ownerEmail, allowExistingMembers: true, ...PROFILE })
+            .catch((e) => e);
+          expect(err).toBeInstanceOf(CompanyInitError);
+          expect(err.message).toContain('（主 owner 0 位、角色是 owner 的成員 1 位）');
+          expect(err.message).not.toMatch(/@/);
+          expectNothingWritten();
+        }
+        // 共同 owner 綁定 SSO 之後就可以
+        prisma.users.find((u) => u.id === 'u-co')!.ssoBound = true;
+        const res = await service.init({ workspaceId: 'ws-1', ownerEmail: 'boss@corp.com', allowExistingMembers: true, ...PROFILE });
+        expect(res.pendingOwnerEmail).toBe('boss@corp.com');
+      });
+
+      it('已綁定的 owner 接手：原本沒綁定的主 owner 會被降為 admin，不算 owner → 可以', async () => {
+        prisma.users.find((u) => u.id === 'u-old')!.ssoBound = false;
+        prisma.addUser({ id: 'u-boss', email: 'boss@corp.com', ssoBound: true });
+        const res = await service.init({ workspaceId: 'ws-1', ownerEmail: 'boss@corp.com', ...PROFILE });
+        expect(res.ownerUserId).toBe('u-boss');
+        expect(role('ws-1', 'u-old')).toBe('admin');
+      });
+
+      it('已停用的帳號就算有 authentik Account 也不算已綁定', async () => {
+        const old = prisma.users.find((u) => u.id === 'u-old')!;
+        old.disabledAt = new Date();
+        await expect(service.init({ workspaceId: 'ws-1', ownerEmail: 'boss@corp.com', ...PROFILE })).rejects.toThrow(
+          /主 owner 1 位/,
+        );
+      });
     });
 
     describe('review S7：既有工作空間已有其他成員', () => {

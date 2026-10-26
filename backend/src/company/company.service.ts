@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { SSO_PROVIDER } from '../auth/oidc/sso-provider';
 
 export interface CompanyWorkspace {
   id: string;
@@ -72,5 +73,23 @@ export class CompanyService {
 
   async isCompanyOwner(userId: string): Promise<boolean> {
     return (await this.findCompanyOwnership(userId)) !== null;
+  }
+
+  /**
+   * 帳號是否經過 SSO 綁定（有 `authentik` Account；綁定時清過密碼、撤銷過 token 與 bot），
+   * 而且沒有停用、沒有刪除。緊急登入與 company:init 的 owner 檢查用（review R2）。
+   */
+  async isSsoBound(userId: string): Promise<boolean> {
+    if (!userId) return false;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        disabledAt: true,
+        deletedAt: true,
+        accounts: { where: { provider: SSO_PROVIDER }, select: { id: true } },
+      },
+    });
+    return !!user && !user.disabledAt && !user.deletedAt && (user.accounts ?? []).length > 0;
   }
 }

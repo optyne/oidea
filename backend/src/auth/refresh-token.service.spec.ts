@@ -155,6 +155,33 @@ describe('RefreshTokenService + AuthService.refresh/logout（H0 token 改造）'
     await expect(auth.refresh(first.refreshToken)).rejects.toThrow(UnauthorizedException);
   });
 
+  describe('review R1：tokenVersion', () => {
+    it('登入與換發：access token 帶 tv＝現在的 tokenVersion，refresh row 記同一個版本（換發沿用）', async () => {
+      prisma.users.get('u-1')!.tokenVersion = 4;
+      const first = await login();
+      expect((jwt.verify(first.accessToken) as any).tv).toBe(4);
+      const second = await auth.refresh(first.refreshToken);
+      expect((jwt.verify(second.accessToken) as any).tv).toBe(4);
+      expect(prisma.refreshRows.map((r) => r.tokenVersion)).toEqual([4, 4]);
+    });
+
+    it('row 沒被撤銷、但簽發後 tokenVersion 變了（SSO 綁定）→ 換發 401，不簽新的 access token', async () => {
+      const first = await login();
+      prisma.users.get('u-1')!.tokenVersion = 1; // 綁定 +1；row 故意不撤銷（模擬躲過撤銷的換發）
+      const signed = jest.spyOn(jwt, 'sign');
+      await expect(auth.refresh(first.refreshToken)).rejects.toThrow(UnauthorizedException);
+      expect(signed).not.toHaveBeenCalled();
+      expect(prisma.refreshRows).toHaveLength(1); // 沒有換出新 row
+    });
+
+    it('寬限期重試也一樣：版本變了 → 401', async () => {
+      const first = await login();
+      await auth.refresh(first.refreshToken);
+      prisma.users.get('u-1')!.tokenVersion = 1;
+      await expect(auth.refresh(first.refreshToken)).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
   it('logout → 撤銷整個 family、寫 audit auth.logout、回 {ok:true}；其他 family 不受影響', async () => {
     const deviceA = await login();
     const deviceB = await login();
@@ -236,6 +263,7 @@ describe('RefreshTokenService + AuthService.refresh/logout（H0 token 改造）'
           expiresAt: new Date(clock.now().getTime() + 86_400_000),
           revokedAt: null,
           rotatedAt: null,
+          tokenVersion: 0,
           createdAt: clock.now(),
         });
         return res;
@@ -249,7 +277,7 @@ describe('RefreshTokenService + AuthService.refresh/logout（H0 token 改造）'
 
   it('JWT_REFRESH_EXPIRATION 可設定有效期', async () => {
     const short = new RefreshTokenService(prisma as any, clock, audit as any, config({ JWT_REFRESH_EXPIRATION: '1h' }));
-    await short.issueNewFamily('u-1');
+    await short.issueNewFamily('u-1', 0);
     const row = prisma.refreshRows[prisma.refreshRows.length - 1];
     expect(row.expiresAt.getTime() - clock.now().getTime()).toBe(3_600_000);
   });

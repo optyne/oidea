@@ -139,6 +139,25 @@ describe('Auth over HTTP（H0 驗收）', () => {
     expect((await probe(`Bearer ${refreshTyped}`)).status).toBe(401);
   });
 
+  describe('review R1：JwtStrategy 比對 tv 與 tokenVersion', () => {
+    it('tokenVersion +1（同一秒、快取已覆寫）→ 手上的 access token 下一個請求就 401', async () => {
+      const { accessToken } = await login();
+      expect((await probe(`Bearer ${accessToken}`)).status).toBe(200); // 快取 t:0
+      prisma.users.get('u-1')!.tokenVersion = 1;
+      await userStatus.refresh('u-1');
+      expect((await probe(`Bearer ${accessToken}`)).status).toBe(401);
+    });
+
+    it('沒有 tv 或 tv 不是現在的版本 → 401；tv 對 → 200', async () => {
+      const sign = (extra: Record<string, unknown>) =>
+        jwt.sign({ sub: 'u-1', email: 'alice@example.com', typ: 'access', ...extra });
+      expect((await probe(`Bearer ${sign({})}`)).status).toBe(401);
+      expect((await probe(`Bearer ${sign({ tv: 1 })}`)).status).toBe(401);
+      expect((await probe(`Bearer ${sign({ tv: '0' })}`)).status).toBe(401);
+      expect((await probe(`Bearer ${sign({ tv: 0 })}`)).status).toBe(200);
+    });
+  });
+
   it('POST /auth/refresh：body 帶 refreshToken、不需要 Authorization → 新的一組 token', async () => {
     const first = await login();
     const res = await post('/auth/refresh', { refreshToken: first.refreshToken });

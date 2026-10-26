@@ -31,8 +31,9 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
 
   const start = async (env: Record<string, string>) => {
     prisma = new FakeCompanyPrisma();
-    prisma.addUser({ id: 'u-owner', email: 'owner@corp.com', passwordHash: 'hashed:owner-pass' });
-    prisma.addUser({ id: 'u-coowner', email: 'co@corp.com', passwordHash: 'hashed:co-pass' });
+    // 公司 owner 都已綁定 SSO（review R2：緊急登入只給綁定過的 owner）
+    prisma.addUser({ id: 'u-owner', email: 'owner@corp.com', passwordHash: 'hashed:owner-pass', ssoBound: true });
+    prisma.addUser({ id: 'u-coowner', email: 'co@corp.com', passwordHash: 'hashed:co-pass', ssoBound: true });
     prisma.addUser({ id: 'u-member', email: 'member@corp.com', passwordHash: 'hashed:member-pass' });
     prisma.addUser({ id: 'u-other-owner', email: 'other@corp.com', passwordHash: 'hashed:other-pass' });
     prisma.addUser({ id: 'u-sso', email: 'sso@corp.com', passwordHash: null });
@@ -163,6 +164,18 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
       expect(notOwner.body).toEqual(notListed.body);
       expect(actions()).not.toContain('auth.break_glass');
       expect(actions()).not.toContain('auth.login');
+    });
+
+    it('review R2：名單上的公司 owner、密碼也對，但帳號還沒綁定 SSO（可能是搶註的人）→ 404，不發 token', async () => {
+      prisma.users.find((u) => u.id === 'u-owner')!.ssoBound = false;
+      const res = await login('owner@corp.com', 'owner-pass');
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual((await login('other@corp.com', 'other-pass')).body);
+      expect(res.body.accessToken).toBeUndefined();
+      expect(actions()).not.toContain('auth.break_glass');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.login_failed', metadata: expect.objectContaining({ reason: 'break_glass_not_sso_bound' }) }),
+      );
     });
 
     it('名單上的 owner 打錯密碼 → 404（不是 401，不透露名單）', async () => {

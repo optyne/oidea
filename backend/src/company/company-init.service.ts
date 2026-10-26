@@ -79,6 +79,8 @@ interface ActiveUser {
  * - email 比對：完全相同（小寫）優先，否則不分大小寫；只差大小寫的有兩個以上 → 拒絕。
  * - `--workspace` 指向還不是公司工作空間、而且有 owner 以外成員的工作空間 → 拒絕，除非
  *   `--allow-existing-members`（review S7）。
+ * - `--workspace`：執行後的每一位 owner（ownerId 與角色 owner 的成員）都必須已綁定 SSO，或是 pending owner
+ *   本人；否則拒絕（只印數量，review R2）。
  */
 @Injectable()
 export class CompanyInitService {
@@ -146,6 +148,21 @@ export class CompanyInitService {
           );
         }
         existingMembers = counts;
+      }
+    }
+
+    // review R2：--workspace 之後的每一位 owner（ownerId 與角色是 owner 的成員）都必須已綁定 SSO，
+    // 或者就是這次 pending 的 owner 本人（他第一次 SSO 登入時會經綁定清理）。否則一個沒經過清理的
+    // 帳號（可能是搶先註冊的人）會直接成為公司 owner。
+    if (workspaceIdArg && target) {
+      const unbound = await this.countUnboundOwnersAfterInit(target, boundOwner, ownerUser);
+      if (unbound.primary + unbound.coOwners > 0) {
+        throw new CompanyInitError(
+          `工作空間 ${target.id} 執行後會有 ${unbound.primary + unbound.coOwners} 位 owner 還沒綁定 SSO` +
+            `（主 owner ${unbound.primary} 位、角色是 owner 的成員 ${unbound.coOwners} 位），而且不是 --owner-email 指定的人。` +
+            '公司 owner 必須是綁定過 SSO 的帳號：請先把他們降為 admin 或移出這個工作空間，' +
+            '或改用 --create 建立新的公司工作空間（搭配 --executor-email）',
+        );
       }
     }
 
@@ -286,6 +303,38 @@ export class CompanyInitService {
     if (user.disabledAt) throw new CompanyInitError(`${who}的帳號已停用`);
     if (user.botAccount) throw new CompanyInitError(`${who}不能是 bot 帳號`);
     return { id: user.id, displayName: user.displayName, ssoBound: (user.accounts ?? []).length > 0 };
+  }
+
+  /**
+   * company:init 寫入之後會是 owner 的人當中，沒綁定 SSO、也不是 pending owner 本人的有幾位（只有數量）。
+   * - 有已綁定的 owner：ownerId 換成他，原本的主 owner 降為 admin（不算）；其他角色是 owner 的成員照算。
+   * - 沒有（pending）：ownerId 不動、角色也不動，全部照算；只有 owner email 自己的帳號例外。
+   */
+  private async countUnboundOwnersAfterInit(
+    target: { id: string; ownerId: string },
+    boundOwner: ActiveUser | null,
+    ownerUser: ActiveUser | null,
+  ): Promise<{ primary: number; coOwners: number }> {
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId: target.id },
+      select: { userId: true, role: true },
+    });
+    const primaryId = boundOwner ? boundOwner.id : target.ownerId;
+    const owners = new Map<string, 'primary' | 'co'>([[primaryId, 'primary']]);
+    for (const m of members) {
+      if (m.role !== 'owner' || owners.has(m.userId)) continue;
+      if (boundOwner && m.userId === target.ownerId) continue; // 會被降為 admin
+      owners.set(m.userId, 'co');
+    }
+    const exempt = boundOwner?.id ?? ownerUser?.id ?? null;
+    const out = { primary: 0, coOwners: 0 };
+    for (const [userId, kind] of owners) {
+      if (userId === exempt) continue;
+      if (await this.company.isSsoBound(userId)) continue;
+      if (kind === 'primary') out.primary++;
+      else out.coOwners++;
+    }
+    return out;
   }
 
   /** 工作空間的成員統計（只有數量）。`ownerIds` 不算進 others。 */

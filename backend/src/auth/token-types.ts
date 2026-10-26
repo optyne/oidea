@@ -5,6 +5,8 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   typ: typeof ACCESS_TOKEN_TYPE;
+  /** 簽發時的 `User.tokenVersion`（review R1）；JwtStrategy 與 socket 驗證要求等於現在的值，缺少就拒絕 */
+  tv?: number;
   iat?: number;
   exp?: number;
 }

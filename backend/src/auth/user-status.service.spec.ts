@@ -19,10 +19,10 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
     await expect(svc.isDisabled('u-1')).resolves.toBe(false);
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'u-1' },
-      select: { disabledAt: true, deletedAt: true, sessionsValidAfter: true },
+      select: { disabledAt: true, deletedAt: true, tokenVersion: true },
     });
-    expect(redis.setNx).toHaveBeenCalledWith(key, '0', USER_STATUS_CACHE_TTL_SECONDS);
-    expect(redis.store.get(key)).toBe('0');
+    expect(redis.setNx).toHaveBeenCalledWith(key, 't:0', USER_STATUS_CACHE_TTL_SECONDS);
+    expect(redis.store.get(key)).toBe('t:0');
   });
 
   it('停用的結果也快取', async () => {
@@ -34,7 +34,7 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
   it('快取命中 → 不查 DB', async () => {
     redis.store.set(key, '1');
     await expect(svc.isDisabled('u-1')).resolves.toBe(true);
-    redis.store.set(key, '0');
+    redis.store.set(key, 't:0');
     await expect(svc.isDisabled('u-1')).resolves.toBe(false);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
@@ -83,7 +83,7 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
       let release!: () => void;
       let entered!: () => void;
       const inRead = new Promise<void>((r) => (entered = r));
-      const snapshot = { disabledAt: null, deletedAt: null }; // 讀到的是停用前的狀態
+      const snapshot = { disabledAt: null, deletedAt: null, tokenVersion: 0 }; // 讀到的是停用前的狀態
       prisma.user.findUnique.mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -116,7 +116,7 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
 
     it('markDisabled 覆寫已快取的「沒停用」', async () => {
       await expect(svc.isDisabled('u-1')).resolves.toBe(false);
-      expect(redis.store.get(key)).toBe('0');
+      expect(redis.store.get(key)).toBe('t:0');
       await expect(svc.markDisabled('u-1')).resolves.toBe(true);
       expect(redis.set).toHaveBeenLastCalledWith(key, '1', USER_STATUS_CACHE_TTL_SECONDS);
       await expect(svc.isDisabled('u-1')).resolves.toBe(true);
@@ -135,77 +135,78 @@ describe('UserStatusService（停用檢查＋30 秒快取）', () => {
     });
   });
 
-  describe('review S2：sessionsValidAfter（SSO 綁定後舊 access token 失效）', () => {
-    const at = (sec: number) => new Date(sec * 1000 + 250); // 毫秒部分：cutoff 要無條件捨去到秒
-    const CUTOFF = 1_760_000_000;
+  describe('review R1：tokenVersion（SSO 綁定後舊 access token 失效，沒有同一秒的空窗）', () => {
+    const bind = () => (prisma.users.get('u-1')!.tokenVersion += 1);
 
-    it('沒設 cutoff：任何 iat 都放行，快取仍寫 "0"（跟 H0 的值相容）', async () => {
-      await expect(svc.checkAccessToken('u-1', 1)).resolves.toBe('ok');
-      expect(redis.store.get(key)).toBe('0');
-    });
-
-    it('iat 早於 cutoff → stale；同一秒或之後 → ok；快取記成 0:<秒>', async () => {
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
-      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
-      expect(redis.store.get(key)).toBe(`0:${CUTOFF}`);
+    it('tv 等於現在的版本 → ok；快取記成 t:<版本>，之後命中不查 DB', async () => {
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('ok');
+      expect(redis.store.get(key)).toBe('t:0');
       prisma.user.findUnique.mockClear();
-      await expect(svc.checkAccessToken('u-1', CUTOFF)).resolves.toBe('ok');
-      await expect(svc.checkAccessToken('u-1', CUTOFF + 60)).resolves.toBe('ok');
-      expect(prisma.user.findUnique).not.toHaveBeenCalled(); // 快取命中
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('ok');
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
 
-    it('有 cutoff 但 token 沒有 iat（或不是數字）→ stale', async () => {
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
-      await expect(svc.checkAccessToken('u-1', undefined)).resolves.toBe('stale');
-      await expect(svc.checkAccessToken('u-1', '9999999999')).resolves.toBe('stale');
+    it('tv 不等於現在的版本（舊的或比較新的都不行）→ stale', async () => {
+      prisma.users.get('u-1')!.tokenVersion = 3;
+      await expect(svc.checkAccessToken('u-1', 2)).resolves.toBe('stale');
+      await expect(svc.checkAccessToken('u-1', 4)).resolves.toBe('stale');
+      await expect(svc.checkAccessToken('u-1', 3)).resolves.toBe('ok');
     });
 
-    it('停用優先於 cutoff', async () => {
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+    it('沒有 tv（H0 簽的 token）或格式不對 → stale', async () => {
+      for (const tv of [undefined, null, '0', 0.5, -1, Number.NaN, {}]) {
+        await expect(svc.checkAccessToken('u-1', tv)).resolves.toBe('stale');
+      }
+    });
+
+    it('停用優先於版本', async () => {
       prisma.users.get('u-1')!.disabledAt = new Date();
-      await expect(svc.checkAccessToken('u-1', CUTOFF + 1)).resolves.toBe('disabled');
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('disabled');
     });
 
-    it('快取裡的 0:<秒> 格式壞掉 → 當成 miss 回 DB', async () => {
-      redis.store.set(key, '0:abc');
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
-      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
+    it.each([['0'], ['0:1760000000'], ['t:abc'], ['t:'], ['t:-1'], ['t:1.5']])(
+      '舊格式或壞掉的快取值 %s → 當成 miss 回 DB（不會當成「沒停用」放行）',
+      async (raw) => {
+        redis.store.set(key, raw);
+        bind();
+        await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('stale');
+        expect(prisma.user.findUnique).toHaveBeenCalled();
+      },
+    );
+
+    it('DB 讀不到版本（不該發生）→ 當成停用', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce({ disabledAt: null, deletedAt: null } as any);
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('disabled');
     });
 
-    it('refresh 覆寫快取：舊的「沒 cutoff」快取立刻被換掉', async () => {
-      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('ok'); // 快取 "0"
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF); // SSO 綁定
+    it('refresh 覆寫快取：舊版本的快取立刻被換掉', async () => {
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('ok'); // 快取 t:0
+      bind(); // SSO 綁定
       await expect(svc.refresh('u-1')).resolves.toBe(true);
-      expect(redis.set).toHaveBeenLastCalledWith(key, `0:${CUTOFF}`, USER_STATUS_CACHE_TTL_SECONDS);
-      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
+      expect(redis.set).toHaveBeenLastCalledWith(key, 't:1', USER_STATUS_CACHE_TTL_SECONDS);
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('stale');
+      await expect(svc.checkAccessToken('u-1', 1)).resolves.toBe('ok');
     });
 
-    it('refresh 之後才到的舊 NX 寫入（綁定前讀的 DB）蓋不掉 cutoff', async () => {
+    it('refresh 之後才到的舊 NX 寫入（綁定前讀的 DB）蓋不掉新版本', async () => {
       let release!: () => void;
       let entered!: () => void;
       const inRead = new Promise<void>((r) => (entered = r));
       prisma.user.findUnique.mockImplementationOnce(
         () =>
           new Promise((resolve) => {
-            release = () => resolve({ disabledAt: null, deletedAt: null, sessionsValidAfter: null });
+            release = () => resolve({ disabledAt: null, deletedAt: null, tokenVersion: 0 });
             entered();
           }) as any,
       );
-      const pending = svc.checkAccessToken('u-1', CUTOFF - 1); // 請求 R：綁定前讀 DB
+      const pending = svc.checkAccessToken('u-1', 0); // 請求 R：綁定前讀 DB
       await inRead;
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
+      bind();
       await svc.refresh('u-1');
       release();
       await expect(pending).resolves.toBe('ok'); // R 本身已在途
-      await expect(svc.checkAccessToken('u-1', CUTOFF - 1)).resolves.toBe('stale');
-    });
-
-    it('isIssuedBeforeCutoff（bot token 用建立時間比）', async () => {
-      await expect(svc.isIssuedBeforeCutoff('u-1', at(CUTOFF - 10))).resolves.toBe(false);
-      prisma.users.get('u-1')!.sessionsValidAfter = at(CUTOFF);
-      await svc.refresh('u-1');
-      await expect(svc.isIssuedBeforeCutoff('u-1', at(CUTOFF - 10))).resolves.toBe(true);
-      await expect(svc.isIssuedBeforeCutoff('u-1', at(CUTOFF))).resolves.toBe(false);
+      expect(redis.store.get(key)).toBe('t:1');
+      await expect(svc.checkAccessToken('u-1', 0)).resolves.toBe('stale');
     });
 
     it('refresh 時 Redis 出錯 → 回 false，不拋錯', async () => {

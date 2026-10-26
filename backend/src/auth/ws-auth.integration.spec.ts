@@ -79,7 +79,7 @@ describe('socket.io 握手（真的 server）', () => {
       sock.onerror = () => reject(new Error('ws error'));
     });
 
-  const access = () => jwt.sign({ sub: 'u-1', email: 'alice@example.com', typ: 'access' });
+  const access = () => jwt.sign({ sub: 'u-1', email: 'alice@example.com', typ: 'access', tv: 0 });
 
   // 兩個 gateway 共用同一個 engine.io server（/socket.io/），CORS 設定也已統一
   describe('CORS（與 main.ts 同一套 CORS_ORIGIN）', () => {
@@ -130,7 +130,7 @@ describe('socket.io 握手（真的 server）', () => {
     });
 
     it('S2：握手完成的連線才登記到 registry，斷線後移除', async () => {
-      const token = jwt.sign({ sub: 'u-live', email: 'live@example.com', typ: 'access' });
+      const token = jwt.sign({ sub: 'u-live', email: 'live@example.com', typ: 'access', tv: 0 });
       const sock = new WebSocket(`ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`);
       const connected = new Promise<string>((resolve) => {
         sock.onmessage = (ev) => {
@@ -162,7 +162,7 @@ describe('socket.io 握手（真的 server）', () => {
           }),
       );
       try {
-        const token = jwt.sign({ sub: 'u-abort', email: 'abort@example.com', typ: 'access' });
+        const token = jwt.sign({ sub: 'u-abort', email: 'abort@example.com', typ: 'access', tv: 0 });
         const sock = new WebSocket(`ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`);
         const closed = new Promise<void>((r) => (sock.onclose = () => r()));
         sock.onmessage = (ev) => {
@@ -182,7 +182,7 @@ describe('socket.io 握手（真的 server）', () => {
 
     it('過期 token → CONNECT_ERROR', async () => {
       const now = Math.floor(Date.now() / 1000);
-      const expired = new JwtService({ secret: 'test-secret' }).sign({ sub: 'u-1', email: 'a', typ: 'access', iat: now - 100, exp: now - 10 });
+      const expired = new JwtService({ secret: 'test-secret' }).sign({ sub: 'u-1', email: 'a', typ: 'access', tv: 0, iat: now - 100, exp: now - 10 });
       const res = await handshake(nsp, { token: expired });
       expect(res.startsWith(`44${prefix}`)).toBe(true);
     });

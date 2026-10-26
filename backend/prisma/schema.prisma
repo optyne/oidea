@@ -26,8 +26,9 @@ model User {
   deletedAt     DateTime?
   /// 停用（離職）時間；有值即視為停用，JwtStrategy / bot / socket 都會拒絕
   disabledAt    DateTime?
-  /// 早於這個時間簽發的 access token 一律拒絕（SSO 綁定既有帳號時設成「現在」，讓舊 token 與 socket 失效）
-  sessionsValidAfter DateTime?
+  /// 登入版本（review R1）：access token 帶 `tv` claim、refresh token 的 row 也記一份，都必須等於這個值。
+  /// SSO 綁定既有帳號時在同一個交易裡 +1，綁定前發出的 access token、refresh token 與 socket 一律失效
+  tokenVersion  Int       @default(0)
 
   // Relations
   accounts           Account[]
@@ -98,6 +99,8 @@ model RefreshToken {
   revokedAt DateTime?
   /// 被換發的時間，用來判斷 10 秒寬限期
   rotatedAt DateTime?
+  /// 簽發時的 `User.tokenVersion`（換發時沿用）；跟使用者現在的值不同 → 換發一律拒絕（review R1）
+  tokenVersion Int    @default(0)
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
