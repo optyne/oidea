@@ -332,6 +332,30 @@ describe('H2 review regressions', () => {
       expect(h.prisma.lockLog).toEqual(expect.arrayContaining(['7301:u-t']));
     });
 
+    it('SSO account path re-checks the User under the user lock (terminated while the login waited → refused)', async () => {
+      await boot((h) => {
+        h.addEmployee({ id: 'u-acc', role: 'member', employeeNo: 'K1', email: 'acc@corp.com' });
+        h.prisma.addAccount('u-acc', 'authentik', 'sub-acc');
+      });
+      const prisma: any = h.prisma;
+      const orig = prisma.$executeRaw;
+      let fired = false;
+      prisma.$executeRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const res = await orig(strings, ...values);
+        if (!fired && values[0] === 'u-acc' && strings.join('?').includes('7301')) {
+          // 拿到鎖的時候，排在前面的離職交易剛 commit
+          fired = true;
+          prisma.users.find((u: any) => u.id === 'u-acc').disabledAt = new Date();
+        }
+        return res;
+      };
+      const l = await h.login({ sub: 'sub-acc', email: 'acc@corp.com' });
+      prisma.$executeRaw = orig;
+      expect(fired).toBe(true);
+      expect(l.callback.ticket).toBeUndefined();
+      expect(l.callback.error).toBe('disabled');
+    });
+
     it('the SSO exchange re-check and department archive run under their locks', async () => {
       await boot((h) => {
         h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'ex@corp.com', employeeNo: 'X9', id: 'p-ex' });
