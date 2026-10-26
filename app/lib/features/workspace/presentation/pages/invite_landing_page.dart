@@ -195,7 +195,7 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    '請先登入或註冊才能接受邀請',
+                    '請先登入才能接受邀請',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.black54),
                   ),
@@ -203,11 +203,6 @@ class _InviteLandingPageState extends ConsumerState<InviteLandingPage> {
                   FilledButton(
                     onPressed: () => context.go('/login?redirect=/invite/${widget.token}'),
                     child: const Text('登入'),
-                  ),
-                  const SizedBox(height: OideaSpace.space2),
-                  OutlinedButton(
-                    onPressed: () => context.go('/register?redirect=/invite/${widget.token}'),
-                    child: const Text('註冊新帳號'),
                   ),
                 ],
               )

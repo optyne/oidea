@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_session.dart';
@@ -89,6 +90,8 @@ class AuthInterceptor extends Interceptor {
     'auth/register',
     'auth/refresh',
     'auth/logout',
+    'auth/config',
+    'auth/oidc/exchange',
   };
 
   static bool _isAuthEndpoint(RequestOptions o) {
@@ -156,8 +159,26 @@ class ApiClient {
 
   final Dio _dio;
 
-  Future<Map<String, dynamic>> register(Map<String, dynamic> body) async {
-    final res = await _dio.post<Map<String, dynamic>>('auth/register', data: body);
+  @visibleForTesting
+  Dio get dio => _dio;
+
+  /// Public login options: `{sso, passwordLogin, endSessionUrl?}`.
+  Future<Map<String, dynamic>> getAuthConfig() async {
+    final res = await _dio.get<Map<String, dynamic>>('auth/config');
+    return res.data ?? const {};
+  }
+
+  /// Exchanges a one-time SSO ticket (bound to the PKCE challenge sent to
+  /// `auth/oidc/start`) for the usual `{accessToken, refreshToken, user}`.
+  /// The body holds secrets: never log it.
+  Future<Map<String, dynamic>> exchangeOidcTicket({
+    required String ticket,
+    required String appVerifier,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'auth/oidc/exchange',
+      data: {'ticket': ticket, 'app_verifier': appVerifier},
+    );
     return res.data!;
   }
 

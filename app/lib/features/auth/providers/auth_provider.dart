@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/api_client.dart';
@@ -8,6 +9,8 @@ import '../../../core/network/auth_session.dart';
 import '../../../core/network/socket_service.dart';
 import '../../workspace/workspace_storage.dart';
 import '../../workspace/providers/workspace_provider.dart';
+import '../sso/sso_callback.dart';
+import '../sso/sso_service.dart';
 
 class AuthState {
   final bool isLoading;
@@ -170,49 +173,78 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final response = await _api.login(email, password);
-      await _saveTokens(response);
-
-      final userData = response['user'];
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        userId: userData['id'],
-        email: userData['email'],
-      );
-
-      _socket.connect();
-      await _loadProfile();
-      await _bootstrapWorkspace();
+      await _completeLogin(response);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: _formatAuthError(e));
     }
   }
 
-  Future<void> register(String email, String username, String displayName, String password) async {
+  /// Starts company SSO. Web: the tab navigates to the backend and this never
+  /// completes in practice (state stays loading). Mobile: runs the system auth
+  /// session, then exchanges the ticket.
+  Future<void> loginWithSso() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _api.register({
-        'email': email,
-        'username': username,
-        'displayName': displayName,
-        'password': password,
-      });
-      await _saveTokens(response);
-
-      final userData = response['user'];
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        userId: userData['id'],
-        email: userData['email'],
-        displayName: displayName,
-      );
-
-      _socket.connect();
-      await _bootstrapWorkspace();
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: _formatAuthError(e));
+      final result = await _ref.read(ssoServiceProvider).start();
+      if (result == null) return;
+      await completeSso(result.callback, verifier: result.verifier);
+    } on PlatformException catch (e) {
+      // User closed the auth sheet: not an error worth a banner.
+      final canceled = e.code == 'CANCELED' || e.code == 'CANCELLED';
+      state = AuthState(error: canceled ? null : ssoGenericFailure);
+    } catch (_) {
+      state = const AuthState(error: ssoGenericFailure);
     }
+  }
+
+  /// Web `/auth/callback`: takes (and removes) the verifier saved before the
+  /// redirect, then exchanges. Returns true when the user is logged in.
+  Future<bool> completeWebSso(SsoCallback callback) {
+    final verifier = _ref.read(ssoServiceProvider).takeWebVerifier();
+    return completeSso(callback, verifier: verifier);
+  }
+
+  /// Exchanges an SSO ticket for tokens. Returns true when logged in;
+  /// otherwise [AuthState.error] holds the message for the login page.
+  Future<bool> completeSso(SsoCallback callback, {required String? verifier}) async {
+    switch (callback) {
+      case SsoError(:final code):
+        state = AuthState(error: ssoErrorMessage(code));
+        return false;
+      case SsoMissing():
+        state = const AuthState(error: ssoGenericFailure);
+        return false;
+      case SsoTicket(:final ticket):
+        if (verifier == null || verifier.isEmpty) {
+          // Verifier lost (other tab, storage cleared, app restarted).
+          state = const AuthState(error: ssoTimeoutMessage);
+          return false;
+        }
+        state = state.copyWith(isLoading: true, error: null);
+        try {
+          final response = await _api.exchangeOidcTicket(ticket: ticket, appVerifier: verifier);
+          await _completeLogin(response);
+          return true;
+        } catch (e) {
+          await _session.store.clear();
+          state = AuthState(error: _formatSsoExchangeError(e));
+          return false;
+        }
+    }
+  }
+
+  Future<void> _completeLogin(Map<String, dynamic> response) async {
+    await _saveTokens(response);
+    final userData = response['user'];
+    state = state.copyWith(
+      isLoading: false,
+      isAuthenticated: true,
+      userId: userData is Map ? userData['id'] as String? : null,
+      email: userData is Map ? userData['email'] as String? : null,
+    );
+    _socket.connect();
+    await _loadProfile();
+    await _bootstrapWorkspace();
   }
 
   Future<void> _saveTokens(Map<String, dynamic> response) {
@@ -244,5 +276,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await WorkspaceStorage.write(null);
     _ref.invalidate(workspacesProvider);
     state = const AuthState();
+    await _endIdpSession();
   }
+
+  /// Web: also end the IdP session, otherwise the next "使用公司帳號登入"
+  /// signs the same person in again without asking.
+  Future<void> _endIdpSession() async {
+    try {
+      final config = await _ref.read(authConfigProvider.future).timeout(const Duration(seconds: 3));
+      _ref.read(ssoServiceProvider).endBrowserSession(config.endSessionUrl);
+    } catch (_) {
+      // Config unavailable: local logout already done.
+    }
+  }
+}
+
+/// Message for a failed `auth/oidc/exchange`. Uses a known error code from
+/// the response body when there is one; never includes the request body.
+String _formatSsoExchangeError(Object e) {
+  if (e is DioException) {
+    final data = e.response?.data;
+    if (data is Map) {
+      for (final key in const ['code', 'error', 'message']) {
+        final v = data[key];
+        if (v is String && isKnownSsoErrorCode(v)) return ssoErrorMessage(v);
+      }
+    }
+    final status = e.response?.statusCode;
+    if (status == 400 || status == 401) return ssoTimeoutMessage;
+  }
+  return ssoGenericFailure;
 }
