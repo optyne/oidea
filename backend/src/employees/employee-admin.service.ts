@@ -158,7 +158,8 @@ function parseDateOrThrow(raw: string | undefined, field: string): Date {
  *
  * 離職（spec §4.3「停用」）是安全控制：HR 一按下去，這個人的 token、bot、socket 都要立刻失效。
  * 1. 任何寫入之前先擋：本人 → `cannot_terminate_self`；已離職 → `already_terminated`；
- *    他是任何（沒刪除的）工作空間的 `Workspace.ownerId` 或成員角色是 owner → `owner_transfer_required`（附清單）。
+ *    他是任何（沒刪除的）工作空間的 `Workspace.ownerId` 或成員角色是 owner、或他的 email 是公司工作空間的
+ *    `pendingOwnerEmail`（待移交的 owner）→ `owner_transfer_required`（附清單）。
  *    這些檢查在交易裡、寫入之前做；被擋就整個交易回滾，什麼都沒寫。
  * 2. 同一個交易：profile → terminated＋離職日；有 User 的話：`disabledAt = now`、`tokenVersion + 1`、
  *    撤銷全部 refresh token、撤銷他建立的所有 bot、刪除他全部的 WorkspaceMember。
@@ -383,10 +384,12 @@ export class EmployeeAdminService {
       if (profile.userId && profile.userId === actorId) throw err.cannotTerminateSelf();
       if (profile.employmentStatus === 'terminated') throw err.alreadyTerminated();
       if (terminationDate.getTime() < profile.hireDate.getTime()) throw err.invalidDate('terminationDate（不能早於到職日）');
-      if (profile.userId) {
-        const owned = await this.ownedWorkspaces(tx, profile.userId);
-        if (owned.length > 0) throw err.ownerTransfer(owned);
-      }
+      const owned = profile.userId ? await this.ownedWorkspaces(tx, profile.userId) : [];
+      // 待移交的 owner（company:init 時他還沒綁 SSO，記在 pendingOwnerEmail）：跟現任 owner 一樣要先改指定別人。
+      // 否則他離職後再也不能 SSO 登入，移交永遠不會發生，公司就一直由 company:init 的執行者當 owner。
+      const pending = await this.pendingOwnerWorkspace(tx, workspaceId, profile.email);
+      if (pending && !owned.some((w) => w.id === pending.id)) owned.push(pending);
+      if (owned.length > 0) throw err.ownerTransfer(owned.sort((a, b) => a.name.localeCompare(b.name)));
 
       // ── 寫入 ──
       await tx.employeeProfile.update({
@@ -646,5 +649,15 @@ export class EmployeeAdminService {
     for (const w of main) byId.set(w.id, { id: w.id, name: w.name });
     for (const m of coOwned) byId.set(m.workspace.id, { id: m.workspace.id, name: m.workspace.name });
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** 公司工作空間的 `pendingOwnerEmail` 是不是這個 email（不分大小寫）；是就回傳該工作空間。 */
+  private async pendingOwnerWorkspace(db: Db, workspaceId: string, email: string): Promise<{ id: string; name: string } | null> {
+    const ws = await db.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, name: true, pendingOwnerEmail: true, deletedAt: true },
+    });
+    if (!ws || ws.deletedAt || !ws.pendingOwnerEmail) return null;
+    return normalizeEmail(ws.pendingOwnerEmail) === normalizeEmail(email) ? { id: ws.id, name: ws.name } : null;
   }
 }

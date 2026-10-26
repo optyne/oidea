@@ -303,6 +303,47 @@ describe('H2 員工主檔後台（端到端）', () => {
       const res = await h.call('PATCH', '/admin/employees/p-g', hr(), { employmentStatus: 'active' });
       expect([res.status, res.body.code]).toEqual([400, 'already_terminated']);
     });
+
+    it('PATCH departmentId: null／managerProfileId: null（App 清掉欄位時送的）真的清掉，並寫 audit', async () => {
+      await boot((h) => {
+        const dept = h.prisma.addDepartment({ workspaceId: COMPANY_WS, name: '研發部', id: 'd-rd' });
+        h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'm@corp.com', employeeNo: 'M9', id: 'p-mgr' });
+        h.prisma.addProfile({
+          workspaceId: COMPANY_WS,
+          email: 'x@corp.com',
+          employeeNo: 'X1',
+          id: 'p-x',
+          departmentId: dept.id,
+          managerProfileId: 'p-mgr',
+        });
+      });
+      const before = await h.call('GET', '/admin/employees/p-x', hr());
+      expect(before.body).toMatchObject({ departmentId: 'd-rd', departmentName: '研發部', managerProfileId: 'p-mgr' });
+
+      const res = await h.call('PATCH', '/admin/employees/p-x', hr(), { departmentId: null, managerProfileId: null });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ departmentId: null, departmentName: null, managerProfileId: null, managerName: null });
+      const row = h.prisma.profiles.find((p) => p.id === 'p-x')!;
+      expect([row.departmentId, row.managerProfileId]).toEqual([null, null]);
+      expect(h.audits('employee.update')).toEqual([
+        expect.objectContaining({
+          targetId: 'p-x',
+          metadata: expect.objectContaining({ fields: ['departmentId', 'managerProfileId'], departmentFrom: 'd-rd', departmentTo: null }),
+        }),
+      ]);
+
+      // POST 也收 null（等於沒指定）
+      const created = await h.call('POST', '/admin/employees', hr(), {
+        employeeNo: 'N1',
+        email: 'n@corp.com',
+        fullName: '新人',
+        hireDate: '2026-11-01',
+        departmentId: null,
+        managerProfileId: null,
+      });
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject({ departmentId: null, managerProfileId: null });
+    });
   });
 
   // ─────────────── 離職、復職 ───────────────
@@ -418,6 +459,30 @@ describe('H2 員工主檔後台（端到端）', () => {
       // 已刪除工作空間的 owner 不擋
       const memberProfile = h.prisma.profiles.find((p) => p.userId === 'u-member')!.id;
       expect((await h.call('POST', `/admin/employees/${memberProfile}/terminate`, hr(), { terminationDate: '2026-10-31' })).status).toBe(200);
+    });
+
+    it.each([
+      ['還沒綁定 User 的預建員工', false],
+      ['已綁定 User、但還沒輪到移交（不是任何工作空間的 owner）', true],
+    ])('待移交的 owner（email = 公司工作空間的 pendingOwnerEmail，%s）→ 400 owner_transfer_required，什麼都沒寫', async (_label, bound) => {
+      await boot((h) => {
+        // company:init 記下的 email 大小寫跟員工資料不同也算同一人
+        h.prisma.workspaces.find((w) => w.id === COMPANY_WS)!.pendingOwnerEmail = 'Boss@Corp.com';
+        if (bound) h.addEmployee({ id: 'u-boss', role: 'member', email: 'boss@corp.com', employeeNo: 'B001' });
+        else h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'boss@corp.com', employeeNo: 'B001', id: 'p-boss' });
+      });
+      const profileId = h.prisma.profiles.find((p) => p.email === 'boss@corp.com')!.id;
+      const before = JSON.stringify({ u: h.prisma.users, p: h.prisma.profiles, m: h.prisma.members, w: h.prisma.workspaces });
+
+      const res = await h.call('POST', `/admin/employees/${profileId}/terminate`, hr(), { terminationDate: '2026-10-31' });
+      expect([res.status, res.body.code]).toEqual([400, 'owner_transfer_required']);
+      expect(res.body.workspaces).toEqual([{ id: COMPANY_WS, name: expect.any(String) }]);
+      expect(JSON.stringify({ u: h.prisma.users, p: h.prisma.profiles, m: h.prisma.members, w: h.prisma.workspaces })).toBe(before);
+      expect(h.audits('employee.terminate')).toEqual([]);
+
+      // 改指定別人（pendingOwnerEmail 清掉）之後就能辦離職
+      h.prisma.workspaces.find((w) => w.id === COMPANY_WS)!.pendingOwnerEmail = null;
+      expect((await h.call('POST', `/admin/employees/${profileId}/terminate`, hr(), { terminationDate: '2026-10-31' })).status).toBe(200);
     });
 
     it('自己 → cannot_terminate_self；已離職 → already_terminated；離職日早於到職日 → invalid_date；沒有 User 的預建員工只改 profile', async () => {
