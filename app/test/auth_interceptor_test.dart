@@ -92,7 +92,7 @@ void main() {
             'accessToken': 'new-access',
             'refreshToken': 'r2',
             'user': {'id': 'u1', 'email': 'a@b.c'},
-          }, 200);
+          }, 201); // backend answers refresh with 201 Created
         },
       );
 

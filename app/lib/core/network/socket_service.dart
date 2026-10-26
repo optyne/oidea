@@ -10,44 +10,74 @@ import 'dev_backend_urls.dart';
 
 final socketProvider = Provider<SocketService>((ref) {
   final session = ref.watch(authSessionProvider);
-  final service = SocketService(tokenProvider: () => session.validAccessToken());
+  final service = SocketService(
+    tokenProvider: () => session.validAccessToken(),
+    refreshToken: () => session.refresh(),
+  );
   ref.onDispose(service.disconnect);
   return service;
 });
 
-/// Returns the access token for a (re)connect handshake, refreshing it first
-/// if needed. Null means there is no session; the socket then stays down.
+/// Returns an access token for a handshake. Null means "no token".
 typedef AccessTokenProvider = Future<String?> Function();
 
-/// One Socket.IO connection shared by the messages and whiteboard gateways.
+/// One authenticated Socket.IO namespace connection.
 ///
 /// Auth contract: the handshake sends `auth: {token: <accessToken>}` through
-/// an auth callback, so every (re)connect reads the latest token. The server
-/// disconnects the socket when the access token expires (and rejects a stale
-/// token with a connect error); neither case is retried by socket_io_client,
-/// so this class reconnects itself and re-joins the channels and boards that
-/// were joined.
-class SocketService {
-  SocketService({
+/// an auth callback, so every (re)connect reads the latest token. When the
+/// access token expires the server emits `auth_expired` and disconnects; a
+/// stale token is rejected with a connect error `{code: "unauthorized"}`.
+/// socket_io_client retries neither, so this class refreshes the token (via
+/// the shared single-flight refresh) and reconnects itself, with backoff and
+/// a bounded number of attempts. If there is no session left it stops.
+class AuthedSocket {
+  AuthedSocket({
+    required this.url,
     required AccessTokenProvider tokenProvider,
+    required AccessTokenProvider refreshToken,
+    required this.events,
+    required this.onDispatch,
+    this.onConnected,
     this.baseReconnectDelay = const Duration(seconds: 1),
     this.maxReconnectAttempts = 10,
-  }) : _tokenProvider = tokenProvider;
+    @visibleForTesting void Function()? reconnectOverride,
+  })  : _tokenProvider = tokenProvider,
+        _refreshToken = refreshToken,
+        _reconnectOverride = reconnectOverride;
 
-  final AccessTokenProvider _tokenProvider;
+  final String url;
+  final List<String> events;
+  final void Function(String event, dynamic data) onDispatch;
+  final void Function(IO.Socket socket)? onConnected;
   final Duration baseReconnectDelay;
   final int maxReconnectAttempts;
+  final AccessTokenProvider _tokenProvider;
+  final AccessTokenProvider _refreshToken;
+  final void Function()? _reconnectOverride;
 
   IO.Socket? _socket;
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
   bool _stopped = true;
+  bool _needsFreshToken = false;
 
-  final Set<String> _channels = {};
-  final Set<String> _boards = {};
+  bool get isConnected => _socket?.connected ?? false;
 
-  /// 允許多處訂閱同一事件；請用 [removeListener] 傳入相同函式參考以移除。
-  final Map<String, List<void Function(dynamic)>> _listeners = {};
+  @visibleForTesting
+  bool get stopped => _stopped;
+
+  @visibleForTesting
+  bool get reconnectPending => _reconnectTimer?.isActive ?? false;
+
+  @visibleForTesting
+  int get reconnectAttempts => _reconnectAttempts;
+
+  /// Puts the state machine in the "open" state without a real socket.
+  @visibleForTesting
+  void startForTest() {
+    _stopped = false;
+    _reconnectAttempts = 0;
+  }
 
   /// Socket.IO options; `auth` is the callback form, never a static map, and
   /// never contains a userId.
@@ -66,63 +96,93 @@ class SocketService {
   /// Handshake auth payload for [token].
   static Map<String, dynamic> handshakeAuth(String token) => {'token': token};
 
-  /// Whether a `disconnect` with [reason] needs a manual reconnect.
-  /// `io server disconnect` (e.g. token expired) is not retried by the client
-  /// library; `io client disconnect` is our own [disconnect]; transport
-  /// failures are retried by the library's manager.
+  /// `io server disconnect` is not retried by the client library;
+  /// `io client disconnect` is our own close; transport failures are retried
+  /// by the library's manager.
   static bool needsManualReconnect(String reason) => reason == 'io server disconnect';
+
+  /// Whether a `connect_error` payload is the server's auth rejection
+  /// (`{message: '身分驗證失敗', data: {code: 'unauthorized'}}`).
+  static bool isUnauthorized(dynamic err) {
+    if (err is! Map) return false;
+    final data = err['data'];
+    if (data is Map && data['code'] == 'unauthorized') return true;
+    return err['code'] == 'unauthorized' || err['message'] == '身分驗證失敗';
+  }
+
+  void open() {
+    close();
+    _stopped = false;
+    _reconnectAttempts = 0;
+    _needsFreshToken = false;
+    final socket = IO.io(url, buildOptions((cb) => authCallback(cb)));
+    _socket = socket;
+
+    socket.on('connect', (_) {
+      _reconnectAttempts = 0;
+      onConnected?.call(socket);
+    });
+    socket.on('auth_expired', (_) => handleAuthExpired());
+    socket.on('disconnect', (reason) => handleDisconnect('$reason'));
+    socket.on('connect_error', (err) => handleConnectError(err, socketActive: socket.active));
+    for (final e in events) {
+      socket.on(e, (data) => onDispatch(e, data));
+    }
+    socket.connect();
+  }
+
+  void close() {
+    _stopped = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+  }
+
+  void emit(String event, dynamic data) => _socket?.emit(event, data);
 
   /// Auth callback passed to socket_io_client; runs on every (re)connect.
   @visibleForTesting
   Future<void> authCallback(void Function(Map auth) callback) async {
     String? token;
     try {
-      token = await _tokenProvider();
+      if (_needsFreshToken) {
+        _needsFreshToken = false;
+        token = await _refreshToken();
+      }
+      // Refresh failed: a dead session has no token left (stop below); on a
+      // transient failure the current token is tried and the server decides.
+      token ??= await _tokenProvider();
     } catch (_) {
       token = null;
     }
     if (token == null) {
-      // No session: do not handshake anonymously.
-      _stopped = true;
-      _reconnectTimer?.cancel();
-      scheduleMicrotask(() => _socket?.disconnect());
+      _stop();
       return;
     }
     callback(handshakeAuth(token));
   }
 
-  void connect() {
-    disconnect();
-    _stopped = false;
-    _reconnectAttempts = 0;
-    const wsEnv = String.fromEnvironment('WS_URL', defaultValue: '');
-    final socketUrl = wsEnv.isNotEmpty
-        ? wsEnv
-        : (devBackendSocketFromHostDefine() ?? defaultDevSocketUrl());
-    final socket = IO.io(socketUrl, buildOptions((cb) => authCallback(cb)));
-    _socket = socket;
+  @visibleForTesting
+  void handleAuthExpired() {
+    _needsFreshToken = true;
+    _scheduleReconnect();
+  }
 
-    socket.on('connect', (_) {
-      _reconnectAttempts = 0;
-      _rejoinRooms();
-    });
+  @visibleForTesting
+  void handleDisconnect(String reason) {
+    if (needsManualReconnect(reason)) _scheduleReconnect();
+  }
 
-    socket.on('disconnect', (reason) {
-      if (needsManualReconnect('$reason')) _scheduleReconnect();
-    });
-
-    socket.on('connect_error', (_) {
-      // A rejected handshake (CONNECT_ERROR packet) destroys the socket and is
-      // not retried by the library; transport errors keep it active.
-      if (!socket.active) _scheduleReconnect();
-    });
-
-    socket.on('newMessage', _dispatch('newMessage'));
-    socket.on('userTyping', _dispatch('userTyping'));
-    socket.on('userStopTyping', _dispatch('userStopTyping'));
-    socket.on('remoteUpdate', _dispatch('remoteUpdate'));
-
-    socket.connect();
+  @visibleForTesting
+  void handleConnectError(dynamic err, {required bool socketActive}) {
+    if (isUnauthorized(err)) {
+      _needsFreshToken = true;
+      _scheduleReconnect();
+    } else if (!socketActive) {
+      _scheduleReconnect();
+    }
   }
 
   /// Delay before reconnect attempt [attempt] (1-based): 1s, 2s, 4s … max 30s.
@@ -133,44 +193,105 @@ class SocketService {
   }
 
   void _scheduleReconnect() {
-    if (_stopped || _socket == null) return;
+    if (_stopped) return;
+    // `auth_expired` is followed by a server disconnect: one reconnect only.
+    if (_reconnectTimer?.isActive ?? false) return;
     if (_reconnectAttempts >= maxReconnectAttempts) return;
-    _reconnectTimer?.cancel();
     _reconnectAttempts++;
     _reconnectTimer = Timer(reconnectDelay(_reconnectAttempts), () {
       if (_stopped) return;
-      _socket?.connect();
+      final override = _reconnectOverride;
+      if (override != null) {
+        override();
+      } else {
+        _socket?.connect();
+      }
     });
   }
 
-  void _rejoinRooms() {
-    final socket = _socket;
-    if (socket == null) return;
-    for (final id in _channels) {
-      socket.emit('joinChannel', id);
-    }
-    for (final id in _boards) {
-      socket.emit('joinBoard', id);
-    }
-  }
-
-  void disconnect() {
+  void _stop() {
     _stopped = true;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    _socket?.disconnect();
-    _socket?.dispose();
-    _socket = null;
+    final socket = _socket;
+    if (socket != null) scheduleMicrotask(socket.disconnect);
+  }
+}
+
+/// Messages (default namespace) and whiteboard (`/whiteboard` namespace)
+/// connections, each authenticated with the access token.
+class SocketService {
+  SocketService({
+    required AccessTokenProvider tokenProvider,
+    required AccessTokenProvider refreshToken,
+  })  : _tokenProvider = tokenProvider,
+        _refreshToken = refreshToken;
+
+  final AccessTokenProvider _tokenProvider;
+  final AccessTokenProvider _refreshToken;
+
+  AuthedSocket? _chat;
+  AuthedSocket? _board;
+
+  final Set<String> _channels = {};
+  final Set<String> _boards = {};
+
+  /// 允許多處訂閱同一事件；請用 [removeListener] 傳入相同函式參考以移除。
+  final Map<String, List<void Function(dynamic)>> _listeners = {};
+
+  static String _baseUrl() {
+    const wsEnv = String.fromEnvironment('WS_URL', defaultValue: '');
+    final raw = wsEnv.isNotEmpty ? wsEnv : (devBackendSocketFromHostDefine() ?? defaultDevSocketUrl());
+    var url = raw.trim();
+    while (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+    return url;
   }
 
-  void Function(dynamic) _dispatch(String event) {
-    return (dynamic data) {
-      final list = _listeners[event];
-      if (list == null) return;
-      for (final fn in List<void Function(dynamic)>.from(list)) {
-        fn(data);
-      }
-    };
+  void connect() {
+    disconnect();
+    final base = _baseUrl();
+    _chat = AuthedSocket(
+      url: base,
+      tokenProvider: _tokenProvider,
+      refreshToken: _refreshToken,
+      events: const ['newMessage', 'userTyping', 'userStopTyping'],
+      onDispatch: _dispatch,
+      // Rooms are per connection: re-join after every (re)connect.
+      onConnected: (s) {
+        for (final id in _channels) {
+          s.emit('joinChannel', id);
+        }
+      },
+    )..open();
+    _board = AuthedSocket(
+      url: '$base/whiteboard',
+      tokenProvider: _tokenProvider,
+      refreshToken: _refreshToken,
+      events: const ['remoteUpdate', 'boardState'],
+      onDispatch: _dispatch,
+      onConnected: (s) {
+        for (final id in _boards) {
+          s.emit('joinBoard', id);
+        }
+      },
+    )..open();
+  }
+
+  void disconnect() {
+    _chat?.close();
+    _board?.close();
+    _chat = null;
+    _board = null;
+  }
+
+  void _dispatch(String event, dynamic data) {
+    final list = _listeners[event];
+    if (list == null) return;
+    for (final fn in List<void Function(dynamic)>.from(list)) {
+      fn(data);
+    }
   }
 
   void addListener(String event, void Function(dynamic) handler) {
@@ -202,16 +323,16 @@ class SocketService {
   // re-joins everything, so a join is never sent twice.
   void joinChannel(String channelId) {
     _channels.add(channelId);
-    if (isConnected) _socket?.emit('joinChannel', channelId);
+    if (_chat?.isConnected ?? false) _chat!.emit('joinChannel', channelId);
   }
 
   void leaveChannel(String channelId) {
     _channels.remove(channelId);
-    if (isConnected) _socket?.emit('leaveChannel', channelId);
+    if (_chat?.isConnected ?? false) _chat!.emit('leaveChannel', channelId);
   }
 
   void sendMessage(String channelId, String content, {String? parentId}) {
-    _socket?.emit('sendMessage', {
+    _chat?.emit('sendMessage', {
       'channelId': channelId,
       'content': content,
       'parentId': parentId,
@@ -219,26 +340,26 @@ class SocketService {
   }
 
   void startTyping(String channelId) {
-    _socket?.emit('typing', {'channelId': channelId});
+    _chat?.emit('typing', {'channelId': channelId});
   }
 
   void stopTyping(String channelId) {
-    _socket?.emit('stopTyping', {'channelId': channelId});
+    _chat?.emit('stopTyping', {'channelId': channelId});
   }
 
   void joinBoard(String boardId) {
     _boards.add(boardId);
-    if (isConnected) _socket?.emit('joinBoard', boardId);
+    if (_board?.isConnected ?? false) _board!.emit('joinBoard', boardId);
   }
 
   void leaveBoard(String boardId) {
     _boards.remove(boardId);
-    if (isConnected) _socket?.emit('leaveBoard', boardId);
+    if (_board?.isConnected ?? false) _board!.emit('leaveBoard', boardId);
   }
 
   void sendBoardUpdate(String boardId, List<int> update) {
-    _socket?.emit('boardUpdate', {'boardId': boardId, 'update': update});
+    _board?.emit('boardUpdate', {'boardId': boardId, 'update': update});
   }
 
-  bool get isConnected => _socket?.connected ?? false;
+  bool get isConnected => _chat?.isConnected ?? false;
 }
