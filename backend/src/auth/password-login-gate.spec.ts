@@ -104,10 +104,10 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
       expect(actions()).not.toContain('auth.break_glass');
     });
 
-    it('GET /auth/config → { sso: false, passwordLogin: false }', async () => {
+    it('GET /auth/config → { sso: false, passwordLogin: false, endSessionUrl: null }', async () => {
       const res = await fetch(`${base}/auth/config`);
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ sso: false, passwordLogin: false });
+      expect(await res.json()).toEqual({ sso: false, passwordLogin: false, endSessionUrl: null });
     });
   });
 
@@ -158,7 +158,7 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
     });
 
     it('GET /auth/config 的 passwordLogin 仍是 false（緊急登入不對外顯示）', async () => {
-      expect(await (await fetch(`${base}/auth/config`)).json()).toEqual({ sso: false, passwordLogin: false });
+      expect(await (await fetch(`${base}/auth/config`)).json()).toEqual({ sso: false, passwordLogin: false, endSessionUrl: null });
     });
   });
 
@@ -191,9 +191,10 @@ describe('帳密登入開關與緊急登入（HTTP）', () => {
       );
     });
 
-    it('GET /auth/config → { sso: true, passwordLogin: true }，只有這兩個欄位', async () => {
+    it('GET /auth/config → { sso: true, passwordLogin: true, endSessionUrl }，只有這三個欄位、不含設定值', async () => {
       const body = await (await fetch(`${base}/auth/config`)).json();
-      expect(body).toEqual({ sso: true, passwordLogin: true });
+      // 這個測試沒有 OidcClient（拿不到 discovery）→ endSessionUrl 是 null
+      expect(body).toEqual({ sso: true, passwordLogin: true, endSessionUrl: null });
       expect(JSON.stringify(body)).not.toContain('auth.example.com');
     });
   });

@@ -52,3 +52,47 @@ describe('UsersService.search — H0 scoping', () => {
     expect(svc.search).toHaveBeenCalledWith('u-1', 'ca', 'ws-1');
   });
 });
+
+describe('UsersService.findByEmail — 不分大小寫（H1，帳密與緊急登入共用）', () => {
+  const rows = [
+    { id: 'u-foo', email: 'Foo@corp.com', deletedAt: null },
+    { id: 'u-twin-a', email: 'Twin@corp.com', deletedAt: null },
+    { id: 'u-twin-b', email: 'twin@CORP.com', deletedAt: null },
+    { id: 'u-exact', email: 'Exact@corp.com', deletedAt: null },
+    { id: 'u-exact-2', email: 'exact@corp.com', deletedAt: null },
+  ];
+  const prisma = {
+    user: {
+      findMany: jest.fn(async ({ where }: any) =>
+        rows.filter((r) =>
+          where.email.mode === 'insensitive'
+            ? r.email.toLowerCase() === String(where.email.equals).toLowerCase()
+            : r.email === where.email.equals,
+        ),
+      ),
+    },
+  };
+  const service = new UsersService(prisma as any);
+
+  it('foo@ 找到 Foo@，查詢用 mode=insensitive 並排除已刪除', async () => {
+    expect((await service.findByEmail('foo@corp.com'))?.id).toBe('u-foo');
+    expect(await service.findByEmail('  FOO@CORP.COM ')).toMatchObject({ id: 'u-foo' });
+    const { where } = prisma.user.findMany.mock.calls[0][0];
+    expect(where).toEqual({ email: { equals: 'foo@corp.com', mode: 'insensitive' }, deletedAt: null });
+  });
+
+  it('有完全相同的就用它', async () => {
+    expect((await service.findByEmail('exact@corp.com'))?.id).toBe('u-exact-2');
+    expect((await service.findByEmail('Exact@corp.com'))?.id).toBe('u-exact');
+  });
+
+  it('只差大小寫的有兩筆、又沒有完全相同的 → null（不猜）', async () => {
+    expect(await service.findByEmail('TWIN@corp.com')).toBeNull();
+  });
+
+  it('空字串 → null，不查 DB', async () => {
+    prisma.user.findMany.mockClear();
+    expect(await service.findByEmail('  ')).toBeNull();
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+});

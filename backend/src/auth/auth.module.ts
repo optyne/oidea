@@ -13,6 +13,10 @@ import { SocketRegistry } from './socket-registry';
 import { Clock, SystemClock } from '../common/clock';
 import { AuthConfig } from '../common/auth-config';
 import { BreakGlassReminder } from './break-glass-reminder';
+import { OidcController } from './oidc/oidc.controller';
+import { OidcClient } from './oidc/oidc-client';
+import { OidcFlowService } from './oidc/oidc-flow.service';
+import { SsoLoginService } from './oidc/sso-login.service';
 
 /**
  * 設為 Global：JwtAuthGuard（在各 module 的 controller 上 @UseGuards）需要 UserStatusService，
@@ -35,9 +39,12 @@ import { BreakGlassReminder } from './break-glass-reminder';
     }),
     UsersModule,
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, OidcController],
   providers: [
     AuthService,
+    OidcClient,
+    OidcFlowService,
+    SsoLoginService,
     JwtStrategy,
     RefreshTokenService,
     UserStatusService,

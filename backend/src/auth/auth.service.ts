@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  Optional,
   NotFoundException,
   UnauthorizedException,
   ConflictException,
@@ -14,6 +15,7 @@ import { RefreshTokenService } from './refresh-token.service';
 import { ACCESS_TOKEN_TYPE, AccessTokenPayload } from './token-types';
 import { AuthConfig, PublicAuthConfig } from '../common/auth-config';
 import { CompanyService } from '../company/company.service';
+import { OidcClient } from './oidc/oidc-client';
 
 const BAD_CREDENTIALS = '信箱或密碼錯誤';
 
@@ -40,11 +42,27 @@ export class AuthService {
     private refreshTokens: RefreshTokenService,
     private authConfig: AuthConfig,
     private company: CompanyService,
+    @Optional() private oidcClient?: OidcClient,
   ) {}
 
-  /** GET /auth/config：給 Flutter 登入頁決定要顯示哪些登入方式。只有布林值。 */
-  publicConfig(): PublicAuthConfig {
-    return this.authConfig.publicConfig();
+  /**
+   * GET /auth/config：給 Flutter 登入頁決定要顯示哪些登入方式，外加 IdP 的 end-session URL
+   * （web 登出時導過去；SSO 沒開或 IdP 連不上時是 null）。不含任何秘密值。
+   */
+  async publicConfig(): Promise<PublicAuthConfig> {
+    const endSessionUrl = this.oidcClient ? await this.oidcClient.endSessionUrl() : null;
+    return this.authConfig.publicConfig(endSessionUrl);
+  }
+
+  /** SSO exchange 成功：寫 audit `auth.login`（method=sso）並發一組新的 token（新的 refresh family）。 */
+  async completeSsoLogin(userId: string, email: string, req?: AuditRequestContext): Promise<AuthTokens> {
+    await this.audit.record({
+      actorId: userId,
+      action: 'auth.login',
+      metadata: { method: 'sso' },
+      req,
+    });
+    return this.generateTokens(userId, email);
   }
 
   async register(dto: RegisterDto) {

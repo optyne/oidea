@@ -76,10 +76,14 @@ export function readOidcEnv(read: EnvReader = processEnvReader): OidcEnv {
   };
 }
 
-/** 給 GET /auth/config：只有布林值，不含任何設定值或秘密。 */
+/**
+ * 給 GET /auth/config：登入方式的布林值，加上 IdP discovery 的 `end_session_endpoint`
+ * （公開資訊；SSO 沒開或拿不到時 null）。不含任何秘密。
+ */
 export interface PublicAuthConfig {
   sso: boolean;
   passwordLogin: boolean;
+  endSessionUrl: string | null;
 }
 
 /**
@@ -120,7 +124,8 @@ export class AuthConfig {
     return readOidcEnv(this.read);
   }
 
-  publicConfig(): PublicAuthConfig {
-    return { sso: this.ssoEnabled(), passwordLogin: this.passwordLoginEnabled() };
+  publicConfig(endSessionUrl: string | null = null): PublicAuthConfig {
+    const sso = this.ssoEnabled();
+    return { sso, passwordLogin: this.passwordLoginEnabled(), endSessionUrl: sso ? endSessionUrl : null };
   }
 }

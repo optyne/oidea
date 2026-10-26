@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes, randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { Clock } from '../common/clock';
 import { AuditService, AuditRequestContext } from '../audit/audit.service';
@@ -24,6 +25,9 @@ export function parseDurationMs(value: string | number | undefined | null): numb
 export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
+
+/** revokeAllForUser 可用的 client：PrismaService 或交易 client（`$transaction` 的 tx）。 */
+export type RefreshTokenDb = Pick<Prisma.TransactionClient, 'refreshToken'>;
 
 export interface RotatedRefreshToken {
   userId: string;
@@ -117,9 +121,13 @@ export class RefreshTokenService {
     return { userId: row.userId, familyId: row.familyId, count: res.count };
   }
 
-  /** 撤銷某使用者全部 refresh token（H1 綁定 SSO、H2 離職使用）。 */
-  async revokeAllForUser(userId: string): Promise<number> {
-    const res = await this.revokeWhere({ userId }, this.clock.now());
+  /**
+   * 撤銷某使用者全部 refresh token（H1 綁定 SSO、H2 離職使用）。
+   * `db` 可傳交易 client（在呼叫端的交易裡撤銷）；交易 commit 後建議再呼叫一次（不傳 db），
+   * 撈出交易期間才 commit 的換發（見類別說明）。
+   */
+  async revokeAllForUser(userId: string, db: RefreshTokenDb = this.prisma): Promise<number> {
+    const res = await this.revokeWhere({ userId }, this.clock.now(), db);
     return res.count;
   }
 
@@ -144,12 +152,16 @@ export class RefreshTokenService {
    * 撤銷符合條件、還沒撤銷的 row。做兩次：第二次撈出第一次之後才 commit 的 row
    * （與 rotate 同時換發出來的新 token）。回傳總共撤銷幾筆。
    */
-  private async revokeWhere(where: { familyId: string } | { userId: string }, now: Date) {
-    const first = await this.prisma.refreshToken.updateMany({
+  private async revokeWhere(
+    where: { familyId: string } | { userId: string },
+    now: Date,
+    db: RefreshTokenDb = this.prisma,
+  ) {
+    const first = await db.refreshToken.updateMany({
       where: { ...where, revokedAt: null },
       data: { revokedAt: now },
     });
-    const second = await this.prisma.refreshToken.updateMany({
+    const second = await db.refreshToken.updateMany({
       where: { ...where, revokedAt: null },
       data: { revokedAt: now },
     });

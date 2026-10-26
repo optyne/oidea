@@ -42,6 +42,7 @@
     "class-validator": "^0.14.1",
     "ioredis": "^5.6.0",
     "minio": "^8.0.5",
+    "openid-client": "^6.8.8",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
@@ -89,12 +90,26 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
+      "node_modules[\\\\/](openid-client|oauth4webapi|jose)[\\\\/].+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true,
+            "module": "commonjs",
+            "target": "ES2022"
+          },
+          "isolatedModules": true
+        }
+      ],
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "[\\\\/]node_modules[\\\\/](?!(openid-client|oauth4webapi|jose)[\\\\/])"
+    ]
   }
 }
