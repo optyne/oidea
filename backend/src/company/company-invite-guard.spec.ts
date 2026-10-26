@@ -101,6 +101,85 @@ describe('公司工作空間不接受邀請', () => {
   });
 });
 
+/**
+ * 移除也一樣：公司工作空間的成員只會在離職時被移出（spec §4.3「邀請」、§4.3「停用」）。
+ * `DELETE /workspaces/:id/members/:userId`（包含移除自己）對公司工作空間一律 403，而且什麼都不刪；
+ * 改角色照常可以。後端沒有其他「離開工作空間」的端點（removeMember 是唯一刪 WorkspaceMember 的地方，
+ * 離職流程除外）。
+ */
+describe('公司工作空間的成員不能直接移除', () => {
+  const COMPANY = 'ws-co';
+  const OTHER = 'ws-other';
+  let prisma: any;
+  let workspaces: WorkspacesService;
+  let members: Record<string, Record<string, string>>;
+
+  beforeEach(() => {
+    members = {
+      [COMPANY]: { 'u-owner': 'owner', 'u-admin': 'admin', 'u-bob': 'member' },
+      [OTHER]: { 'u-owner': 'owner', 'u-admin': 'admin', 'u-bob': 'member' },
+    };
+    const row = (workspaceId: string, userId: string) =>
+      members[workspaceId]?.[userId] ? { workspaceId, userId, role: members[workspaceId][userId] } : null;
+    prisma = {
+      workspace: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          where.id === COMPANY || where.id === OTHER
+            ? { id: where.id, isCompany: where.id === COMPANY, ownerId: 'u-owner' }
+            : null,
+        ),
+      },
+      workspaceMember: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          row(where.workspaceId_userId.workspaceId, where.workspaceId_userId.userId),
+        ),
+        delete: jest.fn(async ({ where }: any) => {
+          const { workspaceId, userId } = where.workspaceId_userId;
+          const r = row(workspaceId, userId);
+          delete members[workspaceId][userId];
+          return r;
+        }),
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+        update: jest.fn(async ({ where, data }: any) => {
+          const { workspaceId, userId } = where.workspaceId_userId;
+          members[workspaceId][userId] = data.role;
+          return { ...row(workspaceId, userId) };
+        }),
+        count: jest.fn(async () => 1),
+      },
+      $transaction: jest.fn(async (cb: any) => cb(prisma)),
+    };
+    workspaces = new WorkspacesService(prisma, new CompanyService(prisma));
+  });
+
+  it.each([
+    ['admin 移除一般成員', 'u-admin', 'u-bob'],
+    ['owner 移除 admin', 'u-owner', 'u-admin'],
+    ['admin 移除自己（離開公司工作空間）', 'u-admin', 'u-admin'],
+    ['一般成員移除自己', 'u-bob', 'u-bob'],
+  ])('%s → 403，什麼都不刪', async (_label, actor, target) => {
+    await expect(workspaces.removeMember(actor, COMPANY, target)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.workspaceMember.delete).not.toHaveBeenCalled();
+    expect(prisma.workspaceMember.deleteMany).not.toHaveBeenCalled();
+    expect(members[COMPANY][target]).toBeDefined();
+  });
+
+  it('錯誤訊息指向離職流程', async () => {
+    await expect(workspaces.removeMember('u-admin', COMPANY, 'u-bob')).rejects.toThrow(/離職/);
+  });
+
+  it('公司工作空間仍可改角色', async () => {
+    await expect(workspaces.updateMemberRole('u-admin', COMPANY, 'u-bob', 'hr')).resolves.toMatchObject({ role: 'hr' });
+    expect(members[COMPANY]['u-bob']).toBe('hr');
+  });
+
+  it('一般工作空間照常可以移除成員（含自己）', async () => {
+    await expect(workspaces.removeMember('u-admin', OTHER, 'u-bob')).resolves.toMatchObject({ userId: 'u-bob' });
+    await expect(workspaces.removeMember('u-admin', OTHER, 'u-admin')).resolves.toMatchObject({ userId: 'u-admin' });
+    expect(members[OTHER]).toEqual({ 'u-owner': 'owner' });
+  });
+});
+
 describe('CompanyService', () => {
   it('findCompanyOwnership：ownerId 或成員角色 owner 才算；已刪除的公司工作空間不算', async () => {
     const ws: any = { id: 'ws-co', ownerId: 'u-main', deletedAt: null };

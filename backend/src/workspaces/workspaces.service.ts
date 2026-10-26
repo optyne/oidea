@@ -8,7 +8,7 @@ import { PrismaService } from '../common/prisma.service';
 import { PERMISSIONS, WORKSPACE_ROLES, hasPermission } from '../common/permissions';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
-import { CompanyService } from '../company/company.service';
+import { COMPANY_REMOVE_FORBIDDEN, CompanyService } from '../company/company.service';
 
 /**
  * 成員管理的 owner 規則（spec §4.4）：
@@ -164,6 +164,8 @@ export class WorkspacesService {
 
   async removeMember(userId: string, workspaceId: string, targetUserId: string) {
     const actorRole = await this.checkPermission(userId, workspaceId, PERMISSIONS.MEMBER_MANAGE);
+    // 公司工作空間的成員只由員工生命週期決定：移除（含移除自己）一律走離職，不能直接移出
+    await this.company.assertNotCompanyWorkspace(workspaceId, COMPANY_REMOVE_FORBIDDEN);
     const target = await this.getMemberOrThrow(workspaceId, targetUserId);
     if (target.role === 'owner') {
       await this.assertOwnerMayLoseRole(actorRole, workspaceId, targetUserId, '移除');

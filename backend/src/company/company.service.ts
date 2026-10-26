@@ -21,6 +21,8 @@ const COMPANY_SELECT = {
 } as const;
 
 export const COMPANY_INVITE_FORBIDDEN = '公司工作空間的成員由員工資料決定（SSO 登入時加入、離職時移出），不能用邀請加入';
+export const COMPANY_REMOVE_FORBIDDEN =
+  '公司工作空間的成員由員工資料決定（SSO 登入時加入、離職時移出），不能直接移除；請到後台辦理離職';
 
 /**
  * 公司工作空間（`Workspace.isCompany`，全庫最多一個）的查詢工具。所有模組都用這裡判斷，
