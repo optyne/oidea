@@ -6,6 +6,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma.service';
+import { UserStatusService } from '../user-status.service';
 
 /**
  * JWT 守衛；同時支援 **bot token**（格式 `Bearer bot_<prefix>.<secret>`）。
@@ -22,7 +23,10 @@ import { PrismaService } from '../../common/prisma.service';
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userStatus: UserStatusService,
+  ) {
     super();
   }
 
@@ -45,6 +49,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
           revokedAt: true,
           userId: true,
           workspaceId: true,
+          createdById: true,
         },
       });
       if (!bot || bot.revokedAt) {
@@ -55,6 +60,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       if (!ok) {
         throw new UnauthorizedException('無效的 bot token');
       }
+
+      // bot 的建立者被停用（離職）→ bot 一起失效；與 JwtStrategy 共用同一套快取
+      if (await this.userStatus.isDisabled(bot.createdById)) {
+        throw new UnauthorizedException('Bot 建立者已停用');
+      }
+      // 建立者的帳號在 SSO 綁定時重設過：綁定交易撤銷他建的所有 bot（revokedAt），commit 之後再撤銷一次
+      // （撈出綁定途中才 commit 的新 bot，見 SsoLoginService）；H1 migration 也撤銷了上線前的全部 bot。
+      // 這裡只看 revokedAt（review R1：不再用時間 cutoff）。
 
       // lastUsedAt 非關鍵；失敗不擋主流程
       this.prisma.botAccount

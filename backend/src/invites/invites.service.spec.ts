@@ -3,6 +3,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { InvitesService } from './invites.service';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CompanyService } from '../company/company.service';
 
 // tx mock：$transaction(callback) 直接把 txMock 餵給 callback
 const buildTx = () => ({
@@ -29,6 +30,7 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
     prisma = {
       workspaceInvite: { findUnique: jest.fn().mockResolvedValue(INVITE), updateMany: jest.fn() },
       workspaceMember: { findUnique: jest.fn().mockResolvedValue(null) },
+      workspace: { findUnique: jest.fn().mockResolvedValue({ isCompany: false }) },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +38,7 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
         InvitesService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        CompanyService,
       ],
     }).compile();
     service = module.get(InvitesService);

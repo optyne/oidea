@@ -1,21 +1,83 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Optional,
+  NotFoundException,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto, LoginDto } from './dto/register.dto';
 import { AuditService, AuditRequestContext } from '../audit/audit.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { ACCESS_TOKEN_TYPE, AccessTokenPayload } from './token-types';
+import { AuthConfig, PublicAuthConfig } from '../common/auth-config';
+import { CompanyService } from '../company/company.service';
+import { OidcClient } from './oidc/oidc-client';
+import { Clock, SystemClock } from '../common/clock';
+
+const SYSTEM_CLOCK = new SystemClock();
+
+const BAD_CREDENTIALS = '信箱或密碼錯誤';
+
+/**
+ * 帳密登入關閉時，register／login 回的 404。所有「關閉」與「緊急登入被拒」的情況都用同一個，
+ * 不透露 email 是否在 BREAK_GLASS_OWNER_EMAILS、密碼對不對、是不是 owner。
+ */
+const passwordLoginNotFound = () => new NotFoundException('Not Found');
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; email: string };
+}
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    private configService: ConfigService,
     private audit: AuditService,
+    private refreshTokens: RefreshTokenService,
+    private authConfig: AuthConfig,
+    private company: CompanyService,
+    @Optional() private oidcClient?: OidcClient,
+    @Optional() private clock?: Clock,
   ) {}
 
+  /**
+   * GET /auth/config：給 Flutter 登入頁決定要顯示哪些登入方式，外加 IdP 的 end-session URL
+   * （web 登出時導過去；SSO 沒開或 IdP 連不上時是 null）。不含任何秘密值。
+   */
+  async publicConfig(): Promise<PublicAuthConfig> {
+    const endSessionUrl = this.oidcClient ? await this.oidcClient.endSessionUrl() : null;
+    return this.authConfig.publicConfig(endSessionUrl);
+  }
+
+  /** SSO exchange 成功：寫 audit `auth.login`（method=sso）並發一組新的 token（新的 refresh family）。 */
+  async completeSsoLogin(
+    userId: string,
+    email: string,
+    tokenVersion: number,
+    req?: AuditRequestContext,
+  ): Promise<AuthTokens> {
+    await this.audit.record({
+      actorId: userId,
+      action: 'auth.login',
+      metadata: { method: 'sso' },
+      req,
+    });
+    return this.generateTokens(userId, email, tokenVersion);
+  }
+
   async register(dto: RegisterDto) {
+    // 帳密登入關閉（正式環境預設）時註冊不存在：一律 404，跟緊急登入名單無關
+    if (!this.authConfig.passwordLoginEnabled()) throw passwordLoginNotFound();
+
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
       throw new ConflictException('此信箱已註冊');
@@ -34,10 +96,83 @@ export class AuthService {
       passwordHash,
     });
 
-    return this.generateTokens(user.id, user.email);
+    return this.generateTokens(user.id, user.email, user.tokenVersion);
   }
 
+  /**
+   * 帳密登入。`AUTH_PASSWORD_LOGIN_ENABLED` 關閉時改走緊急登入（breakGlassLogin），其他人一律 404。
+   */
   async login(dto: LoginDto, req?: AuditRequestContext) {
+    if (!this.authConfig.passwordLoginEnabled()) return this.breakGlassLogin(dto, req);
+
+    const user = await this.verifyPassword(dto, req);
+    if (!user) throw new UnauthorizedException(BAD_CREDENTIALS);
+
+    await this.audit.record({
+      actorId: user.id,
+      action: 'auth.login',
+      req,
+    });
+    return this.generateTokens(user.id, user.email, user.tokenVersion);
+  }
+
+  /**
+   * 緊急登入（spec §4.3 break-glass）：帳密登入關閉時，只有 BREAK_GLASS_OWNER_EMAILS 名單上、
+   * 是公司工作空間 owner、而且已綁定 SSO（有 authentik Account）的帳號能用帳密登入；每次成功都寫 audit `auth.break_glass`。
+   * 任何不符合的情況都回同一個 404（跟「帳密登入關閉」一樣）。
+   */
+  private async breakGlassLogin(dto: LoginDto, req?: AuditRequestContext): Promise<AuthTokens> {
+    if (!this.authConfig.isBreakGlassEmail(dto.email)) {
+      await this.audit.record({
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: 'password_login_disabled' },
+        req,
+      });
+      throw passwordLoginNotFound();
+    }
+
+    const user = await this.verifyPassword(dto, req);
+    if (!user) throw passwordLoginNotFound();
+
+    const company = await this.company.findCompanyOwnership(user.id);
+    if (!company) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: 'break_glass_not_company_owner' },
+        req,
+      });
+      throw passwordLoginNotFound();
+    }
+    // 只有綁定過 SSO 的 owner（密碼是 auth:set-break-glass-password 設的）能用；還沒綁定的帳號
+    // 可能是搶先用老闆 email 註冊的人，他的密碼不能拿來緊急登入（review R2）
+    if (!(await this.company.isSsoBound(user.id))) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: 'break_glass_not_sso_bound' },
+        req,
+      });
+      throw passwordLoginNotFound();
+    }
+
+    await this.audit.record({
+      actorId: user.id,
+      workspaceId: company.id,
+      action: 'auth.break_glass',
+      targetType: 'user',
+      targetId: user.id,
+      req,
+    });
+    this.logger.warn(`緊急登入（break-glass）成功：user ${user.id}`);
+    return this.generateTokens(user.id, user.email, user.tokenVersion);
+  }
+
+  /**
+   * 檢查帳號與密碼；失敗時寫 audit `auth.login_failed` 並回 null（呼叫端決定回 401 或 404）。
+   * passwordHash 為 null（只走 SSO 的帳號）一律當成密碼錯誤。
+   */
+  private async verifyPassword(dto: LoginDto, req?: AuditRequestContext) {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       await this.audit.record({
@@ -45,7 +180,17 @@ export class AuthService {
         metadata: { email: dto.email, reason: 'user_not_found' },
         req,
       });
-      throw new UnauthorizedException('信箱或密碼錯誤');
+      return null;
+    }
+
+    if (!user.passwordHash) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: 'no_password' },
+        req,
+      });
+      return null;
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
@@ -56,39 +201,70 @@ export class AuthService {
         metadata: { email: dto.email, reason: 'bad_password' },
         req,
       });
-      throw new UnauthorizedException('信箱或密碼錯誤');
+      return null;
     }
 
-    await this.audit.record({
-      actorId: user.id,
-      action: 'auth.login',
-      req,
-    });
-    return this.generateTokens(user.id, user.email);
+    // 停用或已刪除的帳號：回跟密碼錯誤一樣的訊息（不透露帳號狀態），不發 refresh token。
+    if (user.disabledAt || user.deletedAt) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { email: dto.email, reason: user.deletedAt ? 'deleted' : 'disabled' },
+        req,
+      });
+      return null;
+    }
+    return user;
   }
 
-  async refreshToken(userId: string) {
-    const user = await this.usersService.findById(userId);
-    if (!user) {
-      throw new UnauthorizedException('使用者不存在');
+  /**
+   * 用 refresh token 換一組新的 token（body 帶 token，不經 JwtAuthGuard）。
+   * 換發、寬限期與盜用偵測見 RefreshTokenService.rotate。
+   */
+  async refresh(refreshToken: string, req?: AuditRequestContext): Promise<AuthTokens> {
+    const rotated = await this.refreshTokens.rotate(refreshToken, req);
+    return {
+      accessToken: this.signAccessToken(rotated.userId, rotated.email, rotated.tokenVersion),
+      refreshToken: rotated.refreshToken,
+      user: { id: rotated.userId, email: rotated.email },
+    };
+  }
+
+  /** 登出：撤銷這個 refresh token 所屬的整個 family。冪等：未知 token 也回 ok。 */
+  async logout(refreshToken: string, req?: AuditRequestContext): Promise<{ ok: true }> {
+    const revoked = await this.refreshTokens.revokeFamilyOf(refreshToken);
+    if (revoked) {
+      await this.audit.record({
+        actorId: revoked.userId,
+        action: 'auth.logout',
+        targetType: 'refresh_token_family',
+        targetId: revoked.familyId,
+        metadata: { revokedCount: revoked.count },
+        req,
+      });
     }
-    return this.generateTokens(user.id, user.email);
+    return { ok: true };
   }
 
   async validateUser(userId: string) {
     return this.usersService.findById(userId);
   }
 
-  private generateTokens(userId: string, email: string) {
-    const payload = { sub: userId, email };
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION', '7d'),
-    });
+  /**
+   * `tv` = 簽發時的 `User.tokenVersion`（review R1）：SSO 綁定把它 +1 之後這張 token 立刻失效
+   * （整數相等比對，沒有「同一秒簽發」的空窗）。
+   */
+  private signAccessToken(userId: string, email: string, tokenVersion: number): string {
+    // iat 用注入的時鐘（spec §6.4）；有效期由 JwtModule 的 signOptions（JWT_EXPIRATION，預設 15m）決定，從這個 iat 起算。
+    const iat = Math.floor((this.clock ?? SYSTEM_CLOCK).now().getTime() / 1000);
+    const payload: AccessTokenPayload = { sub: userId, email, typ: ACCESS_TOKEN_TYPE, tv: tokenVersion, iat };
+    return this.jwtService.sign(payload);
+  }
 
+  private async generateTokens(userId: string, email: string, tokenVersion: number): Promise<AuthTokens> {
     return {
-      accessToken,
-      refreshToken,
+      accessToken: this.signAccessToken(userId, email, tokenVersion),
+      refreshToken: await this.refreshTokens.issueNewFamily(userId, tokenVersion),
       user: { id: userId, email },
     };
   }

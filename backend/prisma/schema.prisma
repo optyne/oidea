@@ -16,16 +16,23 @@ model User {
   email         String    @unique
   username      String    @unique
   displayName   String
-  passwordHash  String
+  /// 帳密登入用的 bcrypt hash。null = 沒有可用密碼（SSO 綁定時清掉；只能走 SSO 或緊急登入前用 CLI 設定）
+  passwordHash  String?
   avatarUrl     String?
   status        String    @default("offline") // online, away, dnd, offline
   statusMessage String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
+  /// 停用（離職）時間；有值即視為停用，JwtStrategy / bot / socket 都會拒絕
+  disabledAt    DateTime?
+  /// 登入版本（review R1）：access token 帶 `tv` claim、refresh token 的 row 也記一份，都必須等於這個值。
+  /// SSO 綁定既有帳號時在同一個交易裡 +1，綁定前發出的 access token、refresh token 與 socket 一律失效
+  tokenVersion  Int       @default(0)
 
   // Relations
   accounts           Account[]
+  refreshTokens      RefreshToken[]
   workspaceMembers   WorkspaceMember[]
   channelMembers     ChannelMember[]
   sentMessages       Message[]            @relation("MessageSender")
@@ -60,6 +67,7 @@ model User {
   consumedInvites    WorkspaceInvite[]    @relation("InviteConsumer")
   botAccount         BotAccount?          @relation("BotAccountUser")
   createdBots        BotAccount[]         @relation("BotAccountCreator")
+  employeeProfile    EmployeeProfile?
 
   @@map("users")
 }
@@ -80,6 +88,28 @@ model Account {
   @@map("accounts")
 }
 
+/// 不透明 refresh token；只存 sha256，明文不落地。
+/// 同一次登入換發出來的一串 token 共用 familyId；偵測到盜用時撤銷整個 family。
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  familyId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  /// 被換發的時間，用來判斷 10 秒寬限期
+  rotatedAt DateTime?
+  /// 簽發時的 `User.tokenVersion`（換發時沿用）；跟使用者現在的值不同 → 換發一律拒絕（review R1）
+  tokenVersion Int    @default(0)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
 // ============================================================
 // 工作空間
 // ============================================================
@@ -93,6 +123,12 @@ model Workspace {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
+  /// 公司工作空間（spec §4.1）。全庫最多一個 true：由 migration 手寫的 partial unique index
+  /// `workspaces_single_company_key` 保證（Prisma 表達不了，見 migration 20261026120000 的說明）。
+  isCompany   Boolean   @default(false)
+  /// company:init 指定的 owner 還沒有 User 時，先記下他的 email（小寫）；
+  /// 他第一次 SSO 登入、建立或綁定 User 後，把 ownerId 移交給他並清成 null。
+  pendingOwnerEmail String?
 
   // Relations
   ownerId String @map("ownerId")
@@ -116,8 +152,77 @@ model Workspace {
   invites           WorkspaceInvite[]
   spreadsheets      Spreadsheet[]
   bots              BotAccount[]
+  departments       Department[]
+  employeeProfiles  EmployeeProfile[]
 
   @@map("workspaces")
+}
+
+// ============================================================
+// 員工主檔（只綁公司工作空間，spec §4.2）
+// ============================================================
+
+/// 部門（樹狀）。同一層不能同名（不分大小寫）：由 migration 手寫的兩個 partial unique index 保證
+/// （`departments_root_name_key`、`departments_child_name_key`）。Prisma 的 @@unique 擋不住
+/// 根部門重名（parentId 為 NULL 時 Postgres 視為互不相等），所以不在這裡宣告。
+/// Prisma 6 的 schema describer 會略過 partial index（indpred IS NULL），之後 migrate dev 不會產生 drop。
+model Department {
+  id               String    @id @default(uuid())
+  workspaceId      String
+  name             String
+  parentId         String?
+  /// 部門主管 → EmployeeProfile（不是 User：預建員工可能還沒有 User）
+  managerProfileId String?
+  sortOrder        Int       @default(0)
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  parent    Department?        @relation("DepartmentTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  Department[]       @relation("DepartmentTree")
+  manager   EmployeeProfile?   @relation("DepartmentManager", fields: [managerProfileId], references: [id], onDelete: SetNull)
+  employees EmployeeProfile[]  @relation("EmployeeDepartment")
+
+  @@index([workspaceId, parentId])
+  @@map("departments")
+}
+
+/// 員工主檔。另開資料表、不塞進 User（User 也包含 bot）。email 一律存小寫。
+/// userId 在首次 SSO 登入時才綁定；預建（匯入）時為 null。
+model EmployeeProfile {
+  id               String    @id @default(uuid())
+  workspaceId      String
+  userId           String?   @unique
+  email            String
+  employeeNo       String
+  fullName         String
+  departmentId     String?
+  jobTitle         String    @default("")
+  /// 直屬主管 → EmployeeProfile；null 時用部門主管
+  managerProfileId String?
+  /// full_time / part_time / contractor / intern
+  employmentType   String    @default("full_time")
+  /// active / on_leave / terminated
+  employmentStatus String    @default("active")
+  hireDate         DateTime  @db.Date
+  terminationDate  DateTime? @db.Date
+  phone            String    @default("")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workspace          Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user               User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  department         Department?       @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  manager            EmployeeProfile?  @relation("EmployeeManager", fields: [managerProfileId], references: [id], onDelete: SetNull)
+  reports            EmployeeProfile[] @relation("EmployeeManager")
+  managedDepartments Department[]      @relation("DepartmentManager")
+
+  @@unique([workspaceId, employeeNo])
+  @@unique([workspaceId, email])
+  @@index([workspaceId, departmentId])
+  @@index([managerProfileId])
+  @@map("employee_profiles")
 }
 
 /// 工作空間邀請連結：管理員產 token，任何人憑連結可加入（未註冊者先註冊再接受）。

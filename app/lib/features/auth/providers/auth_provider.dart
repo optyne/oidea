@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/network/auth_session.dart';
 import '../../../core/network/socket_service.dart';
 import '../../workspace/workspace_storage.dart';
 import '../../workspace/providers/workspace_provider.dart';
+import '../sso/sso_callback.dart';
+import '../sso/sso_service.dart';
 
 class AuthState {
   final bool isLoading;
@@ -51,8 +57,11 @@ final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
     ref,
     ref.watch(apiClientProvider),
     ref.watch(socketProvider),
+    ref.watch(authSessionProvider),
   );
 });
+
+const badCredentialsMessage = '帳號或密碼錯誤';
 
 String _formatAuthError(Object e) {
   if (e is! DioException) return e.toString();
@@ -65,7 +74,7 @@ String _formatAuthError(Object e) {
         '④ 實體手機請用 --dart-define 設電腦區網 IP，勿用 localhost。';
   }
   if (code == 401) {
-    return '帳號或密碼錯誤';
+    return badCredentialsMessage;
   }
   switch (e.type) {
     case DioExceptionType.connectionTimeout:
@@ -91,10 +100,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final Ref _ref;
   final ApiClient _api;
   final SocketService _socket;
+  final AuthSession _session;
+  StreamSubscription<void>? _expiredSub;
   static const _storage = FlutterSecureStorage();
 
-  AuthNotifier(this._ref, this._api, this._socket) : super(const AuthState()) {
+  AuthNotifier(this._ref, this._api, this._socket, this._session) : super(const AuthState()) {
+    _expiredSub = _session.onSessionExpired.listen((_) => _onSessionExpired());
     _checkAuth();
+  }
+
+  @override
+  void dispose() {
+    _expiredSub?.cancel();
+    super.dispose();
+  }
+
+  /// Refresh token was rejected: tokens are already cleared by [AuthSession];
+  /// drop local state so the router redirects to /login (once).
+  Future<void> _onSessionExpired() async {
+    if (!state.isAuthenticated) return;
+    _socket.disconnect();
+    state = const AuthState(error: '登入已過期，請重新登入');
+    _ref.read(currentWorkspaceIdProvider.notifier).state = null;
+    await WorkspaceStorage.write(null);
+    _ref.invalidate(workspacesProvider);
   }
 
   Future<void> _bootstrapWorkspace() async {
@@ -123,7 +152,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> _checkAuth() async {
-    final token = await _storage.read(key: 'access_token');
+    final token = await _session.store.readAccessToken();
     if (token != null) {
       try {
         final user = await _api.getMe();
@@ -134,63 +163,104 @@ class AuthNotifier extends StateNotifier<AuthState> {
           displayName: user['displayName'],
           avatarUrl: user['avatarUrl'],
         );
-        _socket.connect(user['id']);
+        _socket.connect();
         await _bootstrapWorkspace();
       } catch (_) {
-        await _storage.deleteAll();
+        await _session.store.clear();
       }
     }
   }
 
-  Future<void> login(String email, String password) async {
+  /// [breakGlass]: emergency owner login. The backend answers 404 for anyone
+  /// not allowed (not listed, not an owner, wrong password), so 404 means
+  /// 「帳號或密碼錯誤」 here instead of the developer "API not found" hint.
+  Future<void> login(String email, String password, {bool breakGlass = false}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final response = await _api.login(email, password);
-      await _storage.write(key: 'access_token', value: response['accessToken']);
-      await _storage.write(key: 'refresh_token', value: response['refreshToken']);
-
-      final userData = response['user'];
+      await _completeLogin(response);
+    } catch (e) {
+      final notFound = e is DioException && e.response?.statusCode == 404;
       state = state.copyWith(
         isLoading: false,
-        isAuthenticated: true,
-        userId: userData['id'],
-        email: userData['email'],
+        error: breakGlass && notFound ? badCredentialsMessage : _formatAuthError(e),
       );
-
-      _socket.connect(userData['id']);
-      await _loadProfile();
-      await _bootstrapWorkspace();
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: _formatAuthError(e));
     }
   }
 
-  Future<void> register(String email, String username, String displayName, String password) async {
+  /// Starts company SSO. Web: the tab navigates to the backend and this never
+  /// completes in practice (state stays loading). Mobile: runs the system auth
+  /// session, then exchanges the ticket.
+  Future<void> loginWithSso() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _api.register({
-        'email': email,
-        'username': username,
-        'displayName': displayName,
-        'password': password,
-      });
-      await _storage.write(key: 'access_token', value: response['accessToken']);
-      await _storage.write(key: 'refresh_token', value: response['refreshToken']);
-
-      final userData = response['user'];
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        userId: userData['id'],
-        email: userData['email'],
-        displayName: displayName,
-      );
-
-      _socket.connect(userData['id']);
-      await _bootstrapWorkspace();
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: _formatAuthError(e));
+      final result = await _ref.read(ssoServiceProvider).start();
+      if (result == null) return;
+      await completeSso(result.callback, verifier: result.verifier);
+    } on PlatformException catch (e) {
+      // User closed the auth sheet: not an error worth a banner.
+      final canceled = e.code == 'CANCELED' || e.code == 'CANCELLED';
+      state = AuthState(error: canceled ? null : ssoGenericFailure);
+    } catch (_) {
+      state = const AuthState(error: ssoGenericFailure);
     }
+  }
+
+  /// Web `/auth/callback`: takes (and removes) the verifier saved before the
+  /// redirect, then exchanges. Returns true when the user is logged in.
+  Future<bool> completeWebSso(SsoCallback callback) {
+    final verifier = _ref.read(ssoServiceProvider).takeWebVerifier();
+    return completeSso(callback, verifier: verifier);
+  }
+
+  /// Exchanges an SSO ticket for tokens. Returns true when logged in;
+  /// otherwise [AuthState.error] holds the message for the login page.
+  Future<bool> completeSso(SsoCallback callback, {required String? verifier}) async {
+    switch (callback) {
+      case SsoError(:final code):
+        state = AuthState(error: ssoErrorMessage(code));
+        return false;
+      case SsoMissing():
+        state = const AuthState(error: ssoGenericFailure);
+        return false;
+      case SsoTicket(:final ticket):
+        if (verifier == null || verifier.isEmpty) {
+          // Verifier lost (other tab, storage cleared, app restarted).
+          state = const AuthState(error: ssoTimeoutMessage);
+          return false;
+        }
+        state = state.copyWith(isLoading: true, error: null);
+        try {
+          final response = await _api.exchangeOidcTicket(ticket: ticket, appVerifier: verifier);
+          await _completeLogin(response);
+          return true;
+        } catch (e) {
+          await _session.store.clear();
+          state = AuthState(error: _formatSsoExchangeError(e));
+          return false;
+        }
+    }
+  }
+
+  Future<void> _completeLogin(Map<String, dynamic> response) async {
+    await _saveTokens(response);
+    final userData = response['user'];
+    state = state.copyWith(
+      isLoading: false,
+      isAuthenticated: true,
+      userId: userData is Map ? userData['id'] as String? : null,
+      email: userData is Map ? userData['email'] as String? : null,
+    );
+    _socket.connect();
+    await _loadProfile();
+    await _bootstrapWorkspace();
+  }
+
+  Future<void> _saveTokens(Map<String, dynamic> response) {
+    return _session.store.save(
+      accessToken: response['accessToken'] as String,
+      refreshToken: response['refreshToken'] as String?,
+    );
   }
 
   Future<void> _loadProfile() async {
@@ -208,10 +278,41 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     _socket.disconnect();
+    // Revokes the refresh token server-side (best effort) and clears it locally.
+    await _session.logout();
     await _storage.deleteAll();
     _ref.read(currentWorkspaceIdProvider.notifier).state = null;
     await WorkspaceStorage.write(null);
     _ref.invalidate(workspacesProvider);
     state = const AuthState();
+    await _endIdpSession();
   }
+
+  /// Web: also end the IdP session, otherwise the next "使用公司帳號登入"
+  /// signs the same person in again without asking.
+  Future<void> _endIdpSession() async {
+    try {
+      final config = await _ref.read(authConfigProvider.future).timeout(const Duration(seconds: 3));
+      _ref.read(ssoServiceProvider).endBrowserSession(config.endSessionUrl);
+    } catch (_) {
+      // Config unavailable: local logout already done.
+    }
+  }
+}
+
+/// Message for a failed `auth/oidc/exchange`. Uses a known error code from
+/// the response body when there is one; never includes the request body.
+String _formatSsoExchangeError(Object e) {
+  if (e is DioException) {
+    final data = e.response?.data;
+    if (data is Map) {
+      for (final key in const ['code', 'error', 'message']) {
+        final v = data[key];
+        if (v is String && isKnownSsoErrorCode(v)) return ssoErrorMessage(v);
+      }
+    }
+    final status = e.response?.statusCode;
+    if (status == 400 || status == 401) return ssoTimeoutMessage;
+  }
+  return ssoGenericFailure;
 }

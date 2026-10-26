@@ -14,7 +14,16 @@ export type AuditAction =
   | 'expense.mark_paid'
   | 'expense.cancel'
   | 'workspace.role_change'
-  | 'workspace.member_remove';
+  | 'workspace.member_remove'
+  | 'owner.transfer'
+  | 'auth.refresh_reuse'
+  // H1
+  | 'auth.break_glass'
+  | 'auth.break_glass_password_set'
+  | 'auth.sso_denied'
+  | 'employee.import'
+  | 'employee.sso_bind'
+  | 'company.init';
 
 export interface AuditRequestContext {
   ip?: string | string[];
