@@ -776,6 +776,140 @@ class ApiClient {
     await _dio.delete('workspaces/$workspaceId/members/$userId');
   }
 
+  /// 移交 owner（僅 owner）。body `{userId}`。
+  Future<Map<String, dynamic>> transferWorkspaceOwner(
+    String workspaceId,
+    String newOwnerUserId,
+  ) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'workspaces/$workspaceId/owner/transfer',
+      data: {'userId': newOwnerUserId},
+    );
+    return res.data ?? const {};
+  }
+
+  // ─────────────────────── H2：員工後台（/company、/admin、/audit） ───────────────────────
+  // 契約：notes/h2-api-contract.md。權限一律由後端檢查，前端只負責隱藏。
+
+  /// 目前登入者在公司工作空間的角色、權限與員工資料。
+  Future<Map<String, dynamic>> getCompanyMe() async {
+    final res = await _dio.get<Map<String, dynamic>>('company/me');
+    return res.data ?? const {};
+  }
+
+  Future<Map<String, dynamic>> getAdminEmployees({
+    String? departmentId,
+    String? status,
+    String? q,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'admin/employees',
+      queryParameters: {
+        if (departmentId != null && departmentId.isNotEmpty) 'departmentId': departmentId,
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+        'page': page,
+        'pageSize': pageSize,
+      },
+    );
+    return res.data ?? const {};
+  }
+
+  Future<Map<String, dynamic>> createAdminEmployee(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('admin/employees', data: body);
+    return res.data ?? const {};
+  }
+
+  Future<Map<String, dynamic>> updateAdminEmployee(String id, Map<String, dynamic> body) async {
+    final res = await _dio.patch<Map<String, dynamic>>('admin/employees/$id', data: body);
+    return res.data ?? const {};
+  }
+
+  /// [terminationDate] 為 `YYYY-MM-DD`。
+  Future<Map<String, dynamic>> terminateEmployee(String id, String terminationDate) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'admin/employees/$id/terminate',
+      data: {'terminationDate': terminationDate},
+    );
+    return res.data ?? const {};
+  }
+
+  Future<Map<String, dynamic>> reinstateEmployee(String id) async {
+    final res = await _dio.post<Map<String, dynamic>>('admin/employees/$id/reinstate');
+    return res.data ?? const {};
+  }
+
+  Future<Map<String, dynamic>> unbindEmployee(String id) async {
+    final res = await _dio.post<Map<String, dynamic>>('admin/employees/$id/unbind');
+    return res.data ?? const {};
+  }
+
+  /// CSV 匯入；[dryRun] 為 true 時後端不寫入，只回預覽。
+  Future<Map<String, dynamic>> importEmployees(String csv, {required bool dryRun}) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'admin/employees/import',
+      data: {'csv': csv, 'dryRun': dryRun},
+    );
+    return res.data ?? const {};
+  }
+
+  Future<List<dynamic>> getAdminDepartments({bool includeArchived = false}) async {
+    final res = await _dio.get<List<dynamic>>(
+      'admin/departments',
+      queryParameters: {'includeArchived': includeArchived},
+    );
+    return res.data ?? const [];
+  }
+
+  Future<Map<String, dynamic>> createDepartment(Map<String, dynamic> body) async {
+    final res = await _dio.post<Map<String, dynamic>>('admin/departments', data: body);
+    return res.data ?? const {};
+  }
+
+  /// 只送要改的欄位；`parentId: null` 表示移到根層。
+  Future<Map<String, dynamic>> updateDepartment(String id, Map<String, dynamic> body) async {
+    final res = await _dio.patch<Map<String, dynamic>>('admin/departments/$id', data: body);
+    return res.data ?? const {};
+  }
+
+  Future<void> archiveDepartment(String id) async {
+    await _dio.post('admin/departments/$id/archive');
+  }
+
+  Future<void> unarchiveDepartment(String id) async {
+    await _dio.post('admin/departments/$id/unarchive');
+  }
+
+  Future<void> deleteDepartment(String id) async {
+    await _dio.delete('admin/departments/$id');
+  }
+
+  /// 審計日誌；[action] 可為完整值或 `employee.*` 這種前綴；[cursor] 用上一頁的 `nextCursor`。
+  Future<Map<String, dynamic>> getAuditLogs(
+    String workspaceId, {
+    String? from,
+    String? to,
+    String? action,
+    String? actorId,
+    String? cursor,
+    int limit = 50,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'audit/workspaces/$workspaceId',
+      queryParameters: {
+        if (from != null && from.isNotEmpty) 'from': from,
+        if (to != null && to.isNotEmpty) 'to': to,
+        if (action != null && action.trim().isNotEmpty) 'action': action.trim(),
+        if (actorId != null && actorId.trim().isNotEmpty) 'actorId': actorId.trim(),
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+        'limit': limit,
+      },
+    );
+    return res.data ?? const {};
+  }
+
   // ─────────────────────── 工作空間邀請連結 ───────────────────────
 
   /// 管理端：建邀請連結，回傳含 token 的記錄。
