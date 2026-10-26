@@ -40,6 +40,8 @@ export class FakeIdp {
   signWith: SignMode = 'rs256';
   /** discovery 回 500 */
   failDiscovery = false;
+  /** discovery 宣告的 id_token 簽法（Authentik 沒選簽章金鑰時會宣告 HS256）。 */
+  advertisedAlgs: string[] = ['RS256'];
   /** authorize 改回傳 ?error=access_denied */
   denyAuthorize = false;
   /** 所有發出去的秘密值（code、id_token、access_token、refresh_token）以及 client secret。 */
@@ -113,7 +115,7 @@ export class FakeIdp {
         end_session_endpoint: this.endSessionEndpoint,
         response_types_supported: ['code'],
         subject_types_supported: ['public'],
-        id_token_signing_alg_values_supported: ['RS256'],
+        id_token_signing_alg_values_supported: this.advertisedAlgs,
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
         scopes_supported: ['openid', 'email', 'profile'],

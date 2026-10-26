@@ -107,14 +107,66 @@ APP_MOBILE_CALLBACK_URL=oidea://auth
 - `JWT_SECRET` **絕對要換**，不然任何人都能偽造 token
 - `JWT_EXPIRATION` 是 access token 的有效期（建議 15m）；`JWT_REFRESH_EXPIRATION` 是 refresh token 的有效期（不透明字串、存在 `refresh_tokens` 資料表，每次 refresh 換發並重新起算；格式 `7d`／`12h`／`30m`／秒數）
 - **H0 上線注意**：H0 改了 token 格式（access token 要有 `typ: "access"`，refresh token 改成不透明字串），上線後舊的 access／refresh token 全部失效，**所有人都要重新登入一次**。WebSocket 也改成要在握手帶 access token（`auth.token`），舊版 App 連不上即時訊息與白板，前後端要一起上線。
-- `CORS_ORIGIN` 是逗號分隔的白名單，讓你的 Flutter Web / 其他前端可以打 API
+- `CORS_ORIGIN` 是逗號分隔的白名單，讓你的 Flutter Web / 其他前端可以打 API（SSO 的 `POST /api/auth/oidc/exchange` 也需要；Authentik 網域不用加）
 
 ### 登入方式、公司工作空間與緊急登入（H1）
 
 - `AUTH_PASSWORD_LOGIN_ENABLED`：帳密登入／註冊開關。**不設時 `NODE_ENV=production` 為 false**，其他環境為 true。關閉時 `POST /api/auth/register`、`POST /api/auth/login` 回 404（下面的緊急登入例外）。接受 `true/false/1/0/yes/no/on/off`，無法辨識的值當 false。
 - `OIDC_ISSUER`、`OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`、`OIDC_REDIRECT_URI`、`APP_WEB_CALLBACK_URL`、`APP_MOBILE_CALLBACK_URL`：Authentik 單一登入（OIDC 流程使用）。`OIDC_CLIENT_SECRET` 只放後端。`OIDC_ISSUER` 有值時 `GET /api/auth/config` 回 `sso: true`。
-- `GET /api/auth/config`（公開）回 `{ "sso": <OIDC_ISSUER 有設>, "passwordLogin": <AUTH_PASSWORD_LOGIN_ENABLED> }`，Flutter 登入頁用它決定要顯示哪些按鈕。不含任何設定值。
+- `GET /api/auth/config`（公開）回 `{ "sso": <OIDC_ISSUER 有設>, "passwordLogin": <AUTH_PASSWORD_LOGIN_ENABLED>, "endSessionUrl": <Authentik 的 end-session URL 或 null> }`，Flutter 登入頁用它決定要顯示哪些按鈕，Web 登出時導到 `endSessionUrl`。不含任何秘密值。
 - `COMPANY_TIMEZONE`：判斷「哪一天」用的時區，預設 `Asia/Taipei`（H4 起使用）。
+
+### Authentik 單一登入（H1）
+
+**登入流程**（後端主導，client secret 只在後端）：
+
+1. App → `GET /api/auth/oidc/start?client=web|mobile&app_challenge=<S256>` → 302 到 Authentik。
+2. Authentik（上游 Mailcow 登入）→ 302 `GET /api/auth/oidc/callback?code&state` → 後端換 token、驗 id_token、對應員工 → 302 回 App：
+   Web `APP_WEB_CALLBACK_URL#ticket=…`（或 `#error=<code>`），行動版 `APP_MOBILE_CALLBACK_URL?ticket=…`（或 `?error=<code>`）。
+3. App → `POST /api/auth/oidc/exchange { ticket, app_verifier }` → `{ accessToken, refreshToken, user }`。ticket 60 秒內有效、只能用一次。
+
+**Authentik 要這樣設**（Applications → Providers → Create → OAuth2/OpenID Provider；屬於正式環境設定，由管理者操作）：
+
+| 欄位 | 值 |
+|---|---|
+| Client type | **Confidential** |
+| Client ID／Client Secret | 填進 `OIDC_CLIENT_ID`／`OIDC_CLIENT_SECRET` |
+| Redirect URIs | `https://<api 網域>/api/auth/oidc/callback`（strict；必須跟 `OIDC_REDIRECT_URI` **一字不差**） |
+| Signing Key | **選一張 RS256 憑證**（例如 authentik Self-signed Certificate）。沒選的話 Authentik 會用 client secret 以 HS256 簽 id_token，後端一律拒絕（App 收到 `error=server_error`，後端 log 有 `unexpected JWT "alg" header parameter`） |
+| Scopes | `openid`、`email`、`profile`（預設的 property mappings） |
+| Subject mode | 用預設（Based on the User's hashed ID）。**上線後不要改**：sub 一變，所有已綁定的員工都會被擋（`profile_bound`），要 hr 逐一解除綁定 |
+| PKCE | 後端一律送 `code_challenge_method=S256`，Authentik 會自動驗，不用另外設 |
+| Application 的登入流程 | 只綁 Mailcow Source（見 spec §5 H1 基礎設施） |
+
+其他要確認的事：
+
+- `OIDC_ISSUER` 必須跟 `https://<authentik>/application/o/<slug>/.well-known/openid-configuration` 裡的 `issuer` **完全相同，包含結尾的斜線**。不同的話 discovery 會失敗，`start` 會 302 回 App 並帶 `error=server_error`，log 有 `OIDC discovery failed`。
+- id_token 裡必須有 `email` 與 **布林值** `email_verified: true`（字串 `"true"` 不算）。沒有的話 App 收到 `error=email_unverified`；需要的話在 Authentik 為 email scope 加自訂 property mapping。
+- 後端容器要能用 HTTPS 連到 Authentik（discovery、JWKS、token endpoint；每個請求逾時 10 秒）。discovery 結果會快取；失敗後 30 秒內直接回錯，之後自動重試。沒設 `OIDC_ISSUER` 時 SSO 關閉（`/api/auth/oidc/*` 回 404），後端照常啟動。`OIDC_ISSUER` 有設但其他必要變數缺少或格式不對時，`start` 回 503，log 只寫缺少的變數名稱。
+- **Redis 是 SSO 的必要條件**：state（10 分鐘）與 ticket（60 秒）存在 Redis。Redis 出錯時登入一律失敗（`server_error`／exchange 回 503），不會放行。
+- `APP_MOBILE_CALLBACK_URL` 不設時預設 `oidea://auth`，必須跟 App 的 AndroidManifest／Info.plist 註冊的 scheme 一致。
+- 速率限制：三個端點各自每 IP 每分鐘 60 次。沒設 `TRUST_PROXY` 時全公司共用代理的 IP，等於全公司每分鐘 60 次登入，所以上線前要照下面的步驟設好 `TRUST_PROXY`。
+- **CORS**：`start` 與 `callback` 是整頁導向，不受 CORS 限制；`exchange` 是 Flutter Web 用 XHR 打的，所以 **Flutter Web 的網域必須在 `CORS_ORIGIN` 裡**。Authentik 的網域不用加進 `CORS_ORIGIN`。行動版不受 CORS 限制。
+- callback 的回應帶 `Referrer-Policy: no-referrer` 與 `Cache-Control: no-store`；Web 的 ticket 放在 URL fragment，不會進 nginx access log 或 Referer。
+- 登出：Web 登出時 App 會導到 `endSessionUrl`（Authentik 的 end-session），否則下次會不經詢問自動登入。Mailcow 本身的 session 不在本系統控制範圍。
+
+**員工對應**（第一次 SSO 登入時）：只有員工主檔（`employee_profiles`，公司工作空間）裡的人能登入，email 不分大小寫。已有同 email 的帳密帳號時會綁定它，並清掉密碼、撤銷它的 refresh token 與它建立的 bot、刪除它其他的登入方式。每次登入成功都確保他是公司工作空間成員（新加入為 member，已有角色不動）。
+
+App 收到的錯誤碼：
+
+| code | 意思 |
+|---|---|
+| `not_employee` | 不在員工主檔（或還沒執行 `company:init`） |
+| `terminated` | 員工狀態是離職 |
+| `disabled` | 帳號已停用或已刪除 |
+| `profile_bound` | 這筆員工資料已綁定別的帳號（例如 Authentik 重建帳號導致 sub 改變）；hr 解除綁定後再登入 |
+| `email_unverified` | id_token 沒有 `email_verified: true` |
+| `invalid_state` | state 不存在、已用過或被竄改 |
+| `expired` | 超過 10 分鐘才回來（state），或 ticket 超過 60 秒 |
+| `server_error` | 其他錯誤（IdP、Redis、id_token 驗證失敗）；細節看後端 log（log 不含 code、token、ticket、client secret） |
+| `invalid_ticket` | 只出現在 exchange：ticket 不存在、已用過，或 `app_verifier` 不符 |
+
+audit：被拒寫 `auth.sso_denied`（metadata.reason），綁定寫 `employee.sso_bind`，待移交的 owner 第一次登入寫 `owner.transfer`，換到 token 寫 `auth.login`（metadata.method=`sso`）。
 
 **第一次上線：指定公司工作空間**（在後端容器的 Terminal 執行；映像裡已經 build 好）：
 

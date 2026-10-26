@@ -22,6 +22,7 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
     idp.signWith = 'rs256';
     idp.failDiscovery = false;
     idp.denyAuthorize = false;
+    idp.advertisedAlgs = ['RS256'];
     h = new SsoHarness(idp);
     h.seedCompany();
     h.prisma.addProfile({ workspaceId: COMPANY_WS, email: 'alice@corp.com', employeeNo: 'E001', fullName: '王小美' });
@@ -125,6 +126,13 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
       const body = await (await h.get('/auth/config')).json();
       expect(body).toEqual({ sso: true, passwordLogin: true, endSessionUrl: idp.endSessionEndpoint });
     });
+
+    it('IdP 掛掉時 GET /auth/config 照常回應，endSessionUrl=null', async () => {
+      idp.failDiscovery = true;
+      const res = await h.get('/auth/config');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ sso: true, passwordLogin: true, endSessionUrl: null });
+    });
   });
 
   describe('id_token 與 state 的驗證（每一條都要被拒）', () => {
@@ -181,6 +189,12 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
     });
 
     it('HS256 簽的 id_token（用 client secret 簽）→ server_error', async () => {
+      idp.signWith = 'hs256';
+      await expectRejected('server_error', 'unexpected JWT "alg" header parameter');
+    });
+
+    it('IdP 的 discovery 也宣告 HS256（Authentik 沒選簽章金鑰）時，HS256 仍被拒', async () => {
+      idp.advertisedAlgs = ['HS256', 'RS256'];
       idp.signWith = 'hs256';
       await expectRejected('server_error', 'unexpected JWT "alg" header parameter');
     });
@@ -288,6 +302,8 @@ describe('SSO（OIDC）登入流程 — 端到端', () => {
 
     it('同一個 ticket 同時送兩次 exchange → 只有一次成功', async () => {
       const { ticket, verifier } = await getTicket();
+      // 讓兩個請求在 Redis 那一步交錯（真的 Redis 有網路延遲）
+      h.redis.latencyMs = 30;
       const results = await Promise.all([h.exchange(ticket, verifier), h.exchange(ticket, verifier)]);
       expect(results.map((r) => r.status).sort()).toEqual([201, 401]);
       expect(h.prisma.refreshRows).toHaveLength(1);

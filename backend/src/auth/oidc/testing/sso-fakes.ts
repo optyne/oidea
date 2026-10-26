@@ -406,10 +406,33 @@ export class FakeSsoRedis {
   mode: 'ok' | 'throw' = 'ok';
   /** 只讓某些指令失敗（例如只有 set 掛掉）；空的話看 mode。 */
   failOnly = new Set<string>();
+  /**
+   * 每個指令延遲多久才執行（毫秒）。> 0 時，同時進來的兩個請求會在 Redis 這一步交錯，
+   * 用來證明「先 get 再 del」會讓兩個都拿到值，而 GETDEL 不會。
+   */
+  latencyMs = 0;
 
   private gate<T>(op: string, fn: () => T): Promise<T> {
-    if (this.mode === 'throw' || this.failOnly.has(op)) return Promise.reject(new Error('ECONNREFUSED'));
-    return Promise.resolve(fn());
+    const run = () => {
+      if (this.mode === 'throw' || this.failOnly.has(op)) throw new Error('ECONNREFUSED');
+      return fn();
+    };
+    if (this.latencyMs <= 0) {
+      try {
+        return Promise.resolve(run());
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+    return new Promise<T>((resolve, reject) =>
+      setTimeout(() => {
+        try {
+          resolve(run());
+        } catch (err) {
+          reject(err);
+        }
+      }, this.latencyMs),
+    );
   }
 
   get = jest.fn((key: string) => this.gate('get', () => this.store.get(key) ?? null));

@@ -177,15 +177,28 @@ export class OidcClient {
     }
   }
 
-  /** IdP 的 end_session_endpoint；SSO 沒設定或 discovery 失敗時回 null（不丟錯）。 */
-  async endSessionUrl(): Promise<string | null> {
+  /**
+   * IdP 的 end_session_endpoint；SSO 沒設定、discovery 失敗或超過 `waitMs` 還沒拿到時回 null（不丟錯）。
+   * `GET /auth/config` 用：IdP 慢或掛掉時不能拖住登入頁（discovery 照樣在背景完成並快取）。
+   */
+  async endSessionUrl(waitMs = 2_000): Promise<string | null> {
     if (!this.authConfig.ssoEnabled() || oidcEnvProblems(this.env()).length > 0) return null;
+    let timer: NodeJS.Timeout | undefined;
     try {
-      const config = await this.configuration();
-      const url = config.serverMetadata().end_session_endpoint;
-      return typeof url === 'string' && url.length > 0 ? url : null;
+      const lookup = this.configuration().then((config) => {
+        const url = config.serverMetadata().end_session_endpoint;
+        return typeof url === 'string' && url.length > 0 ? url : null;
+      });
+      lookup.catch(() => undefined);
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), waitMs);
+        timer.unref?.();
+      });
+      return await Promise.race([lookup, timeout]);
     } catch {
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
