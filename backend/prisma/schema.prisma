@@ -23,9 +23,12 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
+  /// 停用（離職）時間；有值即視為停用，JwtStrategy / bot / socket 都會拒絕
+  disabledAt    DateTime?
 
   // Relations
   accounts           Account[]
+  refreshTokens      RefreshToken[]
   workspaceMembers   WorkspaceMember[]
   channelMembers     ChannelMember[]
   sentMessages       Message[]            @relation("MessageSender")
@@ -78,6 +81,26 @@ model Account {
 
   @@unique([provider, providerId])
   @@map("accounts")
+}
+
+/// 不透明 refresh token；只存 sha256，明文不落地。
+/// 同一次登入換發出來的一串 token 共用 familyId；偵測到盜用時撤銷整個 family。
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  familyId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  /// 被換發的時間，用來判斷 10 秒寬限期
+  rotatedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
 }
 
 // ============================================================

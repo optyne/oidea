@@ -4,10 +4,12 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Inject, forwardRef } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
+import { WsAuthService } from '../auth/ws-auth';
 
 @WebSocketGateway({
   cors: {
@@ -15,22 +17,26 @@ import { MessagesService } from './messages.service';
     credentials: true,
   },
 })
-export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class MessagesGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   constructor(
     @Inject(forwardRef(() => MessagesService))
     private readonly messagesService: MessagesService,
+    private readonly wsAuth: WsAuthService,
   ) {}
 
+  /** 握手時以 `handshake.auth.token`（access token）驗身分；失敗的連線不會進到 handleConnection。 */
+  afterInit(server: Server) {
+    this.wsAuth.attach(server, 'messages');
+  }
+
   async handleConnection(client: Socket) {
-    const userId = client.handshake.auth?.userId;
-    if (!userId) {
-      client.disconnect();
-      return;
+    // 防禦：理論上沒通過 middleware 的連線到不了這裡
+    if (!client.data?.userId) {
+      client.disconnect(true);
     }
-    client.data.userId = userId;
   }
 
   handleDisconnect(client: Socket) {

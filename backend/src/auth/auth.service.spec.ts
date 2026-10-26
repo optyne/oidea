@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../audit/audit.service';
+import { RefreshTokenService } from './refresh-token.service';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn(async (pw: string) => `hashed:${pw}`),
@@ -46,6 +47,11 @@ describe('AuthService — characterization (register / login)', () => {
         { provide: JwtService, useValue: jwt },
         { provide: ConfigService, useValue: { get: (_k: string, d?: unknown) => d } },
         { provide: AuditService, useValue: audit },
+        // H0：refresh token 改成不透明字串（由 RefreshTokenService 發），這裡只固定「是字串」
+        {
+          provide: RefreshTokenService,
+          useValue: { issueNewFamily: jest.fn().mockResolvedValue('opaque-refresh-token') },
+        },
       ],
     }).compile();
     service = module.get(AuthService);
@@ -89,6 +95,8 @@ describe('AuthService — characterization (register / login)', () => {
       const decoded: any = jwt.verify(res.accessToken);
       expect(decoded.sub).toBe(USER.id);
       expect(decoded.email).toBe(USER.email);
+      // H0：access token 帶 typ=access（刻意的行為變更）
+      expect(decoded.typ).toBe('access');
     });
   });
 

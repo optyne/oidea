@@ -4,9 +4,11 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { WhiteboardService } from './whiteboard.service';
+import { WsAuthService } from '../auth/ws-auth';
 
 @WebSocketGateway({
   cors: {
@@ -15,19 +17,26 @@ import { WhiteboardService } from './whiteboard.service';
   },
   namespace: '/whiteboard',
 })
-export class WhiteboardGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class WhiteboardGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  /** 有 namespace 的 gateway，注入的是 Namespace（`.use()` 只作用在 /whiteboard）。 */
   @WebSocketServer()
-  server: Server;
+  server: Namespace;
 
-  constructor(private whiteboardService: WhiteboardService) {}
+  constructor(
+    private whiteboardService: WhiteboardService,
+    private readonly wsAuth: WsAuthService,
+  ) {}
+
+  /** 握手時以 `handshake.auth.token`（access token）驗身分；失敗的連線不會進到 handleConnection。 */
+  afterInit(server: Namespace) {
+    this.wsAuth.attach(server, 'whiteboard');
+  }
 
   async handleConnection(client: Socket) {
-    const userId = client.handshake.auth?.userId;
-    if (!userId) {
-      client.disconnect();
-      return;
+    // 防禦：理論上沒通過 middleware 的連線到不了這裡
+    if (!client.data?.userId) {
+      client.disconnect(true);
     }
-    client.data.userId = userId;
   }
 
   handleDisconnect(client: Socket) {

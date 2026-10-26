@@ -22,6 +22,7 @@ describe('JwtAuthGuard — bot token path (characterization)', () => {
   };
   let prisma: any;
   let guard: JwtAuthGuard;
+  let userStatus: { isDisabled: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -30,7 +31,8 @@ describe('JwtAuthGuard — bot token path (characterization)', () => {
         update: jest.fn().mockResolvedValue({}),
       },
     };
-    guard = new JwtAuthGuard(prisma);
+    userStatus = { isDisabled: jest.fn().mockResolvedValue(false) };
+    guard = new JwtAuthGuard(prisma, userStatus as any);
   });
 
   it('有效 bot token → 通過，req.user 為 bot 身分', async () => {
@@ -61,6 +63,22 @@ describe('JwtAuthGuard — bot token path (characterization)', () => {
   it('secret 不符 → 401', async () => {
     const req: any = { headers: { authorization: 'Bearer bot_abcdef.wrong' } };
     await expect(guard.canActivate(ctxFor(req))).rejects.toThrow(UnauthorizedException);
+    expect(req.user).toBeUndefined();
+  });
+
+  // H0：bot 的建立者被停用 → bot 一起失效
+  it('建立者已停用 → 401，且以 createdById 查停用狀態', async () => {
+    userStatus.isDisabled.mockResolvedValue(true);
+    const req: any = { headers: { authorization: 'Bearer bot_abcdef.s3cret' } };
+    await expect(guard.canActivate(ctxFor(req))).rejects.toThrow(UnauthorizedException);
+    expect(userStatus.isDisabled).toHaveBeenCalledWith('creator-1');
+    expect(req.user).toBeUndefined();
+  });
+
+  it('查停用狀態出錯 → 拒絕（fail closed）', async () => {
+    userStatus.isDisabled.mockRejectedValue(new Error('db down'));
+    const req: any = { headers: { authorization: 'Bearer bot_abcdef.s3cret' } };
+    await expect(guard.canActivate(ctxFor(req))).rejects.toThrow();
     expect(req.user).toBeUndefined();
   });
 });

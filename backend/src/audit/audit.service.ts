@@ -14,7 +14,8 @@ export type AuditAction =
   | 'expense.mark_paid'
   | 'expense.cancel'
   | 'workspace.role_change'
-  | 'workspace.member_remove';
+  | 'workspace.member_remove'
+  | 'auth.refresh_reuse';
 
 export interface AuditRequestContext {
   ip?: string | string[];
