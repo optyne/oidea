@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/network/auth_session.dart';
 import '../../../core/network/socket_service.dart';
 import '../../workspace/workspace_storage.dart';
 import '../../workspace/providers/workspace_provider.dart';
@@ -51,6 +54,7 @@ final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
     ref,
     ref.watch(apiClientProvider),
     ref.watch(socketProvider),
+    ref.watch(authSessionProvider),
   );
 });
 
@@ -91,10 +95,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final Ref _ref;
   final ApiClient _api;
   final SocketService _socket;
+  final AuthSession _session;
+  StreamSubscription<void>? _expiredSub;
   static const _storage = FlutterSecureStorage();
 
-  AuthNotifier(this._ref, this._api, this._socket) : super(const AuthState()) {
+  AuthNotifier(this._ref, this._api, this._socket, this._session) : super(const AuthState()) {
+    _expiredSub = _session.onSessionExpired.listen((_) => _onSessionExpired());
     _checkAuth();
+  }
+
+  @override
+  void dispose() {
+    _expiredSub?.cancel();
+    super.dispose();
+  }
+
+  /// Refresh token was rejected: tokens are already cleared by [AuthSession];
+  /// drop local state so the router redirects to /login (once).
+  Future<void> _onSessionExpired() async {
+    if (!state.isAuthenticated) return;
+    _socket.disconnect();
+    state = const AuthState(error: '登入已過期，請重新登入');
+    _ref.read(currentWorkspaceIdProvider.notifier).state = null;
+    await WorkspaceStorage.write(null);
+    _ref.invalidate(workspacesProvider);
   }
 
   Future<void> _bootstrapWorkspace() async {
@@ -123,7 +147,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> _checkAuth() async {
-    final token = await _storage.read(key: 'access_token');
+    final token = await _session.store.readAccessToken();
     if (token != null) {
       try {
         final user = await _api.getMe();
@@ -134,10 +158,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
           displayName: user['displayName'],
           avatarUrl: user['avatarUrl'],
         );
-        _socket.connect(user['id']);
+        _socket.connect();
         await _bootstrapWorkspace();
       } catch (_) {
-        await _storage.deleteAll();
+        await _session.store.clear();
       }
     }
   }
@@ -146,8 +170,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final response = await _api.login(email, password);
-      await _storage.write(key: 'access_token', value: response['accessToken']);
-      await _storage.write(key: 'refresh_token', value: response['refreshToken']);
+      await _saveTokens(response);
 
       final userData = response['user'];
       state = state.copyWith(
@@ -157,7 +180,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         email: userData['email'],
       );
 
-      _socket.connect(userData['id']);
+      _socket.connect();
       await _loadProfile();
       await _bootstrapWorkspace();
     } catch (e) {
@@ -174,8 +197,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         'displayName': displayName,
         'password': password,
       });
-      await _storage.write(key: 'access_token', value: response['accessToken']);
-      await _storage.write(key: 'refresh_token', value: response['refreshToken']);
+      await _saveTokens(response);
 
       final userData = response['user'];
       state = state.copyWith(
@@ -186,11 +208,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
         displayName: displayName,
       );
 
-      _socket.connect(userData['id']);
+      _socket.connect();
       await _bootstrapWorkspace();
     } catch (e) {
       state = state.copyWith(isLoading: false, error: _formatAuthError(e));
     }
+  }
+
+  Future<void> _saveTokens(Map<String, dynamic> response) {
+    return _session.store.save(
+      accessToken: response['accessToken'] as String,
+      refreshToken: response['refreshToken'] as String?,
+    );
   }
 
   Future<void> _loadProfile() async {
@@ -208,6 +237,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     _socket.disconnect();
+    // Revokes the refresh token server-side (best effort) and clears it locally.
+    await _session.logout();
     await _storage.deleteAll();
     _ref.read(currentWorkspaceIdProvider.notifier).state = null;
     await WorkspaceStorage.write(null);
