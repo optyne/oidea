@@ -572,7 +572,9 @@ describe('H2 員工主檔後台（端到端）', () => {
     await h.call('PATCH', `/admin/employees/${created.body.id}`, t, { jobTitle: '新職稱' });
     await h.call('POST', `/admin/employees/${created.body.id}/terminate`, t, { terminationDate: '2026-10-31' });
     await h.call('POST', `/admin/employees/${created.body.id}/reinstate`, t);
-    h.prisma.profiles.find((p) => p.id === 'p-z')!.userId = 'u-outsider';
+    // 綁到一位不是任何工作空間 owner 的 User（owner 的解除綁定只有公司 owner 能做，review B1）
+    h.prisma.addUser({ id: 'u-z', email: 'z@corp.com' });
+    h.prisma.profiles.find((p) => p.id === 'p-z')!.userId = 'u-z';
     await h.call('POST', '/admin/employees/p-z/unbind', t);
     await h.call('POST', '/admin/employees/import', t, { csv: 'employeeNo,email,fullName,hireDate\nN2,n2@corp.com,N2,2026-01-01\n' });
     const dept = await h.call('POST', '/admin/departments', t, { name: '品管部' });

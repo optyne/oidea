@@ -15,6 +15,8 @@ import { EmployeesService, normalizeEmail, parseIsoDate } from './employees.serv
 import { CreateEmployeeDto, ImportEmployeesDto, ListEmployeesQuery, TerminateEmployeeDto, UpdateEmployeeDto } from './dto/employee-admin.dto';
 import { ORG_WALK_LIMIT } from './manager-resolver';
 import { lockOrgStructure } from './org-lock';
+import { LOCKED_TX_OPTIONS, lockEmployeeProfile, lockUser } from '../common/identity-lock';
+import { actorStanding, assessIdentity, IdentityAction, identityRefusal } from './identity-guard';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -112,6 +114,18 @@ export function toEmployeeDto(p: EmployeeRow): EmployeeDto {
   };
 }
 
+/** audit 用的欄位值：日期記 `YYYY-MM-DD`，其他照原樣（字串、null）。 */
+const auditValue = (v: unknown) => (v instanceof Date ? formatDate(v) : (v ?? null));
+
+/** `{ 欄位: { from, to } }`，只含改過的欄位。 */
+function auditChanges(fields: string[], before: EmployeeRow, after: EmployeeRow): Record<string, { from: unknown; to: unknown }> {
+  const out: Record<string, { from: unknown; to: unknown }> = {};
+  for (const f of fields) {
+    out[f] = { from: auditValue((before as any)[f]), to: auditValue((after as any)[f]) };
+  }
+  return out;
+}
+
 const err = {
   notFound: () => new NotFoundException('員工資料不存在'),
   invalidDate: (field: string) => apiError(HttpStatus.BAD_REQUEST, 'invalid_date', `${field} 必須是有效的 YYYY-MM-DD 日期`),
@@ -132,6 +146,17 @@ const err = {
       workspaces,
     }),
   invalidCsv: (message: string) => apiError(HttpStatus.BAD_REQUEST, 'invalid_csv', message),
+  cannotEditSelf: () => apiError(HttpStatus.FORBIDDEN, 'cannot_edit_self', '不能在後台修改自己的員工資料，請由其他管理者處理'),
+  ownerProtected: () =>
+    apiError(
+      HttpStatus.FORBIDDEN,
+      'owner_protected',
+      '這位員工是工作空間的 owner（或待移交的 owner），只有公司 owner 能解除綁定或修改 email',
+    ),
+  pendingOwnerEmail: () =>
+    apiError(HttpStatus.FORBIDDEN, 'owner_protected', '待移交 owner 的 email 不能在後台修改，請重新執行 company:init'),
+  adminProtected: () =>
+    apiError(HttpStatus.FORBIDDEN, 'admin_protected', 'hr 不能對公司 admin 解除綁定、修改 email 或辦理離職'),
 };
 
 function requiredText(raw: string | undefined, field: string, max: number): string {
@@ -276,8 +301,12 @@ export class EmployeeAdminService {
 
   async update(actorId: string, workspaceId: string, id: string, dto: UpdateEmployeeDto, req?: AuditRequestContext) {
     const result = await this.runProfileTx(async (tx) => {
+      // 跟 SSO 綁定、離職、解除綁定排隊：改 email 時看到的綁定狀態不會在 commit 前被改掉（review S3）
+      await lockEmployeeProfile(tx, id);
       const current = await this.findRow(tx, workspaceId, id);
       if (!current) throw err.notFound();
+      // 自己的 HR 資料（到職日、主管、狀態會影響請假與簽核）要由別人改（review S7）
+      if (current.userId && current.userId === actorId) throw err.cannotEditSelf();
 
       const data: Prisma.EmployeeProfileUncheckedUpdateInput = {};
       const changed: string[] = [];
@@ -300,6 +329,8 @@ export class EmployeeAdminService {
       if (dto.email !== undefined) {
         const email = validEmail(dto.email);
         if (email !== current.email) {
+          // owner／待移交 owner／（hr 對）admin 的 email 是身分對應，先擋（review B1）
+          await this.assertIdentityChangeAllowed(tx, workspaceId, actorId, current, 'email');
           // 綁定是用 email 對應的；改 email 會改變 SSO 對應，必須先解除綁定
           if (current.userId) throw err.emailLocked();
           const other = await this.byEmail(tx, workspaceId, email);
@@ -355,9 +386,11 @@ export class EmployeeAdminService {
         action: 'employee.update',
         targetType: 'employee_profile',
         targetId: id,
-        // 只記改了哪些欄位，不記值（個資）；狀態與部門是結構性資料，記前後
+        // 每個改過的欄位記前後值（review S7：事後要能還原誰把什麼改成什麼）；只有 profile 自己的欄位。
+        // statusFrom/To、departmentFrom/To 是 H2 初版就有的鍵，留著相容
         metadata: {
           fields: result.changed,
+          changes: auditChanges(result.changed, result.before, result.row),
           ...(result.changed.includes('employmentStatus')
             ? { statusFrom: result.before.employmentStatus, statusTo: result.row.employmentStatus }
             : {}),
@@ -378,12 +411,16 @@ export class EmployeeAdminService {
     const now = this.clock.now();
 
     const outcome = await this.prisma.$transaction(async (tx) => {
+      // 跟同一個人的 SSO 綁定、移交 owner、建立工作空間、接受邀請排隊（review S3）。順序：profile → user
+      await lockEmployeeProfile(tx, id);
       const profile = await this.findRow(tx, workspaceId, id);
       if (!profile) throw err.notFound();
+      if (profile.userId) await lockUser(tx, profile.userId);
       // ── 先擋（任何寫入之前） ──
       if (profile.userId && profile.userId === actorId) throw err.cannotTerminateSelf();
       if (profile.employmentStatus === 'terminated') throw err.alreadyTerminated();
       if (terminationDate.getTime() < profile.hireDate.getTime()) throw err.invalidDate('terminationDate（不能早於到職日）');
+      await this.assertIdentityChangeAllowed(tx, workspaceId, actorId, profile, 'terminate');
       const owned = profile.userId ? await this.ownedWorkspaces(tx, profile.userId) : [];
       // 待移交的 owner（company:init 時他還沒綁 SSO，記在 pendingOwnerEmail）：跟現任 owner 一樣要先改指定別人。
       // 否則他離職後再也不能 SSO 登入，移交永遠不會發生，公司就一直由 company:init 的執行者當 owner。
@@ -396,7 +433,14 @@ export class EmployeeAdminService {
         where: { id },
         data: { employmentStatus: 'terminated', terminationDate },
       });
-      const stats = { revokedRefreshTokens: 0, revokedBots: 0, removedMemberships: 0 };
+      const stats = {
+        revokedRefreshTokens: 0,
+        revokedBots: 0,
+        removedMemberships: 0,
+        removedChannelMemberships: 0,
+        canceledScheduledMessages: 0,
+        disabledAutomationRules: 0,
+      };
       if (profile.userId) {
         const userId = profile.userId;
         await tx.user.update({
@@ -408,9 +452,10 @@ export class EmployeeAdminService {
           await tx.botAccount.updateMany({ where: { createdById: userId, revokedAt: null }, data: { revokedAt: now } })
         ).count;
         stats.removedMemberships = (await tx.workspaceMember.deleteMany({ where: { userId } })).count;
+        Object.assign(stats, await this.removeActingAs(tx, userId));
       }
       return { profile, stats };
-    });
+    }, LOCKED_TX_OPTIONS);
 
     const userId = outcome.profile.userId;
     let disconnectedSockets = 0;
@@ -428,6 +473,8 @@ export class EmployeeAdminService {
         this.logger.error(`terminate: could not mark user ${userId} disabled in cache; DB is disabled, cache may lag ≤30s`);
       }
       disconnectedSockets = this.sockets.disconnectUser(userId);
+      // commit 之後再清一次（review S3）：沒拿 user 鎖的寫入路徑若在交易途中加了成員資格，這裡收掉
+      Object.assign(outcome.stats, await this.sweepAfterTermination(userId, outcome.stats));
     }
 
     await this.audit.record({
@@ -450,15 +497,17 @@ export class EmployeeAdminService {
 
   async reinstate(actorId: string, workspaceId: string, id: string, req?: AuditRequestContext) {
     const profile = await this.prisma.$transaction(async (tx) => {
+      await lockEmployeeProfile(tx, id);
       const current = await this.findRow(tx, workspaceId, id);
       if (!current) throw err.notFound();
+      if (current.userId) await lockUser(tx, current.userId);
       if (current.employmentStatus !== 'terminated') throw err.notTerminated();
       await tx.employeeProfile.update({ where: { id }, data: { employmentStatus: 'active', terminationDate: null } });
       if (current.userId) {
         await tx.user.update({ where: { id: current.userId }, data: { disabledAt: null } });
       }
       return current;
-    });
+    }, LOCKED_TX_OPTIONS);
     // 重讀 DB 並覆寫快取：快取裡的「停用」立刻換掉（不會等 30 秒）
     if (profile.userId) await this.userStatus.refresh(profile.userId);
 
@@ -482,14 +531,23 @@ export class EmployeeAdminService {
    * 解除綁定（spec §4.3「員工對應」第 2 點：Authentik 重建帳號導致 sub 改變）：profile.userId → null、
    * 刪除舊 User 的 authentik Account，並結束舊帳號的所有 session（tokenVersion + 1、撤銷 refresh token、
    * 斷開 socket），也撤銷他建立的 bot。之後用新的 sub 登入時會依 email 重新綁定。
+   *
+   * 先擋（review B1、S1、S7）：自己 → `cannot_edit_self`；離職中 → `already_terminated`（先復職，否則
+   * 復職清不到那個 User 的 disabledAt）；owner／待移交 owner 只有公司 owner 能做 → `owner_protected`；
+   * hr 對公司 admin → `admin_protected`。
    */
   async unbind(actorId: string, workspaceId: string, id: string, req?: AuditRequestContext) {
     const now = this.clock.now();
     const outcome = await this.prisma.$transaction(async (tx) => {
+      await lockEmployeeProfile(tx, id);
       const current = await this.findRow(tx, workspaceId, id);
       if (!current) throw err.notFound();
       if (!current.userId) throw err.notBound();
       const userId = current.userId;
+      await lockUser(tx, userId);
+      if (userId === actorId) throw err.cannotEditSelf();
+      if (current.employmentStatus === 'terminated') throw err.alreadyTerminated('已離職的員工不能解除綁定，請先復職');
+      await this.assertIdentityChangeAllowed(tx, workspaceId, actorId, current, 'unbind');
       const cleared = await tx.employeeProfile.updateMany({ where: { id, userId }, data: { userId: null } });
       if (cleared.count !== 1) throw err.notBound();
       const accounts = await tx.account.deleteMany({ where: { userId, provider: SSO_PROVIDER } });
@@ -499,7 +557,7 @@ export class EmployeeAdminService {
         await tx.botAccount.updateMany({ where: { createdById: userId, revokedAt: null }, data: { revokedAt: now } })
       ).count;
       return { current, userId, deletedAccounts: accounts.count, revokedRefreshTokens, revokedBots };
-    });
+    }, LOCKED_TX_OPTIONS);
 
     await this.refreshTokens.revokeAllForUser(outcome.userId);
     await this.prisma.botAccount.updateMany({
@@ -528,6 +586,79 @@ export class EmployeeAdminService {
     return this.get(workspaceId, id);
   }
 
+  /**
+   * 離職時把「之後會以他的身分動作」的東西收掉（review S2）：頻道成員資格（跟工作空間成員資格是分開存的，
+   * 排程訊息與自動化只檢查頻道成員）、還沒送出的排程訊息（→ canceled）、他建立的自動化規則（→ 停用；
+   * 復職後要他自己重新開）。提醒只通知他本人，不代他對外發言，不動。
+   */
+  private async removeActingAs(tx: Prisma.TransactionClient, userId: string) {
+    const removedChannelMemberships = (await tx.channelMember.deleteMany({ where: { userId } })).count;
+    const canceledScheduledMessages = (
+      await tx.scheduledMessage.updateMany({
+        where: { createdBy: userId, status: 'pending', deletedAt: null },
+        data: { status: 'canceled', failedReason: 'author_terminated' },
+      })
+    ).count;
+    const disabledAutomationRules = (
+      await tx.automationRule.updateMany({
+        where: { createdBy: userId, enabled: true, deletedAt: null },
+        data: { enabled: false },
+      })
+    ).count;
+    return { removedChannelMemberships, canceledScheduledMessages, disabledAutomationRules };
+  }
+
+  /**
+   * commit 之後在 user 鎖底下再清一次（只在他仍是停用狀態時；途中被復職就不動）。回傳累加後的數量。
+   */
+  private async sweepAfterTermination(
+    userId: string,
+    stats: { removedMemberships: number; removedChannelMemberships: number; canceledScheduledMessages: number; disabledAutomationRules: number },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockUser(tx, userId);
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { disabledAt: true } });
+      if (!user?.disabledAt) return {};
+      const removed = (await tx.workspaceMember.deleteMany({ where: { userId } })).count;
+      const acting = await this.removeActingAs(tx, userId);
+      const owned = await this.ownedWorkspaces(tx, userId);
+      if (owned.length > 0) {
+        // 有鎖的路徑不會走到這裡；走到就是有新的寫入路徑沒拿 user 鎖
+        this.logger.error(`terminate: user ${userId} still owns ${owned.map((w) => w.id).join(',')} after offboarding`);
+      }
+      return {
+        removedMemberships: stats.removedMemberships + removed,
+        removedChannelMemberships: stats.removedChannelMemberships + acting.removedChannelMemberships,
+        canceledScheduledMessages: stats.canceledScheduledMessages + acting.canceledScheduledMessages,
+        disabledAutomationRules: stats.disabledAutomationRules + acting.disabledAutomationRules,
+      };
+    }, LOCKED_TX_OPTIONS);
+  }
+
+  /** B1：owner／待移交 owner／admin 的身分對應保護（規則在 identity-guard.ts）。 */
+  private async assertIdentityChangeAllowed(
+    tx: Db,
+    workspaceId: string,
+    actorId: string,
+    profile: { userId: string | null; email: string },
+    action: IdentityAction,
+  ) {
+    const [actor, risk] = await Promise.all([
+      actorStanding(tx, workspaceId, actorId),
+      assessIdentity(tx, workspaceId, profile),
+    ]);
+    switch (identityRefusal(action, actor, risk)) {
+      case 'pending_owner_email':
+        throw err.pendingOwnerEmail();
+      case 'owner_protected':
+        throw err.ownerProtected();
+      case 'admin_protected':
+        throw err.adminProtected();
+      default:
+        return;
+    }
+  }
+
   // ─────────────── CSV 匯入 ───────────────
 
   async importCsv(actorId: string, workspaceId: string, dto: ImportEmployeesDto, req?: AuditRequestContext) {
@@ -545,6 +676,14 @@ export class EmployeeAdminService {
 
     const result = await this.employees.importRows(parsed.rows, {
       actorId,
+      // 匯入改 email 跟 PATCH 走同一套身分保護（review B1）
+      guardEmailChange: async (db, profile) => {
+        const [actor, risk] = await Promise.all([
+          actorStanding(db, workspaceId, actorId),
+          assessIdentity(db, workspaceId, profile),
+        ]);
+        return identityRefusal('email', actor, risk);
+      },
       workspaceId,
       req,
       dryRun: dto.dryRun === true,
@@ -588,7 +727,7 @@ export class EmployeeAdminService {
       return await this.prisma.$transaction(async (tx) => {
         await lockOrgStructure(tx);
         return fn(tx);
-      });
+      }, LOCKED_TX_OPTIONS);
     } catch (e) {
       if (isUniqueViolation(e)) throw uniqueTargetMentions(e, 'email') ? err.emailTaken() : err.employeeNoTaken();
       if (isForeignKeyViolation(e)) throw err.departmentNotFound();

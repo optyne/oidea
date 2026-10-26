@@ -7,6 +7,7 @@ import { apiError, isForeignKeyViolation, isUniqueViolation } from '../common/ap
 import { CreateDepartmentDto, DEPARTMENT_NAME_MAX, UpdateDepartmentDto } from './dto/department.dto';
 import { ORG_WALK_LIMIT } from './manager-resolver';
 import { lockOrgStructure } from './org-lock';
+import { LOCKED_TX_OPTIONS } from '../common/identity-lock';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -206,17 +207,24 @@ export class DepartmentsService {
 
   /** 封存／取消封存。已經是那個狀態 → 不寫入也不寫 audit，直接回現況。 */
   async setArchived(actorId: string, workspaceId: string, id: string, archived: boolean, req?: AuditRequestContext) {
-    const current = await this.findInCompany(this.prisma, workspaceId, id);
-    if (!current) throw departmentNotFound();
-    if (!!current.archivedAt === archived) {
-      const row = await this.prisma.department.findUnique({ where: { id }, select: DEPARTMENT_SELECT });
-      return toDepartmentDto(row as DepartmentRow);
-    }
-    const row = await this.prisma.department.update({
-      where: { id },
-      data: { archivedAt: archived ? this.clock.now() : null },
-      select: DEPARTMENT_SELECT,
+    // 在組織結構鎖底下（H2 review N1）：同時「在這個部門底下建子部門／把員工指派過來」的交易，
+    // 要嘛先 commit（封存照做，跟封存時已有成員一樣），要嘛排在後面、看到已封存而被擋
+    const result = await this.runOrgTx(async (tx) => {
+      const current = await this.findInCompany(tx, workspaceId, id);
+      if (!current) throw departmentNotFound();
+      if (!!current.archivedAt === archived) {
+        const row = await tx.department.findUnique({ where: { id }, select: DEPARTMENT_SELECT });
+        return { current, row, changed: false };
+      }
+      const row = await tx.department.update({
+        where: { id },
+        data: { archivedAt: archived ? this.clock.now() : null },
+        select: DEPARTMENT_SELECT,
+      });
+      return { current, row, changed: true };
     });
+    const { current, row } = result;
+    if (!result.changed) return toDepartmentDto(row as DepartmentRow);
     await this.audit.record({
       actorId,
       workspaceId,
@@ -267,7 +275,7 @@ export class DepartmentsService {
       return await this.prisma.$transaction(async (tx) => {
         await lockOrgStructure(tx);
         return fn(tx);
-      });
+      }, LOCKED_TX_OPTIONS);
     } catch (err) {
       if (isUniqueViolation(err)) throw nameTaken();
       if (isForeignKeyViolation(err)) throw onForeignKey();

@@ -11,6 +11,7 @@ import { FakeIdp } from '../../auth/oidc/testing/fake-idp';
 import { WsAuthService } from '../../auth/ws-auth';
 import { MessagesGateway } from '../../messages/messages.gateway';
 import { MessagesService } from '../../messages/messages.service';
+import { WorkspacesService } from '../../workspaces/workspaces.service';
 import { BotSelfController, WorkspaceBotsController } from '../../bots/bots.controller';
 import { BotsService } from '../../bots/bots.service';
 import { BotAuthGuard } from '../../bots/bot-auth.guard';
@@ -63,6 +64,8 @@ export class AdminHarness extends SsoHarness {
       BotAuthGuard,
       MessagesGateway,
       WsAuthService,
+      // 離職跟移交 owner 的併發測試直接呼叫（H2 review S3）
+      WorkspacesService,
       { provide: MessagesService, useValue: {} },
     ];
   }

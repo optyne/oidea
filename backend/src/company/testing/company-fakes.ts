@@ -189,6 +189,10 @@ export class FakeCompanyPrisma {
 
   private readonly emailRaw = fakeEmailQueryRaw(() => this.users);
 
+  /** H2 後台匯入每一列一個交易＋組織結構鎖（review N2）；這個 fake 不模擬併發與 rollback，直接執行。 */
+  $transaction = jest.fn(async (fn: (tx: any) => Promise<unknown>, _options?: unknown) => fn(this));
+  $executeRaw = jest.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => 1);
+
   /**
    * 兩種 `$queryRaw`：email-lookup.ts 的 `lower("email") = lower($1)`，以及 employees.service 找根部門的
    * `lower("name") = lower($1)`（review N-a）。都是「整串小寫後相等」，不把 `_`、`%` 當萬用字元。其他 SQL 丟錯。

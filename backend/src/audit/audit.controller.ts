@@ -35,7 +35,10 @@ export function decodeAuditCursor(raw: string): { createdAt: Date; id: string } 
 function parseInstant(raw: string | undefined, field: string): Date | undefined {
   if (raw === undefined || raw === '') return undefined;
   const d = new Date(raw);
-  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(raw) || Number.isNaN(d.getTime())) {
+  // 有時間部分就一定要帶時區（Z 或 ±HH:MM）：沒帶的話 JS 會用伺服器的本地時間解讀（H2 review N3）。
+  // 只有日期（YYYY-MM-DD）時 JS 照 UTC 解讀，維持原樣
+  const zoned = /^\d{4}-\d{2}-\d{2}$/.test(raw) || /(Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(raw) || !zoned || Number.isNaN(d.getTime())) {
     throw apiError(HttpStatus.BAD_REQUEST, 'invalid_date', `${field} 必須是 ISO 8601 時間`);
   }
   return d;

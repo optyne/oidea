@@ -1,8 +1,23 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { isEmail } from 'class-validator';
 import { PrismaService } from '../common/prisma.service';
 import { AuditRequestContext, AuditService } from '../audit/audit.service';
 import { CompanyService } from '../company/company.service';
+import { LOCKED_TX_OPTIONS, lockEmployeeProfile } from '../common/identity-lock';
+import { lockOrgStructure } from './org-lock';
+import type { IdentityRefusal } from './identity-guard';
+
+type Db = Prisma.TransactionClient | PrismaService;
+
+/** 匯入改 email 前的身分保護（H2 後台傳入；CLI 不傳，CLI 的操作者跟 company:init 一樣是可信的）。 */
+export type EmailChangeGuard = (db: Db, profile: { userId: string | null; email: string }) => Promise<IdentityRefusal | null>;
+
+const EMAIL_GUARD_MESSAGES: Record<IdentityRefusal, string> = {
+  pending_owner_email: '待移交 owner 的 email 不能用匯入修改，請重新執行 company:init',
+  owner_protected: '這位員工是工作空間的 owner（或待移交的 owner），只有公司 owner 能修改 email',
+  admin_protected: 'hr 不能修改公司 admin 的 email',
+};
 
 /** 一筆要匯入的員工（CSV 一行或 H2 後台送來的一筆）。字串都還沒正規化。 */
 export interface EmployeeImportRow {
@@ -147,6 +162,8 @@ export class EmployeesService {
       dryRun?: boolean;
       /** 併進 audit metadata 的額外數量（例如後台的 CSV 格式錯誤列數）；不可放個資 */
       auditExtra?: Record<string, number | string>;
+      /** 既有員工要改 email 時先問這個（H2 後台：owner／待移交 owner／admin 的保護，review B1） */
+      guardEmailChange?: EmailChangeGuard;
     } = {},
   ): Promise<EmployeeImportResult> {
     const workspaceId = await this.resolveCompanyWorkspaceId(opts.workspaceId);
@@ -186,7 +203,15 @@ export class EmployeesService {
         continue;
       }
       try {
-        const { status, profileId } = await this.upsertNormalized(workspaceId, value, departmentCache, dryRun);
+        // 每一列一個交易＋組織結構鎖（review N2）：同時有人刪部門時，不會在檢查與寫入之間被 SetNull 清掉。
+        // 不包成整批一個交易：Postgres 交易裡一個語句失敗，整個交易就不能再用（這裡要逐列回報錯誤）。
+        // 部門快取在這一列成功之後才併回去（這一列 rollback 時，它建的部門也不存在了）。
+        const rowCache = new Map(departmentCache);
+        const { status, profileId } = await this.prisma.$transaction(async (tx) => {
+          await lockOrgStructure(tx);
+          return this.upsertNormalized(workspaceId, value, rowCache, dryRun, tx, opts.guardEmailChange ?? null, true);
+        }, LOCKED_TX_OPTIONS);
+        for (const [k, v] of rowCache) departmentCache.set(k, v);
         seenEmails.set(value.email, value.employeeNo);
         results.push({ line: row.line, employeeNo: value.employeeNo, status, profileId });
       } catch (err) {
@@ -235,8 +260,12 @@ export class EmployeesService {
     value: NormalizedEmployee,
     departmentCache: Map<string, string>,
     dryRun = false,
+    db: Db = this.prisma,
+    guardEmailChange: EmailChangeGuard | null = null,
+    /** db 是交易（拿得到 advisory lock）；company:init 的 upsertOne 不在交易裡 */
+    inTx = false,
   ): Promise<{ status: 'created' | 'updated' | 'unchanged'; profileId: string }> {
-    const byEmail = await this.prisma.employeeProfile.findUnique({
+    const byEmail = await db.employeeProfile.findUnique({
       where: { workspaceId_email: { workspaceId, email: value.email } },
       select: { id: true, employeeNo: true },
     });
@@ -244,10 +273,21 @@ export class EmployeesService {
       throw new EmployeeRowError(`此 email 已屬於另一位員工（員工編號 ${byEmail.employeeNo}）`);
     }
 
-    const existing = await this.prisma.employeeProfile.findUnique({
-      where: { workspaceId_employeeNo: { workspaceId, employeeNo: value.employeeNo } },
-      select: { id: true, email: true, userId: true, fullName: true, hireDate: true, jobTitle: true, departmentId: true },
-    });
+    const findExisting = () =>
+      db.employeeProfile.findUnique({
+        where: { workspaceId_employeeNo: { workspaceId, employeeNo: value.employeeNo } },
+        select: { id: true, email: true, userId: true, fullName: true, hireDate: true, jobTitle: true, departmentId: true },
+      });
+    let existing = await findExisting();
+    if (existing && inTx) {
+      // 跟 SSO 綁定、解除綁定排隊（review S3），拿到鎖之後重讀綁定狀態
+      await lockEmployeeProfile(db, existing.id);
+      existing = await findExisting();
+    }
+    if (existing && existing.email !== value.email && guardEmailChange) {
+      const refusal = await guardEmailChange(db, { userId: existing.userId, email: existing.email });
+      if (refusal) throw new EmployeeRowError(EMAIL_GUARD_MESSAGES[refusal]);
+    }
     if (existing && existing.userId && existing.email !== value.email) {
       // 綁定是用 email 對應的；改 email 會讓這位員工的 SSO 對應改變，要在後台確認後處理
       throw new EmployeeRowError('已綁定帳號的員工不能用匯入改 email，請在後台（H2）處理');
@@ -258,7 +298,7 @@ export class EmployeesService {
       value.departmentName === undefined
         ? undefined
         : value.departmentName
-          ? await this.findOrCreateRootDepartment(workspaceId, value.departmentName, departmentCache, dryRun)
+          ? await this.findOrCreateRootDepartment(workspaceId, value.departmentName, departmentCache, dryRun, db)
           : null;
 
     const data = {
@@ -278,7 +318,7 @@ export class EmployeesService {
         (data.departmentId === undefined || existing.departmentId === data.departmentId);
       if (same) return { status: 'unchanged', profileId: existing.id };
       if (dryRun) return { status: 'updated', profileId: existing.id };
-      const row = await this.prisma.employeeProfile.update({
+      const row = await db.employeeProfile.update({
         where: { id: existing.id },
         data,
         select: { id: true },
@@ -286,7 +326,7 @@ export class EmployeesService {
       return { status: 'updated', profileId: row.id };
     }
     if (dryRun) return { status: 'created', profileId: '' };
-    const row = await this.prisma.employeeProfile.create({
+    const row = await db.employeeProfile.create({
       data: { workspaceId, employeeNo: value.employeeNo, jobTitle: '', departmentId: null, ...data },
       select: { id: true },
     });
@@ -299,6 +339,7 @@ export class EmployeesService {
     name: string,
     cache: Map<string, string>,
     dryRun = false,
+    db: Db = this.prisma,
   ): Promise<string> {
     const key = name.toLowerCase();
     const cached = cache.get(key);
@@ -308,7 +349,7 @@ export class EmployeesService {
     // （CSV 的部門 `A_B` 會掛到既有的 `AxB`，review N-a）。改用參數化的 `lower("name") = lower($1)`，
     // 跟 migration 的 partial unique index `departments_root_name_key` 用同一個運算式。
     const find = async () => {
-      const rows = await this.prisma.$queryRaw<{ id: string; archivedAt: Date | null }[]>`SELECT "id", "archivedAt" FROM "departments" WHERE "workspaceId" = ${workspaceId} AND "parentId" IS NULL AND lower("name") = lower(${name}) LIMIT 1`;
+      const rows = await db.$queryRaw<{ id: string; archivedAt: Date | null }[]>`SELECT "id", "archivedAt" FROM "departments" WHERE "workspaceId" = ${workspaceId} AND "parentId" IS NULL AND lower("name") = lower(${name}) LIMIT 1`;
       return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
     };
 
@@ -321,7 +362,7 @@ export class EmployeesService {
     }
     if (!dept) {
       try {
-        dept = await this.prisma.department.create({
+        dept = await db.department.create({
           data: { workspaceId, name, parentId: null },
           select: { id: true, archivedAt: true },
         });
