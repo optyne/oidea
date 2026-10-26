@@ -22,6 +22,7 @@ export type AuditAction =
   | 'auth.break_glass_password_set'
   | 'auth.sso_denied'
   | 'employee.import'
+  | 'employee.sso_bind'
   | 'company.init';
 
 export interface AuditRequestContext {

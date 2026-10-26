@@ -22,6 +22,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let message: string | string[] = '伺服器內部錯誤';
     let errorCode: string | undefined;
+    // 機器可讀的錯誤碼（例如 SSO exchange 的 `invalid_ticket`），有給才放進 body
+    let code: string | undefined;
     if (isHttp) {
       const res = (exception as HttpException).getResponse();
       if (typeof res === 'string') {
@@ -30,14 +32,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const obj = res as Record<string, any>;
         message = obj.message ?? message;
         errorCode = obj.error;
+        if (typeof obj.code === 'string') code = obj.code;
       }
     } else if (exception instanceof Error) {
       message = exception.message;
     }
 
     if (status >= 500) {
+      // log 不含 query string（例如 OIDC callback 的 code、state）
+      const pathOnly = (request.originalUrl ?? request.url ?? '').split('?')[0];
       this.logger.error(
-        `${request.method} ${request.url} - ${JSON.stringify(message)}`,
+        `${request.method} ${pathOnly} - ${JSON.stringify(message)}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     }
@@ -45,6 +50,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       error: errorCode,
+      ...(code ? { code } : {}),
       message,
       path: request.url,
       timestamp: new Date().toISOString(),

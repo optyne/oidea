@@ -29,10 +29,20 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * 不分大小寫找 email（spec §4.3：以前用帳密註冊的 `Foo@` 要能對到 `foo@`）。
+   * 有完全相同的優先；只差大小寫的有兩筆以上時無法判斷是誰 → null（登入當成找不到）。
+   */
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email, deletedAt: null },
+    const needle = typeof email === 'string' ? email.trim() : '';
+    if (!needle) return null;
+    const candidates = await this.prisma.user.findMany({
+      where: { email: { equals: needle, mode: 'insensitive' }, deletedAt: null },
+      take: 5,
     });
+    const exact = candidates.find((u) => u.email === needle);
+    if (exact) return exact;
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   async findByUsername(username: string) {
