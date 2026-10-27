@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -46,6 +48,49 @@ export class FilesService {
     this.logger.log(`MinIO 連線成功，bucket=${this.bucket}`);
   }
 
+  /** 呼叫者必須是該工作空間成員，否則 403；沒帶 workspaceId 回 400。 */
+  private async assertMember(userId: string, workspaceId: string) {
+    if (!workspaceId) throw new BadRequestException('缺少 workspaceId');
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      select: { role: true },
+    });
+    if (!member) throw new ForbiddenException('非此工作空間成員');
+  }
+
+  /** 取檔案並確認呼叫者是檔案所屬工作空間的成員。 */
+  private async getFileForMember(userId: string, id: string) {
+    const file = await this.prisma.file.findUnique({ where: { id } });
+    if (!file) throw new NotFoundException('檔案不存在');
+    await this.assertMember(userId, file.workspaceId);
+    return file;
+  }
+
+  /**
+   * 上傳時指定的 task／message 必須屬於同一個工作空間（task 經 project、message 經 channel），
+   * 否則 403；不存在也回 403（不透露別的工作空間有什麼）。
+   */
+  private async assertAttachTargetsInWorkspace(workspaceId: string, messageId?: string, taskId?: string) {
+    if (taskId) {
+      const task = await this.prisma.task.findUnique({
+        where: { id: taskId },
+        select: { project: { select: { workspaceId: true } } },
+      });
+      if (task?.project?.workspaceId !== workspaceId) {
+        throw new ForbiddenException('任務不屬於此工作空間');
+      }
+    }
+    if (messageId) {
+      const message = await this.prisma.message.findUnique({
+        where: { id: messageId },
+        select: { channel: { select: { workspaceId: true } } },
+      });
+      if (message?.channel?.workspaceId !== workspaceId) {
+        throw new ForbiddenException('訊息不屬於此工作空間');
+      }
+    }
+  }
+
   private assertMinioReady() {
     if (!this.minioReady) {
       throw new ServiceUnavailableException(
@@ -62,6 +107,8 @@ export class FilesService {
     taskId?: string,
     folderPath?: string,
   ) {
+    await this.assertMember(userId, workspaceId);
+    await this.assertAttachTargetsInWorkspace(workspaceId, messageId, taskId);
     this.assertMinioReady();
     const key = `${workspaceId}/${Date.now()}-${file.originalname}`;
     await this.minioClient.putObject(this.bucket, key, file.buffer, file.size, {
@@ -96,8 +143,7 @@ export class FilesService {
   }
 
   async moveToFolder(userId: string, id: string, folderPath: string | null) {
-    const file = await this.prisma.file.findUnique({ where: { id } });
-    if (!file) throw new NotFoundException('檔案不存在');
+    await this.getFileForMember(userId, id);
     return this.prisma.file.update({
       where: { id },
       data: { folderPath: this.normalizeFolderPath(folderPath) },
@@ -106,7 +152,8 @@ export class FilesService {
 
   /// 回傳工作空間中所有已使用的資料夾路徑（包含「含子資料夾」的前綴）。
   /// 例：檔案 A 在 `work/2026/Q2` → 回傳 `['work', 'work/2026', 'work/2026/Q2']`。
-  async listFolders(workspaceId: string): Promise<string[]> {
+  async listFolders(userId: string, workspaceId: string): Promise<string[]> {
+    await this.assertMember(userId, workspaceId);
     const rows = await this.prisma.file.findMany({
       where: {
         workspaceId,
@@ -128,15 +175,12 @@ export class FilesService {
     return Array.from(all).sort();
   }
 
-  async findById(id: string) {
-    const file = await this.prisma.file.findUnique({ where: { id } });
-    if (!file) throw new NotFoundException('檔案不存在');
-    return file;
+  async findById(userId: string, id: string) {
+    return this.getFileForMember(userId, id);
   }
 
-  async delete(id: string) {
-    const file = await this.prisma.file.findUnique({ where: { id } });
-    if (!file) throw new NotFoundException('檔案不存在');
+  async delete(userId: string, id: string) {
+    const file = await this.getFileForMember(userId, id);
 
     const key = file.url.split(`/${this.bucket}/`)[1];
     if (key && this.minioReady) {
@@ -156,7 +200,8 @@ export class FilesService {
     });
   }
 
-  async findByWorkspace(workspaceId: string) {
+  async findByWorkspace(userId: string, workspaceId: string) {
+    await this.assertMember(userId, workspaceId);
     return this.prisma.file.findMany({
       where: { workspaceId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -177,6 +222,7 @@ export class FilesService {
    *   - `all` / 未指定：全部
    */
   async browse(
+    userId: string,
     workspaceId: string,
     opts: {
       type?: 'all' | 'image' | 'pdf' | 'doc' | 'video' | 'audio' | 'other';
@@ -188,6 +234,7 @@ export class FilesService {
       folderPath?: string;
     } = {},
   ) {
+    await this.assertMember(userId, workspaceId);
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
     const offset = Math.max(opts.offset ?? 0, 0);
     const q = opts.search?.trim();

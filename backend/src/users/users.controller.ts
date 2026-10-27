@@ -24,8 +24,12 @@ export class UsersController {
   }
 
   @Get('search')
-  @ApiOperation({ summary: '搜尋使用者' })
-  async search(@Query('q') query: string, @Query('workspaceId') workspaceId?: string) {
-    return this.usersService.search(query, workspaceId);
+  @ApiOperation({ summary: '在工作空間成員中搜尋使用者（workspaceId 必填；不含 bot）' })
+  async search(
+    @Req() req: any,
+    @Query('q') query: string,
+    @Query('workspaceId') workspaceId: string,
+  ) {
+    return this.usersService.search(req.user.userId, query, workspaceId);
   }
 }

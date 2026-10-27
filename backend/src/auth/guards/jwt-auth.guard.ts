@@ -4,8 +4,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma.service';
+import { UserStatusService } from '../user-status.service';
+import { BOT_TOKEN_MESSAGES, BotTokenError, verifyBotToken } from '../bot-token';
 
 /**
  * JWT 守衛；同時支援 **bot token**（格式 `Bearer bot_<prefix>.<secret>`）。
@@ -22,7 +23,10 @@ import { PrismaService } from '../../common/prisma.service';
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userStatus: UserStatusService,
+  ) {
     super();
   }
 
@@ -32,38 +36,23 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     if (authHeader && /^Bearer\s+bot_/i.test(authHeader)) {
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      const [prefix, secret] = token.split('.');
-      if (!prefix || !secret) {
-        throw new UnauthorizedException('Bot token 格式錯誤');
+      // 規則與 /bot/* 的 BotAuthGuard 共用（auth/bot-token.ts）：格式、撤銷、secret、建立者停用、公司工作空間。
+      // 建立者的帳號在 SSO 綁定時重設過：綁定交易撤銷他建的所有 bot（revokedAt），commit 之後再撤銷一次
+      // （撈出綁定途中才 commit 的新 bot，見 SsoLoginService）；H1 migration 也撤銷了上線前的全部 bot。
+      // 這裡只看 revokedAt（review R1：不再用時間 cutoff）。查停用狀態出錯 → 往上拋（fail closed）。
+      let bot;
+      try {
+        bot = await verifyBotToken(this.prisma, this.userStatus, token);
+      } catch (err) {
+        if (err instanceof BotTokenError) {
+          throw new UnauthorizedException(BOT_TOKEN_MESSAGES[err.reason]);
+        }
+        throw err;
       }
-
-      const bot = await this.prisma.botAccount.findUnique({
-        where: { tokenPrefix: prefix },
-        select: {
-          id: true,
-          tokenHash: true,
-          revokedAt: true,
-          userId: true,
-          workspaceId: true,
-        },
-      });
-      if (!bot || bot.revokedAt) {
-        throw new UnauthorizedException('無效或已撤銷的 bot token');
-      }
-
-      const ok = await bcrypt.compare(secret, bot.tokenHash);
-      if (!ok) {
-        throw new UnauthorizedException('無效的 bot token');
-      }
-
-      // lastUsedAt 非關鍵；失敗不擋主流程
-      this.prisma.botAccount
-        .update({ where: { id: bot.id }, data: { lastUsedAt: new Date() } })
-        .catch(() => {});
 
       req.user = {
         userId: bot.userId,
-        botId: bot.id,
+        botId: bot.botId,
         workspaceId: bot.workspaceId,
         /** 其他 controller 若要差異化處理 bot 可檢查此旗標（可選） */
         isBot: true,

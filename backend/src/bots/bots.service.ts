@@ -8,6 +8,9 @@ import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { UserStatusService } from '../auth/user-status.service';
+import { BotTokenError, verifyBotToken } from '../auth/bot-token';
+import { CompanyService } from '../company/company.service';
 
 /**
  * Bot 整合：讓外部程式（Claude Code、自訂 agent、n8n、你的龍蝦等等）
@@ -24,6 +27,8 @@ export class BotsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly userStatus: UserStatusService,
+    private readonly company: CompanyService,
   ) {}
 
   // ─────────────── 管理端 (admin) ───────────────
@@ -33,6 +38,8 @@ export class BotsService {
     workspaceId: string,
     dto: { name: string; description?: string },
   ) {
+    // 公司工作空間的成員只由員工生命週期決定（SSO 登入加入、離職移出），bot 不能加入 → 403
+    await this.company.assertNotCompanyWorkspace(workspaceId, '公司工作空間不能建立 bot（成員只由員工資料決定）');
     await this.assertAdmin(actorId, workspaceId);
 
     const name = dto.name?.trim();
@@ -167,31 +174,15 @@ export class BotsService {
     userId: string;
     workspaceId: string;
   } | null> {
-    if (!rawToken || !rawToken.startsWith('bot_')) return null;
-    const [prefix, secret] = rawToken.split('.');
-    if (!prefix || !secret) return null;
-
-    const bot = await this.prisma.botAccount.findUnique({
-      where: { tokenPrefix: prefix },
-      select: {
-        id: true,
-        tokenHash: true,
-        revokedAt: true,
-        userId: true,
-        workspaceId: true,
-      },
-    });
-    if (!bot || bot.revokedAt) return null;
-
-    const ok = await bcrypt.compare(secret, bot.tokenHash);
-    if (!ok) return null;
-
-    // lastUsedAt 不擋主流程；失敗 (race / DB 掛) 也不影響 auth 結果
-    this.prisma.botAccount
-      .update({ where: { id: bot.id }, data: { lastUsedAt: new Date() } })
-      .catch(() => {});
-
-    return { botId: bot.id, userId: bot.userId, workspaceId: bot.workspaceId };
+    // 跟 JwtAuthGuard 的 bot 路徑同一份規則（auth/bot-token.ts），包含「建立者已停用 → 拒絕」。
+    // 查停用狀態出錯不吞掉：往上拋，guard 因此拒絕（fail closed）。
+    try {
+      const bot = await verifyBotToken(this.prisma, this.userStatus, rawToken);
+      return { botId: bot.botId, userId: bot.userId, workspaceId: bot.workspaceId };
+    } catch (err) {
+      if (err instanceof BotTokenError) return null;
+      throw err;
+    }
   }
 
   async getContext(botId: string) {

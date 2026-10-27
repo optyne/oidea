@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../../shared/widgets/common_widgets.dart';
+import '../../../admin/admin_access.dart';
+import '../../../admin/providers/admin_providers.dart';
 import '../../../workspace/providers/workspace_provider.dart';
 import '../../providers/erp_providers.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -16,6 +19,11 @@ const Map<String, String> _roleLabels = {
   'member': '一般成員',
 };
 
+/// 成員與權限（非公司工作空間：員工自己建立的專案協作空間）。可以用 email／username 邀請、
+/// 建立邀請連結、改角色。
+///
+/// 公司工作空間的成員只由員工生命週期決定（SSO 登入時加入、離職時移出；spec §4.3「邀請」），
+/// 後端對它的邀請與移除一律 403，所以這裡不給邀請畫面，直接送到後台的「成員與角色」。
 class MembersPage extends ConsumerWidget {
   const MembersPage({super.key});
 
@@ -25,6 +33,77 @@ class MembersPage extends ConsumerWidget {
     if (workspaceId == null) {
       return const Scaffold(body: Center(child: Text('請先選擇工作空間')));
     }
+    final me = ref.watch(companyMeProvider);
+    final workspacesAsync = ref.watch(workspacesProvider);
+    final workspaces = workspacesAsync.valueOrNull;
+    if (isCompanyWorkspace(workspaceId, me: me.valueOrNull, workspaces: workspaces)) {
+      return const _CompanyMembersRedirect();
+    }
+    // 還不知道是不是公司工作空間：先等，不要先露出邀請按鈕
+    if (me.isLoading && !me.hasValue) {
+      return const Scaffold(body: LoadingWidget());
+    }
+    // /company/me 失敗、工作空間清單也還在載入：還判斷不出來，一樣先等（H2 review N9）
+    if (me.hasError && !me.hasValue && workspacesAsync.isLoading && !workspacesAsync.hasValue) {
+      return const Scaffold(body: LoadingWidget());
+    }
+    return _MembersBody(workspaceId: workspaceId);
+  }
+}
+
+/// 公司工作空間：導到 `/admin/roles`（路由層的 redirect 已處理大部分情況；
+/// 這裡處理 `/company/me` 在進頁之後才載入完成的情況）。
+class _CompanyMembersRedirect extends StatefulWidget {
+  const _CompanyMembersRedirect();
+
+  @override
+  State<_CompanyMembersRedirect> createState() => _CompanyMembersRedirectState();
+}
+
+class _CompanyMembersRedirectState extends State<_CompanyMembersRedirect> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      GoRouter.maybeOf(context)?.go('/admin/roles');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('成員與權限')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(OideaSpace.space6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '公司工作空間的成員由員工資料決定（SSO 登入時加入、離職時移出），角色請到後台調整。',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: OideaSpace.space4),
+              FilledButton(
+                onPressed: () => GoRouter.maybeOf(context)?.go('/admin/roles'),
+                child: const Text('前往成員與角色'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MembersBody extends ConsumerWidget {
+  const _MembersBody({required this.workspaceId});
+
+  final String workspaceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final membersAsync = ref.watch(workspaceMembersProvider(workspaceId));
 
     return Scaffold(
@@ -174,7 +253,7 @@ class _InviteMemberDialogState extends ConsumerState<_InviteMemberDialog> {
             ),
             const SizedBox(height: OideaSpace.space3),
             DropdownButtonFormField<String>(
-              value: _role,
+              initialValue: _role,
               decoration: const InputDecoration(
                 labelText: '角色',
                 border: OutlineInputBorder(),
@@ -338,7 +417,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
             ),
             const SizedBox(height: OideaSpace.space4),
             DropdownButtonFormField<String>(
-              value: _role,
+              initialValue: _role,
               decoration: const InputDecoration(
                 labelText: '角色',
                 border: OutlineInputBorder(),
@@ -353,7 +432,7 @@ class _InviteLinkDialogState extends ConsumerState<_InviteLinkDialog> {
             ),
             const SizedBox(height: OideaSpace.space3),
             DropdownButtonFormField<int>(
-              value: _days,
+              initialValue: _days,
               decoration: const InputDecoration(
                 labelText: '有效天數',
                 border: OutlineInputBorder(),

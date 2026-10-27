@@ -97,6 +97,8 @@ export class AutomationService {
         trigger,
         enabled: true,
         deletedAt: null,
+        // 建立者已停用（離職）的規則不再以他的名義發訊息（H2 review S2；離職時也會把規則停用）
+        creator: { disabledAt: null, deletedAt: null },
       },
     });
   }

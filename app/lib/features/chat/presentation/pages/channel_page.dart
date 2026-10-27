@@ -71,6 +71,10 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
   late void Function(dynamic) _newMessageListener;
   late void Function(dynamic) _typingListener;
   late void Function(dynamic) _stopTypingListener;
+  late void Function(dynamic) _reconnectListener;
+
+  /// Captured in [initState]: `ref` can no longer be used inside [dispose].
+  late final SocketService _socket;
 
   final Set<String> _typingUserIds = {};
   Timer? _emitTypingTimer;
@@ -82,6 +86,7 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
   @override
   void initState() {
     super.initState();
+    _socket = ref.read(socketProvider);
     _newMessageListener = (dynamic data) {
       if (!mounted) return;
       final m = _asMessageMap(data);
@@ -109,9 +114,16 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
       setState(() => _typingUserIds.remove(uid));
     };
 
+    // Messages broadcast while the socket was down are not replayed: reload.
+    _reconnectListener = (_) {
+      if (!mounted) return;
+      ref.invalidate(messagesProvider(widget.channelId));
+    };
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final socket = ref.read(socketProvider);
       socket.joinChannel(widget.channelId);
+      socket.addListener(SocketService.chatConnectedEvent, _reconnectListener);
       socket.addListener('newMessage', _newMessageListener);
       socket.addListener('userTyping', _typingListener);
       socket.addListener('userStopTyping', _stopTypingListener);
@@ -128,7 +140,8 @@ class _ChannelPageState extends ConsumerState<ChannelPage> {
   void dispose() {
     _emitTypingTimer?.cancel();
     _stopTypingTimer?.cancel();
-    final socket = ref.read(socketProvider);
+    final socket = _socket;
+    socket.removeListener(SocketService.chatConnectedEvent, _reconnectListener);
     socket.removeListener('newMessage', _newMessageListener);
     socket.removeListener('userTyping', _typingListener);
     socket.removeListener('userStopTyping', _stopTypingListener);

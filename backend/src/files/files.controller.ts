@@ -4,6 +4,9 @@ import { FilesService } from './files.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Express } from 'express';
 
+/**
+ * 所有端點都會在 service 內驗證呼叫者是檔案（或指定 workspaceId）所屬工作空間的成員，否則 403。
+ */
 @ApiTags('檔案')
 @Controller('files')
 @UseGuards(JwtAuthGuard)
@@ -12,7 +15,7 @@ export class FilesController {
   constructor(private filesService: FilesService) {}
 
   @Post('upload')
-  @ApiOperation({ summary: '上傳檔案' })
+  @ApiOperation({ summary: '上傳檔案（workspaceId 必填，須為成員）' })
   @UseInterceptors(require('@nestjs/platform-express').FileInterceptor('file'))
   async upload(
     @Req() req: any,
@@ -34,8 +37,8 @@ export class FilesController {
 
   @Get('workspace/:workspaceId/folders')
   @ApiOperation({ summary: '列出工作空間所有資料夾路徑（含前綴）' })
-  async listFolders(@Param('workspaceId') workspaceId: string) {
-    return this.filesService.listFolders(workspaceId);
+  async listFolders(@Req() req: any, @Param('workspaceId') workspaceId: string) {
+    return this.filesService.listFolders(req.user.userId, workspaceId);
   }
 
   @Patch(':id/folder')
@@ -53,14 +56,14 @@ export class FilesController {
 
   @Get(':id')
   @ApiOperation({ summary: '取得檔案資訊' })
-  async findById(@Param('id') id: string) {
-    return this.filesService.findById(id);
+  async findById(@Req() req: any, @Param('id') id: string) {
+    return this.filesService.findById(req.user.userId, id);
   }
 
   @Get('workspace/:workspaceId')
   @ApiOperation({ summary: '取得工作空間檔案列表' })
-  async findByWorkspace(@Param('workspaceId') workspaceId: string) {
-    return this.filesService.findByWorkspace(workspaceId);
+  async findByWorkspace(@Req() req: any, @Param('workspaceId') workspaceId: string) {
+    return this.filesService.findByWorkspace(req.user.userId, workspaceId);
   }
 
   @Get('workspace/:workspaceId/browse')
@@ -70,6 +73,7 @@ export class FilesController {
       '類別（type）可用 all/image/pdf/doc/video/audio/other；search 對 fileName 做不分大小寫子字串比對；limit 上限 200。',
   })
   async browse(
+    @Req() req: any,
     @Param('workspaceId') workspaceId: string,
     @Query('type') type?: 'all' | 'image' | 'pdf' | 'doc' | 'video' | 'audio' | 'other',
     @Query('search') search?: string,
@@ -77,7 +81,7 @@ export class FilesController {
     @Query('offset') offset?: string,
     @Query('folderPath') folderPath?: string,
   ) {
-    return this.filesService.browse(workspaceId, {
+    return this.filesService.browse(req.user.userId, workspaceId, {
       type,
       search,
       limit: limit ? parseInt(limit, 10) : undefined,
@@ -88,7 +92,7 @@ export class FilesController {
 
   @Delete(':id')
   @ApiOperation({ summary: '刪除檔案' })
-  async delete(@Param('id') id: string) {
-    return this.filesService.delete(id);
+  async delete(@Req() req: any, @Param('id') id: string) {
+    return this.filesService.delete(req.user.userId, id);
   }
 }

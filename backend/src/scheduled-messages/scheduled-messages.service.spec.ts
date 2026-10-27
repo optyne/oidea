@@ -229,4 +229,16 @@ describe('ScheduledMessagesService (C-17)', () => {
       );
     });
   });
+
+  it('H2 review S2: findDue 帶出作者的停用狀態（排程器據此不代發）', async () => {
+    prisma.scheduledMessage.findMany.mockResolvedValue([]);
+    const now = new Date('2026-10-27T00:00:00Z');
+    await service.findDue(now);
+    expect(prisma.scheduledMessage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'pending', sendAt: { lte: now } }),
+        include: { creator: { select: { disabledAt: true, deletedAt: true } } },
+      }),
+    );
+  });
 });

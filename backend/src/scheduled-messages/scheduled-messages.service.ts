@@ -133,6 +133,8 @@ export class ScheduledMessagesService {
       },
       orderBy: { sendAt: 'asc' },
       take,
+      // 排程器要知道作者是否已停用（離職）：停用的人不代發（H2 review S2）
+      include: { creator: { select: { disabledAt: true, deletedAt: true } } },
     });
   }
 

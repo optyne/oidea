@@ -1,8 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/auth/presentation/pages/auth_callback_page.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
-import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../features/auth/sso/sso_service.dart' show ssoCallbackPath;
 import '../../features/chat/presentation/pages/chat_home_page.dart';
 import '../../features/chat/presentation/pages/channel_page.dart';
 import '../../features/chat/presentation/pages/thread_page.dart';
@@ -20,13 +21,35 @@ import '../../features/erp/presentation/pages/attendance_page.dart';
 import '../../features/erp/presentation/pages/expenses_page.dart';
 import '../../features/erp/presentation/pages/leaves_page.dart';
 import '../../features/erp/presentation/pages/members_page.dart';
+import '../../features/admin/admin_access.dart';
+import '../../features/admin/models/admin_models.dart';
+import '../../features/admin/presentation/pages/admin_home_page.dart';
+import '../../features/admin/presentation/pages/audit_page.dart';
+import '../../features/admin/presentation/pages/departments_page.dart';
+import '../../features/admin/presentation/pages/employees_page.dart';
+import '../../features/admin/presentation/pages/my_profile_page.dart';
+import '../../features/admin/presentation/pages/roles_page.dart';
+import '../../features/admin/presentation/widgets/admin_widgets.dart';
+import '../../features/admin/providers/admin_providers.dart';
 import '../../features/notes/presentation/pages/notes_home_page.dart';
 import '../../features/files/presentation/pages/files_gallery_page.dart';
 import '../../features/reminders/presentation/pages/reminders_page.dart';
 import '../../features/spreadsheets/presentation/pages/spreadsheets_home_page.dart';
 import '../../features/spreadsheets/presentation/pages/spreadsheet_editor_page.dart';
 import '../../features/workspace/presentation/pages/invite_landing_page.dart';
+import '../../features/workspace/providers/workspace_provider.dart';
 import '../../shared/pages/main_shell.dart';
+
+/// Top-level redirect of the app router.
+String? authRedirect(String loc, {required bool isAuthenticated}) {
+  final isLoggingIn = loc == '/login' || loc == ssoCallbackPath;
+  // /invite/:token 是公開入口，未登入也可以看邀請資訊（landing page 自己引導登入）
+  final isPublicInvite = loc.startsWith('/invite/');
+
+  if (!isAuthenticated && !isLoggingIn && !isPublicInvite) return '/login';
+  if (isAuthenticated && isLoggingIn) return '/chat';
+  return null;
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -35,19 +58,19 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/chat',
     redirect: (context, state) {
       final loc = state.matchedLocation;
-      final isLoggingIn = loc == '/login' || loc == '/register';
-      // /invite/:token 是公開入口，未登入也可以看邀請資訊（landing page 自己引導登入）
-      final isPublicInvite = loc.startsWith('/invite/');
-      final isAuthenticated = authState.isAuthenticated;
-
-      if (!isAuthenticated && !isLoggingIn && !isPublicInvite) return '/login';
-      // 登入後若是從邀請連結過來，由 login / register 頁處理 redirect query
-      if (isAuthenticated && isLoggingIn) return '/chat';
+      final base = authRedirect(loc, isAuthenticated: authState.isAuthenticated);
+      if (base != null) return base;
+      // /admin/*：權限已載入且不足就導走；還沒載入先放行，由頁面上的 AdminGuard 等載入完再判斷。
+      if (loc == '/admin' || loc.startsWith('/admin/')) {
+        final me = ref.read(companyMeProvider).valueOrNull;
+        return adminRedirect(loc, me?.permissions.toSet());
+      }
       return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-      GoRoute(path: '/register', builder: (context, state) => const RegisterPage()),
+      // SSO 回跳（Web）：未登入也要能進來，才能用 ticket 換 token
+      GoRoute(path: ssoCallbackPath, builder: (context, state) => const AuthCallbackPage()),
       GoRoute(
         path: '/invite/:token',
         builder: (context, state) => InviteLandingPage(
@@ -183,9 +206,54 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'leaves',
                 builder: (context, state) => const LeavesPage(),
               ),
+              // 成員與權限：員工自建的工作空間照舊在這裡邀請與管理；
+              // 公司工作空間的成員只由員工生命週期決定，角色改在後台 → 導到 /admin/roles。
               GoRoute(
                 path: 'members',
+                redirect: (context, state) => membersRedirect(
+                  ref.read(currentWorkspaceIdProvider),
+                  me: ref.read(companyMeProvider).valueOrNull,
+                  workspaces: ref.read(workspacesProvider).valueOrNull,
+                ),
                 builder: (context, state) => const MembersPage(),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const MyProfilePage(),
+          ),
+          GoRoute(
+            path: '/admin',
+            builder: (context, state) => const AdminGuard(child: AdminHomePage()),
+            routes: [
+              GoRoute(
+                path: 'employees',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.employeeReadAll],
+                  child: EmployeesPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'departments',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.employeeReadAll],
+                  child: DepartmentsPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'roles',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.memberRoleManage],
+                  child: RolesPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'audit',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.auditRead],
+                  child: AuditPage(),
+                ),
               ),
             ],
           ),

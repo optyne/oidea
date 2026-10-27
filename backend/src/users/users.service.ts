@@ -1,6 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { resolveUserIdByEmail } from '../common/email-lookup';
 
 @Injectable()
 export class UsersService {
@@ -24,10 +30,17 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * 不分大小寫找 email（spec §4.3：以前用帳密註冊的 `Foo@` 要能對到 `foo@`）。
+   * 有完全相同的優先；只差大小寫的有兩筆以上時無法判斷是誰 → null（登入當成找不到）。
+   * 比對走 `email-lookup.ts`（`lower(email) = lower($1)`，不用 ILIKE，見 review S8）。
+   */
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email, deletedAt: null },
-    });
+    const needle = typeof email === 'string' ? email.trim() : '';
+    if (!needle) return null;
+    const id = await resolveUserIdByEmail(this.prisma, needle);
+    if (id === null || id === 'ambiguous') return null;
+    return this.prisma.user.findUnique({ where: { id, deletedAt: null } });
   }
 
   async findByUsername(username: string) {
@@ -66,18 +79,29 @@ export class UsersService {
     });
   }
 
-  async search(query: string, workspaceId?: string) {
+  /**
+   * 在指定工作空間的成員中搜尋（不含 bot）。workspaceId 必填，呼叫者必須是該工作空間成員。
+   */
+  async search(userId: string, query: string, workspaceId: string) {
+    if (!workspaceId || !workspaceId.trim()) {
+      throw new BadRequestException('缺少 workspaceId');
+    }
+    const self = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      select: { role: true },
+    });
+    if (!self) throw new ForbiddenException('非此工作空間成員');
+
     return this.prisma.user.findMany({
       where: {
         deletedAt: null,
+        botAccount: { is: null },
+        workspaceMembers: { some: { workspaceId } },
         OR: [
           { username: { contains: query, mode: 'insensitive' } },
           { displayName: { contains: query, mode: 'insensitive' } },
           { email: { contains: query, mode: 'insensitive' } },
         ],
-        ...(workspaceId && {
-          workspaceMembers: { some: { workspaceId } },
-        }),
       },
       select: {
         id: true,

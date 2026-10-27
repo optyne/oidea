@@ -15,8 +15,11 @@ export class WhiteboardPagesService {
     private files: FilesService,
   ) {}
 
-  /** 確認白板存在且呼叫者是該 workspace 成員；回傳 board 供後續取 workspaceId。 */
-  private async assertAccess(userId: string, whiteboardId: string) {
+  /**
+   * 確認白板存在且呼叫者是該 workspace 成員；回傳 board 供後續取 workspaceId。
+   * whiteboard gateway 的 joinBoard 也用這個檢查（HTTP 與 socket 同一套規則）。
+   */
+  async assertAccess(userId: string, whiteboardId: string) {
     const board = await this.prisma.whiteboard.findUnique({
       where: { id: whiteboardId, deletedAt: null },
     });

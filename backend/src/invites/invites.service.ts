@@ -7,6 +7,8 @@ import {
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CompanyService } from '../company/company.service';
+import { LOCKED_TX_OPTIONS, lockUser } from '../common/identity-lock';
 
 const VALID_ROLES = ['admin', 'hr', 'finance', 'member'] as const;
 const DEFAULT_EXPIRY_DAYS = 7;
@@ -16,6 +18,7 @@ export class InvitesService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private company: CompanyService,
   ) {}
 
   // ─────────────────── 管理端：建 / 列 / 撤 ───────────────────
@@ -26,6 +29,8 @@ export class InvitesService {
     opts: { email?: string; role?: string; expiresInDays?: number },
   ) {
     await this.assertAdmin(actorId, workspaceId);
+    // 公司工作空間的成員只由員工生命週期決定（spec §4.3「邀請」）
+    await this.company.assertNotCompanyWorkspace(workspaceId);
 
     const role = opts.role ?? 'member';
     if (!VALID_ROLES.includes(role as any)) {
@@ -138,6 +143,8 @@ export class InvitesService {
   async accept(userId: string, token: string) {
     const invite = await this.prisma.workspaceInvite.findUnique({ where: { token } });
     if (!invite) throw new NotFoundException('邀請連結不存在或已失效');
+    // 工作空間在 company:init 之前發出的邀請，之後也不能用來加入公司工作空間
+    await this.company.assertNotCompanyWorkspace(invite.workspaceId);
 
     // 已是成員：以條件式 update 消費 invite（不改 role；若別人搶先消費此 invite 就直接結束）
     const existing = await this.prisma.workspaceMember.findUnique({
@@ -160,6 +167,11 @@ export class InvitesService {
     // 保證多個併發 caller 只有一人拿到 count=1，其他拿到 count=0 直接 throw。
     // 這樣避免「同一 invite 連結被兩個不同帳號同時接受、兩人都入群」的 TOCTOU race。
     const member = await this.prisma.$transaction(async (tx) => {
+      // 跟離職排隊（H2 review S3）：離職交易進行中接受的邀請，等它 commit 後看到停用就拒絕，
+      // 不會在成員資格刪完之後又加回一筆（復職時會跟著復活）
+      await lockUser(tx, userId);
+      const me = await tx.user.findUnique({ where: { id: userId }, select: { disabledAt: true, deletedAt: true } });
+      if (!me || me.disabledAt || me.deletedAt) throw new ForbiddenException('帳號已停用，不能接受邀請');
       const upd = await tx.workspaceInvite.updateMany({
         where: { id: invite.id, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: new Date(), consumedByUserId: userId },
@@ -174,7 +186,7 @@ export class InvitesService {
           user: { select: { id: true, displayName: true, avatarUrl: true } },
         },
       });
-    });
+    }, LOCKED_TX_OPTIONS);
 
     await this.audit.record({
       actorId: userId,

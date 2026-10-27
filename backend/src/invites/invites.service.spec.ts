@@ -3,11 +3,14 @@ import { ForbiddenException } from '@nestjs/common';
 import { InvitesService } from './invites.service';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CompanyService } from '../company/company.service';
 
 // tx mock：$transaction(callback) 直接把 txMock 餵給 callback
 const buildTx = () => ({
   workspaceInvite: { updateMany: jest.fn() },
   workspaceMember: { create: jest.fn() },
+  user: { findUnique: jest.fn().mockResolvedValue({ disabledAt: null, deletedAt: null }) },
+  $executeRaw: jest.fn().mockResolvedValue(1),
 });
 
 describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () => {
@@ -29,6 +32,7 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
     prisma = {
       workspaceInvite: { findUnique: jest.fn().mockResolvedValue(INVITE), updateMany: jest.fn() },
       workspaceMember: { findUnique: jest.fn().mockResolvedValue(null) },
+      workspace: { findUnique: jest.fn().mockResolvedValue({ isCompany: false }) },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +40,7 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
         InvitesService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        CompanyService,
       ],
     }).compile();
     service = module.get(InvitesService);
@@ -64,6 +69,14 @@ describe('InvitesService.accept — TOCTOU 回歸（單次使用保證）', () =
         where: expect.objectContaining({ id: 'inv-1', consumedAt: null }),
       }),
     );
+    expect(tx.workspaceMember.create).not.toHaveBeenCalled();
+  });
+
+  it('H2 review S3: 帳號已停用（離職中）→ 在 user 鎖底下被擋，不消費 invite、不建 member', async () => {
+    tx.user.findUnique.mockResolvedValue({ disabledAt: new Date(), deletedAt: null });
+    await expect(service.accept('u-2', 'tok-1')).rejects.toThrow(ForbiddenException);
+    expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(tx.workspaceInvite.updateMany).not.toHaveBeenCalled();
     expect(tx.workspaceMember.create).not.toHaveBeenCalled();
   });
 
