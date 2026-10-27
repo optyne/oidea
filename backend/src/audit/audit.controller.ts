@@ -50,7 +50,9 @@ export function actionFilter(raw: string | undefined): Prisma.StringFilter | str
   if (raw.length > 64 || !/^[a-z_]+(\.[a-z_]+)*(\.\*)?$/.test(raw)) {
     throw new BadRequestException('action 格式不正確（例如 employee.terminate 或 employee.*）');
   }
-  return raw.endsWith('.*') ? { startsWith: raw.slice(0, -1) } : raw;
+  // Prisma 的 startsWith 在 Postgres 編成 LIKE 'x%' 且不跳脫萬用字元；格式檢查只放行
+  // [a-z_.]，所以只需把 `_` 跳脫成 `\_`（Postgres LIKE 預設跳脫字元是反斜線）。
+  return raw.endsWith('.*') ? { startsWith: raw.slice(0, -1).replace(/_/g, '\\_') } : raw;
 }
 
 /**

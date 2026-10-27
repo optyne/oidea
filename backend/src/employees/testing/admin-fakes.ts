@@ -125,7 +125,8 @@ function matchScalar(actual: any, cond: any): boolean {
         if (!(actual != null && comparable(actual) >= comparable(v))) return false;
         break;
       case 'startsWith':
-        if (!(typeof actual === 'string' && actual.startsWith(v as string))) return false;
+        // 跟 Postgres LIKE 一樣：`\x` 代表字面上的 x
+        if (!(typeof actual === 'string' && actual.startsWith((v as string).replace(/\\(.)/g, '$1')))) return false;
         break;
       case 'contains':
         if (!(typeof actual === 'string' && actual.includes(v as string))) return false;
