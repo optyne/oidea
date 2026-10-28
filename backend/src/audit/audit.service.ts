@@ -34,7 +34,10 @@ export type AuditAction =
   | 'department.update'
   | 'department.archive'
   | 'department.unarchive'
-  | 'department.delete';
+  | 'department.delete'
+  // H3 請假規則
+  | 'holiday.replace'
+  | 'leave.balance.adjust';
 
 /** H2 新增的 action（測試逐一斷言每個都有寫 audit）。 */
 export const H2_AUDIT_ACTIONS = [

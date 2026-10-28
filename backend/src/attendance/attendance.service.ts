@@ -1,9 +1,17 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { hasPermission } from '../common/permissions';
 import { CheckInDto } from './dto/check-in.dto';
-import { CreateLeaveDto } from './dto/leave-request.dto';
+import { CreateLeaveDto, LeavePreviewQuery } from './dto/leave-request.dto';
+import { LOCKED_TX_OPTIONS, lockUser } from '../common/identity-lock';
+import { leaveErrors, parseLeaveRange, toNumber } from './leave-days';
+import { LeavePolicyService } from './leave-policy.service';
+
+/** 回應裡的 `days` 是 number（Prisma 的 Decimal 直接序列化會變成字串）。 */
+function serializeLeave<T extends { days?: unknown }>(row: T): T & { days: number } {
+  return { ...row, days: toNumber(row.days) };
+}
 
 /**
  * 以「日」為單位記錄 [Attendance]。單日單筆，checkInAt/checkOutAt 兩次寫入。
@@ -14,6 +22,7 @@ export class AttendanceService {
   constructor(
     private prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly leavePolicy: LeavePolicyService,
   ) {}
 
   // ─────────── 打卡 ───────────
@@ -117,21 +126,32 @@ export class AttendanceService {
 
   // ─────────── 請假 ───────────
 
+  /**
+   * H3：算天數（不含週末、假日，可半天）、擋自己 pending／approved 假單的重疊、公司工作空間的特休檢查餘額。
+   * 檢查與寫入在同一個交易、requester 的 user 鎖底下：同一個人同時送出的兩張假單排隊，
+   * 後到的看得到先到的（重疊、已用掉的特休）。
+   */
   async createLeave(userId: string, dto: CreateLeaveDto) {
     await this.assertMember(userId, dto.workspaceId);
-    if (new Date(dto.endDate) < new Date(dto.startDate)) {
-      throw new ForbiddenException('結束日不可早於起始日');
-    }
-    const leave = await this.prisma.leaveRequest.create({
-      data: {
-        workspaceId: dto.workspaceId,
-        requesterId: userId,
-        type: dto.type,
-        startDate: new Date(dto.startDate),
-        endDate: new Date(dto.endDate),
-        reason: dto.reason,
-      },
-    });
+    const range = parseLeaveRange(dto);
+    const leave = await this.prisma.$transaction(async (tx) => {
+      await lockUser(tx, userId);
+      const { days, annual } = await this.leavePolicy.evaluate(tx, userId, dto.workspaceId, dto.type, range);
+      if (annual && annual.remaining < days) throw leaveErrors.insufficientBalance(annual.remaining);
+      return tx.leaveRequest.create({
+        data: {
+          workspaceId: dto.workspaceId,
+          requesterId: userId,
+          type: dto.type,
+          startDate: range.start,
+          endDate: range.end,
+          startPart: range.startPart,
+          endPart: range.endPart,
+          days,
+          reason: dto.reason,
+        },
+      });
+    }, LOCKED_TX_OPTIONS);
 
     // 找工作空間的 HR / admin 成員發通知
     const approvers = await this.prisma.workspaceMember.findMany({
@@ -147,17 +167,30 @@ export class AttendanceService {
         userId: a.userId,
         type: 'leave_pending',
         title: `待審核請假：${dto.type}`,
-        content: `${dto.startDate} ~ ${dto.endDate}`,
+        content: `${dto.startDate} ~ ${dto.endDate}（${toNumber(leave.days)} 天）`,
         link: `/attendance/leaves/${leave.id}`,
       });
     }
-    return leave;
+    return serializeLeave(leave);
+  }
+
+  /** 不寫入的試算：跟建立一樣的檢查（含重疊），但餘額不足照樣回報 remaining。 */
+  async previewLeave(userId: string, q: LeavePreviewQuery) {
+    await this.assertMember(userId, q.workspaceId);
+    const range = parseLeaveRange(q);
+    return this.leavePolicy.evaluate(this.prisma, userId, q.workspaceId, q.type, range);
+  }
+
+  async myAnnualBalance(userId: string, workspaceId: string) {
+    if (typeof workspaceId !== 'string' || !workspaceId) throw new BadRequestException('缺少 workspaceId');
+    await this.assertMember(userId, workspaceId);
+    return this.leavePolicy.myCurrentBalance(userId, workspaceId);
   }
 
   async listLeaves(userId: string, workspaceId: string, status?: string) {
     const role = await this.assertMember(userId, workspaceId);
     const canReadAll = hasPermission(role, 'leave.approve');
-    return this.prisma.leaveRequest.findMany({
+    const rows = await this.prisma.leaveRequest.findMany({
       where: {
         workspaceId,
         ...(status ? { status } : {}),
@@ -169,6 +202,7 @@ export class AttendanceService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(serializeLeave);
   }
 
   async decideLeave(userId: string, id: string, decision: 'approved' | 'rejected', reason?: string) {
@@ -210,7 +244,7 @@ export class AttendanceService {
       link: `/attendance/leaves/${id}`,
     });
 
-    return updated;
+    return updated ? serializeLeave(updated) : updated;
   }
 
   async cancelLeave(userId: string, id: string) {
@@ -230,7 +264,7 @@ export class AttendanceService {
     if (count === 0) {
       throw new ForbiddenException('僅能取消待審核的請假');
     }
-    return { ...leave, status: 'cancelled' };
+    return serializeLeave({ ...leave, status: 'cancelled' });
   }
 
   // ─────────── helpers ───────────

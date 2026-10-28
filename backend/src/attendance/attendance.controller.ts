@@ -17,7 +17,7 @@ import { RequirePermission } from '../common/require-permission.decorator';
 import { PERMISSIONS } from '../common/permissions';
 import { AttendanceService } from './attendance.service';
 import { CheckInDto } from './dto/check-in.dto';
-import { CreateLeaveDto } from './dto/leave-request.dto';
+import { CreateLeaveDto, LeavePreviewQuery } from './dto/leave-request.dto';
 
 @ApiTags('ERP・考勤')
 @Controller('attendance')
@@ -73,6 +73,18 @@ export class AttendanceController {
   @ApiOperation({ summary: '申請請假' })
   async createLeave(@Req() req: any, @Body() dto: CreateLeaveDto) {
     return this.attendance.createLeave(req.user.userId, dto);
+  }
+
+  @Get('leaves/preview')
+  @ApiOperation({ summary: '試算請假天數與特休餘額（不寫入）' })
+  async previewLeave(@Req() req: any, @Query() query: LeavePreviewQuery) {
+    return this.attendance.previewLeave(req.user.userId, query);
+  }
+
+  @Get('leaves/balance')
+  @ApiOperation({ summary: '我目前的特休餘額（公司工作空間；其他工作空間回 null）' })
+  async myBalance(@Req() req: any, @Query('workspaceId') workspaceId: string) {
+    return this.attendance.myAnnualBalance(req.user.userId, workspaceId);
   }
 
   @Get('leaves/workspace/:workspaceId')

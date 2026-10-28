@@ -3,6 +3,10 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { PrismaService } from '../common/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LeavePolicyService } from './leave-policy.service';
+import { Clock, FakeClock } from '../common/clock';
+import { CompanyService } from '../company/company.service';
+import { AuditService } from '../audit/audit.service';
 
 /**
  * Characterization tests for the current happy paths of AttendanceService
@@ -39,14 +43,21 @@ describe('AttendanceService — characterization', () => {
         update: jest.fn(async ({ where, data }: any) => ({ id: where.id, ...data })),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      // H3：建立請假時讀假日、拿 requester 的 user 鎖（ws-1 不是公司工作空間，不檢查特休餘額）
+      holiday: { findMany: jest.fn().mockResolvedValue([]) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
       $transaction: jest.fn(async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
     };
     notifications = { create: jest.fn().mockResolvedValue(undefined) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttendanceService,
+        LeavePolicyService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: notifications },
+        { provide: Clock, useValue: new FakeClock() },
+        { provide: CompanyService, useValue: { isCompanyWorkspace: jest.fn().mockResolvedValue(false) } },
+        { provide: AuditService, useValue: { record: jest.fn() } },
       ],
     }).compile();
     service = module.get(AttendanceService);
@@ -120,13 +131,14 @@ describe('AttendanceService — characterization', () => {
         endDate: '2026-11-03',
       });
       expect(res.requesterId).toBe('u-member');
+      expect(res.days).toBe(2);
       expect(prisma.workspaceMember.findMany.mock.calls[0][0].where).toEqual(
         expect.objectContaining({ role: { in: ['owner', 'admin', 'hr'] }, userId: { not: 'u-member' } }),
       );
       expect(notifications.create).toHaveBeenCalledTimes(2);
     });
 
-    it('createLeave with end before start is rejected', async () => {
+    it('createLeave with end before start is rejected (H3: 400 leave_invalid_range, was 403)', async () => {
       await expect(
         service.createLeave('u-member', {
           workspaceId: 'ws-1',
@@ -134,7 +146,8 @@ describe('AttendanceService — characterization', () => {
           startDate: '2026-11-03',
           endDate: '2026-11-02',
         }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toMatchObject({ status: 400, response: expect.objectContaining({ code: 'leave_invalid_range' }) });
+      expect(prisma.leaveRequest.create).not.toHaveBeenCalled();
     });
 
     it('listLeaves: hr sees all, member sees only own', async () => {
