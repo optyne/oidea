@@ -20,6 +20,7 @@ import { fakeEmailQueryRaw, sqlText } from '../../common/testing/fake-email-raw'
 import { FakeSsoPrisma } from '../../auth/oidc/testing/sso-fakes';
 import { ORG_LOCK_KEY } from '../org-lock';
 import { PROFILE_LOCK_CLASS, USER_LOCK_CLASS } from '../../common/identity-lock';
+import { LEAVE_POLICY_LOCK_CLASS } from '../../attendance/leave-lock';
 
 type Row = Record<string, any>;
 type TableName =
@@ -34,7 +35,11 @@ type TableName =
   | 'auditLogs'
   | 'channelMembers'
   | 'scheduledMessages'
-  | 'automationRules';
+  | 'automationRules'
+  // H3 請假
+  | 'leaveRequests'
+  | 'holidays'
+  | 'leaveAdjustments';
 
 interface RelationSpec {
   table: TableName;
@@ -76,6 +81,10 @@ const RELATIONS: Partial<Record<TableName, Record<string, RelationSpec>>> = {
   },
   workspaces: {
     owner: { table: 'users', kind: 'one', on: (w, u) => u.id === w.ownerId },
+  },
+  leaveRequests: {
+    requester: { table: 'users', kind: 'one', on: (l, u) => u.id === l.requesterId },
+    approver: { table: 'users', kind: 'one', on: (l, u) => l.approverId != null && u.id === l.approverId },
   },
 };
 
@@ -164,6 +173,10 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
   channelMembers: Row[] = [];
   scheduledMessages: Row[] = [];
   automationRules: Row[] = [];
+  /** H3：請假單、假日、特休調整（days 存 number；真的 Prisma 回 Decimal） */
+  leaveRequests: Row[] = [];
+  holidays: Row[] = [];
+  leaveAdjustments: Row[] = [];
   /** 每次拿到的 advisory lock key（斷言有拿鎖） */
   lockLog: string[] = [];
   /**
@@ -394,6 +407,15 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
       case 'bots':
         clash((o) => o.tokenPrefix === row.tokenPrefix, 'bot_accounts_tokenPrefix_key');
         break;
+      case 'holidays':
+        clash(
+          (o) => o.workspaceId === row.workspaceId && comparable(o.date) === comparable(row.date),
+          'holidays_workspaceId_date_key',
+        );
+        break;
+      case 'leaveAdjustments':
+        if (!this.profiles.some((p) => p.id === row.profileId)) throw p2003('profileId');
+        break;
       default:
         break;
     }
@@ -425,13 +447,31 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
         return { revokedAt: null, lastUsedAt: null, description: null, createdAt: now };
       case 'auditLogs':
         return { actorId: null, workspaceId: null, targetType: null, targetId: null, metadata: null, ipAddress: null, userAgent: null, createdAt: now };
+      case 'leaveRequests':
+        return {
+          status: 'pending',
+          startPart: 'full',
+          endPart: 'full',
+          reason: null,
+          approverId: null,
+          decidedAt: null,
+          rejectReason: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+      case 'holidays':
+        return { createdAt: now, updatedAt: now };
+      case 'leaveAdjustments':
+        return { createdAt: now };
       default:
         return {};
     }
   }
 
   private touch(table: TableName, row: Row): Row {
-    return table === 'profiles' || table === 'departments' ? { ...row, updatedAt: this.fakeClock.now() } : row;
+    return table === 'profiles' || table === 'departments' || table === 'leaveRequests' || table === 'holidays'
+      ? { ...row, updatedAt: this.fakeClock.now() }
+      : row;
   }
 
   private delegate(table: TableName) {
@@ -542,6 +582,9 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
   channelMember = this.delegate('channelMembers');
   scheduledMessage = this.delegate('scheduledMessages');
   automationRule = this.delegate('automationRules');
+  leaveRequest = this.delegate('leaveRequests');
+  holiday = this.delegate('holidays');
+  leaveBalanceAdjustment = this.delegate('leaveAdjustments');
 
   // ── raw SQL ──
   private readonly emailRawAdmin = fakeEmailQueryRaw(() => this.users);
@@ -597,7 +640,10 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
     } else {
       // identity-lock.ts：兩個 int4 的 key（class, hashtext(id)）
       const m = /^SELECT pg_advisory_xact_lock\((\d+), hashtext\(\$\?\)\)$/.exec(sql);
-      if (m && (Number(m[1]) === USER_LOCK_CLASS || Number(m[1]) === PROFILE_LOCK_CLASS)) key = `${m[1]}:${String(values[0])}`;
+      const lockClass = m ? Number(m[1]) : NaN;
+      if (lockClass === USER_LOCK_CLASS || lockClass === PROFILE_LOCK_CLASS || lockClass === LEAVE_POLICY_LOCK_CLASS) {
+        key = `${lockClass}:${String(values[0])}`;
+      }
     }
     if (key !== null) {
       const ctx = this.txContext.getStore();
@@ -637,6 +683,9 @@ export class FakeAdminPrisma extends FakeSsoPrisma {
       channelMembers: this.channelMembers,
       scheduledMessages: this.scheduledMessages,
       automationRules: this.automationRules,
+      leaveRequests: this.leaveRequests,
+      holidays: this.holidays,
+      leaveAdjustments: this.leaveAdjustments,
     });
   }
 
