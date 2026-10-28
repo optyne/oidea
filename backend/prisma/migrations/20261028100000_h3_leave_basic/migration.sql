@@ -7,8 +7,10 @@ ADD COLUMN     "startPart" TEXT NOT NULL DEFAULT 'full';
 
 -- Backfill: before H3 there were no holidays and no half days, so an existing request
 -- takes the number of Mon-Fri dates in [startDate, endDate] (0 if the range is empty).
+-- Capped at 9999 because DECIMAL(5,1) holds at most 9999.9: pre-H3 create had no length limit,
+-- so one typo row (e.g. endDate in year 2205) would otherwise overflow and abort the whole migration.
 UPDATE "leave_requests" SET "days" = (
-    SELECT COUNT(*)
+    SELECT LEAST(COUNT(*), 9999)
     FROM generate_series("leave_requests"."startDate"::timestamp, "leave_requests"."endDate"::timestamp, interval '1 day') AS g(d)
     WHERE EXTRACT(ISODOW FROM g.d) < 6
 );
