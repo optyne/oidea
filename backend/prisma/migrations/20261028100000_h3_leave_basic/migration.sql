@@ -32,7 +32,7 @@ CREATE TABLE "leave_balance_adjustments" (
     "id" TEXT NOT NULL,
     "workspaceId" TEXT NOT NULL,
     "profileId" TEXT NOT NULL,
-    "periodStart" DATE NOT NULL,
+    "periodIndex" INTEGER NOT NULL,
     "days" DECIMAL(5,1) NOT NULL,
     "reason" TEXT NOT NULL,
     "createdById" TEXT NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE "leave_balance_adjustments" (
 CREATE UNIQUE INDEX "holidays_workspaceId_date_key" ON "holidays"("workspaceId", "date");
 
 -- CreateIndex
-CREATE INDEX "leave_balance_adjustments_profileId_periodStart_idx" ON "leave_balance_adjustments"("profileId", "periodStart");
+CREATE INDEX "leave_balance_adjustments_profileId_periodIndex_idx" ON "leave_balance_adjustments"("profileId", "periodIndex");
 
 -- AddForeignKey
 ALTER TABLE "holidays" ADD CONSTRAINT "holidays_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE ON UPDATE CASCADE;

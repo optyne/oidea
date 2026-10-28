@@ -4,7 +4,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { hasPermission } from '../common/permissions';
 import { CheckInDto } from './dto/check-in.dto';
 import { CreateLeaveDto, LeavePreviewQuery } from './dto/leave-request.dto';
-import { LOCKED_TX_OPTIONS, lockUser } from '../common/identity-lock';
+import { LOCKED_TX_OPTIONS } from '../common/identity-lock';
 import { leaveErrors, parseLeaveRange, toNumber } from './leave-days';
 import { LeavePolicyService } from './leave-policy.service';
 
@@ -128,14 +128,14 @@ export class AttendanceService {
 
   /**
    * H3：算天數（不含週末、假日，可半天）、擋自己 pending／approved 假單的重疊、公司工作空間的特休檢查餘額。
-   * 檢查與寫入在同一個交易、requester 的 user 鎖底下：同一個人同時送出的兩張假單排隊，
-   * 後到的看得到先到的（重疊、已用掉的特休）。
+   * 檢查與寫入在同一個交易、requester 的鎖底下（公司特休：profile 鎖 → user 鎖，見 lockForCreate）：
+   * 同一個人同時送出的兩張假單排隊，後到的看得到先到的（重疊、已用掉的特休）；改到職日也跟特休排隊。
    */
   async createLeave(userId: string, dto: CreateLeaveDto) {
     await this.assertMember(userId, dto.workspaceId);
     const range = parseLeaveRange(dto);
     const leave = await this.prisma.$transaction(async (tx) => {
-      await lockUser(tx, userId);
+      await this.leavePolicy.lockForCreate(tx, userId, dto.workspaceId, dto.type);
       const { days, annual } = await this.leavePolicy.evaluate(tx, userId, dto.workspaceId, dto.type, range);
       if (annual && annual.remaining < days) throw leaveErrors.insufficientBalance(annual.remaining);
       return tx.leaveRequest.create({

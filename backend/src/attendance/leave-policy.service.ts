@@ -8,7 +8,7 @@ import { AuditRequestContext, AuditService } from '../audit/audit.service';
 import { CompanyService } from '../company/company.service';
 import { parseIsoDate } from '../employees/employees.service';
 import { LeaveRange, halfDaysOverlap, isoDate, leaveDaysOrThrow, leaveErrors, toNumber } from './leave-days';
-import { AnnualPeriod, annualPeriodOn, isPeriodStart, previousPeriod, taipeiToday } from './leave-entitlement';
+import { AnnualPeriod, annualPeriodOn, periodStartFor, previousPeriod, taipeiToday } from './leave-entitlement';
 import { lockLeavePolicy } from './leave-lock';
 
 type Db = PrismaService | Prisma.TransactionClient;
@@ -55,6 +55,22 @@ export class LeavePolicyService {
   ) {}
 
   // ─────────────── 請假單的檢查（建立與 preview 共用） ───────────────
+
+  /**
+   * 建立請假的鎖（交易的第一個動作，還沒寫入任何東西）。順序照 identity-lock.ts：org → profile → user。
+   * - 公司工作空間的特休：先拿 requester 員工資料的 profile 鎖。改到職日（H2 PATCH /admin/employees/:id）
+   *   拿同一把鎖，所以特休的期間與餘額檢查不會跟改到職日交錯：evaluate 在鎖底下才讀 hireDate。
+   * - 再拿 requester 的 user 鎖：同一個人同時送出的假單（任何工作空間）排隊，重疊與已用特休看得到彼此。
+   * profile 是在拿鎖前查的；綁定換人要拿 user 鎖，拿到 user 鎖之後 evaluate 讀到的就是同一份綁定，
+   * 只有「查完、拿 user 鎖前剛好解除再綁另一份資料」這種情況會讀到沒鎖的 profile。
+   */
+  async lockForCreate(tx: Prisma.TransactionClient, userId: string, workspaceId: string, type: string): Promise<void> {
+    if (type === 'annual' && (await this.company.isCompanyWorkspace(workspaceId))) {
+      const profile = await tx.employeeProfile.findFirst({ where: { workspaceId, userId }, select: { id: true } });
+      if (profile) await lockEmployeeProfile(tx, profile.id);
+    }
+    await lockUser(tx, userId);
+  }
 
   /**
    * 天數 → 重疊 → 特休（公司工作空間：員工資料、跨期間、餘額）。不檢查餘額夠不夠，由呼叫端決定
@@ -120,7 +136,10 @@ export class LeavePolicyService {
     return new Set(rows.map((r) => isoDate(r.date)));
   }
 
-  /** entitled + 該期間的調整 − 該期間開始的 pending／approved 特休 */
+  /**
+   * entitled + 該期間的調整 − 該期間開始的 pending／approved 特休。
+   * 調整用期間序號（periodIndex）對應，不是日期：改到職日之後調整仍屬於同一個年資期間。
+   */
   private async balanceFor(
     db: Db,
     workspaceId: string,
@@ -129,7 +148,7 @@ export class LeavePolicyService {
     period: AnnualPeriod,
   ): Promise<AnnualBalanceDto> {
     const adjustments = await db.leaveBalanceAdjustment.findMany({
-      where: { profileId, periodStart: period.periodStart },
+      where: { profileId, periodIndex: period.index },
       select: { days: true },
     });
     const adjusted = adjustments.reduce((s, a) => s + toNumber(a.days), 0);
@@ -203,14 +222,14 @@ export class LeavePolicyService {
     const adjustments = await this.prisma.leaveBalanceAdjustment.findMany({
       where: { profileId: profile.id },
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-      select: { id: true, periodStart: true, days: true, reason: true, createdById: true, createdAt: true },
+      select: { id: true, periodIndex: true, days: true, reason: true, createdById: true, createdAt: true },
     });
     return {
       current: current ? await this.balanceFor(this.prisma, workspaceId, profile.id, profile.userId, current) : null,
       previous: previous ? await this.balanceFor(this.prisma, workspaceId, profile.id, profile.userId, previous) : null,
       adjustments: adjustments.map((a) => ({
         id: a.id,
-        periodStart: isoDate(a.periodStart),
+        periodStart: isoDate(periodStartFor(profile.hireDate, a.periodIndex)),
         days: toNumber(a.days),
         reason: a.reason,
         createdById: a.createdById,
@@ -246,13 +265,16 @@ export class LeavePolicyService {
       const profile = await this.findProfile(tx, workspaceId, profileId);
       if (profile.userId === actorId) throw cannotEditSelf();
       if (profile.userId) await lockUser(tx, profile.userId);
-      if (!isPeriodStart(profile.hireDate, periodStart)) {
+      // API 收 periodStart（日期），存成期間序號：用目前的到職日換算，必須剛好是某個期間的第一天
+      const period = annualPeriodOn(profile.hireDate, periodStart);
+      if (!period || isoDate(period.periodStart) !== isoDate(periodStart)) {
         throw leaveErrors.adjustmentInvalid('periodStart 不是這位員工的特休期間起始日');
       }
-      return tx.leaveBalanceAdjustment.create({
-        data: { workspaceId, profileId: profile.id, periodStart, days, reason, createdById: actorId },
-        select: { id: true, periodStart: true, days: true, reason: true, createdById: true, createdAt: true },
+      const row = await tx.leaveBalanceAdjustment.create({
+        data: { workspaceId, profileId: profile.id, periodIndex: period.index, days, reason, createdById: actorId },
+        select: { id: true, periodIndex: true, days: true, reason: true, createdById: true, createdAt: true },
       });
+      return { ...row, periodStart: period.periodStart };
     }, LOCKED_TX_OPTIONS);
 
     await this.audit.record({
@@ -261,7 +283,7 @@ export class LeavePolicyService {
       action: 'leave.balance.adjust',
       targetType: 'employee_profile',
       targetId: profileId,
-      metadata: { adjustmentId: created.id, periodStart: isoDate(periodStart), days },
+      metadata: { adjustmentId: created.id, periodStart: isoDate(periodStart), periodIndex: created.periodIndex, days },
       req,
     });
     return {

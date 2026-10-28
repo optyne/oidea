@@ -1055,7 +1055,9 @@ model LeaveBalanceAdjustment {
   id          String   @id @default(uuid())
   workspaceId String
   profileId   String
-  periodStart DateTime @db.Date
+  /// 年資期間的序號（0 = 到職 6 個月到 1 年；n ≥ 1 = 第 n 個週年起的那一年），不是日期：
+  /// 改到職日之後調整跟著期間走。API 的 periodStart 由目前的到職日換算。
+  periodIndex Int
   days        Decimal  @db.Decimal(5, 1)
   reason      String
   createdById String
@@ -1065,7 +1067,7 @@ model LeaveBalanceAdjustment {
   profile   EmployeeProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
   createdBy User            @relation("LeaveAdjustmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
 
-  @@index([profileId, periodStart])
+  @@index([profileId, periodIndex])
   @@map("leave_balance_adjustments")
 }
 

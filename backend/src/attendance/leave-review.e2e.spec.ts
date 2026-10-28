@@ -154,7 +154,7 @@ describe('H3 leave review (independent review probes)', () => {
     expect(side.status).toBe(201);
   });
 
-  it('probe_hr_adjust_after_hire_date_change_orphans_adjustment', async () => {
+  it('probe_hr_adjust_after_hire_date_change_orphans_adjustment: the adjustment follows its service period', async () => {
     await boot(Date.UTC(2026, 9, 28, 2));
     const adj = await h.call('POST', `/admin/employees/${profileId('u-mem')}/leave-balance/adjustments`, tok('u-hr'), {
       periodStart: '2026-03-01',
@@ -162,12 +162,62 @@ describe('H3 leave review (independent review probes)', () => {
       reason: 'x',
     });
     expect(adj.status).toBe(201);
+    expect(h.prisma.leaveAdjustments).toEqual([expect.objectContaining({ periodIndex: 2 })]);
     // HR corrects the hire date by one day (H2 PATCH)
     const patch = await h.call('PATCH', `/admin/employees/${profileId('u-mem')}`, tok('u-hr'), { hireDate: '2024-03-02' });
     expect(patch.status).toBe(200);
+    // The +3 stays with the year 2→3 period, which now starts 2026-03-02
     const bal = await h.call('GET', `/attendance/leaves/balance?workspaceId=${COMPANY_WS}`, tok('u-mem'));
-    // Records current behaviour: the +3 adjustment silently disappears from the balance.
-    expect(bal.body).toMatchObject({ periodStart: '2026-03-02', adjusted: 0 });
+    expect(bal.body).toMatchObject({ periodStart: '2026-03-02', entitled: 10, adjusted: 3, remaining: 13 });
+    const admin = await h.call('GET', `/admin/employees/${profileId('u-mem')}/leave-balance`, tok('u-hr'));
+    expect(admin.body.current).toMatchObject({ periodStart: '2026-03-02', adjusted: 3 });
+    expect(admin.body.adjustments).toEqual([expect.objectContaining({ id: adj.body.id, periodStart: '2026-03-02', days: 3 })]);
+    // The old date is no longer a period start; the new one is
+    const old = await h.call('POST', `/admin/employees/${profileId('u-mem')}/leave-balance/adjustments`, tok('u-hr'), {
+      periodStart: '2026-03-01',
+      days: 1,
+      reason: 'x',
+    });
+    expect([old.status, old.body.code]).toEqual([400, 'leave_adjustment_invalid']);
+    const moved = await h.call('POST', `/admin/employees/${profileId('u-mem')}/leave-balance/adjustments`, tok('u-hr'), {
+      periodStart: '2026-03-02',
+      days: -1,
+      reason: 'x',
+    });
+    expect([moved.status, moved.body.periodStart]).toEqual([201, '2026-03-02']);
+  });
+
+  it('annual leave and a hire-date change are serialized by the profile lock (create reads hireDate under the lock)', async () => {
+    // u-mem hired 2024-03-01: 2026-11-02..04 lies inside [2026-03-01, 2027-02-28].
+    // HR moves the hire date to 2024-11-04, so the anniversary 2026-11-04 splits that range → leave_spans_period.
+    await boot(Date.UTC(2026, 9, 28, 2));
+    h.prisma.latencyMs = 5;
+    const pid = profileId('u-mem');
+    // Hold the PATCH inside its transaction (profile lock taken, update not yet written) until the create
+    // has finished, or 300 ms at most. With the profile lock the create waits for the PATCH and then sees
+    // the new hire date; without it the create reads the old hire date and commits.
+    let createDone!: () => void;
+    const createFinished = new Promise<void>((r) => (createDone = r));
+    let patchHolding!: () => void;
+    const patchInside = new Promise<void>((r) => (patchHolding = r));
+    const realUpdate = h.prisma.employeeProfile.update;
+    h.prisma.employeeProfile.update = jest.fn(async (args: unknown) => {
+      patchHolding();
+      await Promise.race([createFinished, new Promise((r) => setTimeout(r, 300))]);
+      return realUpdate(args);
+    });
+
+    const patch = h.call('PATCH', `/admin/employees/${pid}`, tok('u-hr'), { hireDate: '2024-11-04' });
+    await patchInside;
+    const create = await apply({ startDate: '2026-11-02', endDate: '2026-11-04' });
+    createDone();
+    expect((await patch).status).toBe(200);
+
+    expect([create.status, create.body.code]).toEqual([400, 'leave_spans_period']);
+    expect(h.prisma.leaveRequests).toHaveLength(0);
+    // lock order: profile before user
+    const order = h.prisma.lockLog.filter((k) => k === `7302:${pid}` || k === '7301:u-mem');
+    expect(order).toEqual([`7302:${pid}`, `7302:${pid}`, '7301:u-mem']);
   });
 
   describe('pure entitlement boundaries', () => {
