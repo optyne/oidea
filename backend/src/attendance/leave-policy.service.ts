@@ -239,8 +239,12 @@ export class LeavePolicyService {
   }
 
   /**
-   * 加一筆 +/- 調整。跟建立請假排隊（profile 鎖 → 綁定的 user 鎖，跟 createLeave 的 user 鎖同一把），
-   * 扣餘額的調整不會跟同時送出的特休一起通過檢查。不能調整自己的（`cannot_edit_self`）。audit `leave.balance.adjust`。
+   * 加一筆 +/- 調整。不能調整自己的（`cannot_edit_self`）。audit `leave.balance.adjust`。
+   *
+   * 鎖（profile 鎖 → 綁定的 user 鎖，跟改到職日、createLeave 的特休是同一組鎖）保證的是：
+   * - periodStart 換算成期間序號時用的到職日，在 commit 前不會被改掉；
+   * - 同時送出的特休要嘛在這筆調整之前檢查完、要嘛之後才檢查而且看得到這筆調整（不會用半套的狀態）。
+   * 不保證餘額不為負：扣回的調整可以讓餘額變成負數（hr 更正已休掉的假），這裡刻意不檢查餘額。
    */
   async addAdjustment(
     actorId: string,
