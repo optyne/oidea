@@ -14,6 +14,9 @@ import 'sso_fakes.dart';
 const memberPerms = <String>[];
 const hrPerms = <String>['employee.read_all', 'employee.manage', 'department.manage'];
 const readOnlyPerms = <String>['employee.read_all'];
+
+/// hr／owner 在 H3 之後多了 `leave.policy.manage`（admin 沒有）。
+const hrPolicyPerms = <String>[...hrPerms, 'leave.policy.manage'];
 const adminPerms = <String>[
   'employee.read_all',
   'employee.manage',
@@ -136,6 +139,23 @@ class FakeAdminApi extends Fake implements ApiClient {
   final List<Map<String, dynamic>> createdEmployees = [];
   final List<({String id, String date})> terminated = [];
 
+  // H3
+  List<dynamic> leaves = [];
+  Map<String, dynamic>? leaveBalance;
+
+  /// 預覽結果；回 Map 或要丟的 Exception。預設：一天、沒有特休資訊。
+  Object Function(String type, String startPart, String endPart) previewResult =
+      (_, __, ___) => {'days': 1, 'annual': null};
+  Object? createLeaveError;
+  Map<int, List<Map<String, dynamic>>> holidays = {};
+  Object? replaceHolidaysError;
+  Map<String, dynamic> employeeLeaveBalance = {'current': null, 'previous': null, 'adjustments': <dynamic>[]};
+  Object? adjustmentError;
+  final List<Map<String, dynamic>> previewQueries = [];
+  final List<Map<String, dynamic>> createdLeaves = [];
+  final List<({int year, List<Map<String, dynamic>> items})> replacedHolidays = [];
+  final List<({String id, String periodStart, double days, String reason})> adjustments = [];
+
   @override
   Future<List<dynamic>> getWorkspaces() async => [];
 
@@ -234,7 +254,130 @@ class FakeAdminApi extends Fake implements ApiClient {
     auditQueries.add({'from': from, 'to': to, 'action': action, 'actorId': actorId, 'cursor': cursor});
     return auditPages[cursor] ?? {'items': <dynamic>[], 'nextCursor': null};
   }
+
+  // ───────────── H3 請假規則 ─────────────
+
+  @override
+  Future<List<dynamic>> getLeaves(String workspaceId, {String? status}) async => leaves;
+
+  @override
+  Future<Map<String, dynamic>> previewLeave({
+    required String workspaceId,
+    required String type,
+    required String startDate,
+    required String endDate,
+    String startPart = 'full',
+    String endPart = 'full',
+  }) async {
+    previewQueries.add({
+      'workspaceId': workspaceId,
+      'type': type,
+      'startDate': startDate,
+      'endDate': endDate,
+      'startPart': startPart,
+      'endPart': endPart,
+    });
+    final r = previewResult(type, startPart, endPart);
+    if (r is Exception || r is Error) throw r;
+    return r as Map<String, dynamic>;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getLeaveBalance(String workspaceId) async => leaveBalance;
+
+  @override
+  Future<Map<String, dynamic>> createLeave(Map<String, dynamic> body) async {
+    createdLeaves.add(body);
+    if (createLeaveError != null) throw createLeaveError!;
+    return leaveJson('new');
+  }
+
+  @override
+  Future<Map<String, dynamic>> getAdminHolidays(int year) async {
+    return {'year': year, 'items': holidays[year] ?? <dynamic>[]};
+  }
+
+  @override
+  Future<Map<String, dynamic>> replaceAdminHolidays(int year, List<Map<String, dynamic>> items) async {
+    replacedHolidays.add((year: year, items: items));
+    if (replaceHolidaysError != null) throw replaceHolidaysError!;
+    holidays[year] = items;
+    return {'year': year, 'items': items};
+  }
+
+  @override
+  Future<Map<String, dynamic>> getEmployeeLeaveBalance(String employeeId) async => employeeLeaveBalance;
+
+  @override
+  Future<Map<String, dynamic>> addLeaveAdjustment(
+    String employeeId, {
+    required String periodStart,
+    required double days,
+    required String reason,
+  }) async {
+    adjustments.add((id: employeeId, periodStart: periodStart, days: days, reason: reason));
+    if (adjustmentError != null) throw adjustmentError!;
+    return adjustmentJson('adj-new', periodStart: periodStart, days: days, reason: reason);
+  }
 }
+
+/// `AnnualBalance`（preview.annual、GET balance、後台 current／previous）。形狀同後端 `AnnualBalanceDto`。
+Map<String, dynamic> annualJson({
+  String? periodStart = '2026-03-01',
+  String? periodEnd = '2027-02-28',
+  double entitled = 10,
+  double adjusted = 0,
+  double used = 2,
+  double remaining = 8,
+}) =>
+    {
+      'periodStart': periodStart,
+      'periodEnd': periodEnd,
+      'entitled': entitled,
+      'adjusted': adjusted,
+      'used': used,
+      'remaining': remaining,
+    };
+
+/// 後台特休調整一列。形狀同後端 `employeeBalance().adjustments[]`。
+Map<String, dynamic> adjustmentJson(
+  String id, {
+  String periodStart = '2026-03-01',
+  double days = 1,
+  String reason = '補休',
+}) =>
+    {
+      'id': id,
+      'periodStart': periodStart,
+      'days': days,
+      'reason': reason,
+      'createdById': 'u-hr',
+      'createdAt': '2026-10-20T08:00:00.000Z',
+    };
+
+/// 一張假單（`GET /attendance/leaves/workspace/:id` 的一列，只放 App 會讀的欄位）。
+Map<String, dynamic> leaveJson(
+  String id, {
+  String type = 'annual',
+  String status = 'pending',
+  String startDate = '2026-11-02T00:00:00.000Z',
+  String endDate = '2026-11-04T00:00:00.000Z',
+  String startPart = 'full',
+  String endPart = 'full',
+  num days = 3,
+}) =>
+    {
+      'id': id,
+      'type': type,
+      'status': status,
+      'startDate': startDate,
+      'endDate': endDate,
+      'startPart': startPart,
+      'endPart': endPart,
+      'days': days,
+      'reason': null,
+      'requester': {'id': 'u-1', 'displayName': '王小明'},
+    };
 
 Override adminApiOverride(FakeAdminApi api) => apiClientProvider.overrideWithValue(api);
 

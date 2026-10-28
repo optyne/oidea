@@ -19,6 +19,8 @@ class AdminHomePage extends ConsumerWidget {
         const _Tile(Icons.badge_outlined, '員工名冊', Colors.indigo, '/admin/employees'),
       if (perms.contains(AdminPerm.employeeReadAll))
         const _Tile(Icons.account_tree_outlined, '部門', Colors.teal, '/admin/departments'),
+      if (perms.contains(AdminPerm.leavePolicyManage))
+        const _Tile(Icons.event_available_outlined, '國定假日', Colors.green, '/admin/holidays'),
       if (perms.contains(AdminPerm.memberRoleManage))
         const _Tile(Icons.admin_panel_settings, '成員與角色', Colors.purple, '/admin/roles'),
       if (perms.contains(AdminPerm.auditRead))

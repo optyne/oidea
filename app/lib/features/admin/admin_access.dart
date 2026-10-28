@@ -14,6 +14,9 @@ List<String> adminRequiredPerms(String location) {
   if (path == '/admin/roles' || path.startsWith('/admin/roles/')) {
     return const [AdminPerm.memberRoleManage];
   }
+  if (path == '/admin/holidays' || path.startsWith('/admin/holidays/')) {
+    return const [AdminPerm.leavePolicyManage];
+  }
   if (path == '/admin/audit' || path.startsWith('/admin/audit/')) {
     return const [AdminPerm.auditRead];
   }

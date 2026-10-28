@@ -27,6 +27,7 @@ import { CompanyService } from '../../../company/company.service';
 import { AllExceptionsFilter } from '../../../common/http-exception.filter';
 import { AttendanceController } from '../../../attendance/attendance.controller';
 import { AttendanceService } from '../../../attendance/attendance.service';
+import { LeavePolicyService } from '../../../attendance/leave-policy.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { OidcController } from '../oidc.controller';
 import { OIDC_CLIENT_TUNING, OidcClient } from '../oidc-client';
@@ -169,6 +170,7 @@ export class SsoHarness {
         CompanyService,
         UsersService,
         AttendanceService,
+        LeavePolicyService,
         { provide: NotificationsService, useValue: {} },
         { provide: Clock, useValue: this.clock },
         { provide: ConfigService, useValue: config },

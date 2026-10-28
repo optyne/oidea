@@ -26,6 +26,7 @@ import '../../features/admin/models/admin_models.dart';
 import '../../features/admin/presentation/pages/admin_home_page.dart';
 import '../../features/admin/presentation/pages/audit_page.dart';
 import '../../features/admin/presentation/pages/departments_page.dart';
+import '../../features/admin/presentation/pages/holidays_page.dart';
 import '../../features/admin/presentation/pages/employees_page.dart';
 import '../../features/admin/presentation/pages/my_profile_page.dart';
 import '../../features/admin/presentation/pages/roles_page.dart';
@@ -239,6 +240,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const AdminGuard(
                   anyOf: [AdminPerm.employeeReadAll],
                   child: DepartmentsPage(),
+                ),
+              ),
+              GoRoute(
+                path: 'holidays',
+                builder: (context, state) => const AdminGuard(
+                  anyOf: [AdminPerm.leavePolicyManage],
+                  child: HolidaysPage(),
                 ),
               ),
               GoRoute(

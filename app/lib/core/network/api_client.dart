@@ -1111,6 +1111,72 @@ class ApiClient {
     await _dio.delete('attendance/leaves/$id');
   }
 
+  /// 預覽一張假單的天數與特休餘額（不寫入）。[startDate]／[endDate] 為 `YYYY-MM-DD`；
+  /// [startPart] `full`|`pm`、[endPart] `full`|`am`。
+  Future<Map<String, dynamic>> previewLeave({
+    required String workspaceId,
+    required String type,
+    required String startDate,
+    required String endDate,
+    String startPart = 'full',
+    String endPart = 'full',
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      'attendance/leaves/preview',
+      queryParameters: {
+        'workspaceId': workspaceId,
+        'type': type,
+        'startDate': startDate,
+        'endDate': endDate,
+        'startPart': startPart,
+        'endPart': endPart,
+      },
+    );
+    return res.data ?? const {};
+  }
+
+  /// 我目前的特休餘額；公司工作空間以外或未滿 6 個月時後端回 null（沒有 body）。
+  Future<Map<String, dynamic>?> getLeaveBalance(String workspaceId) async {
+    final res = await _dio.get<dynamic>(
+      'attendance/leaves/balance',
+      queryParameters: {'workspaceId': workspaceId},
+    );
+    final data = res.data;
+    return data is Map<String, dynamic> ? data : null;
+  }
+
+  /// 某一年的國定假日（`leave.policy.manage`）。
+  Future<Map<String, dynamic>> getAdminHolidays(int year) async {
+    final res = await _dio.get<Map<String, dynamic>>('admin/holidays', queryParameters: {'year': year});
+    return res.data ?? const {};
+  }
+
+  /// 整年取代；[items] 每筆 `{date, name}`，空清單 = 清空那一年。
+  Future<Map<String, dynamic>> replaceAdminHolidays(int year, List<Map<String, dynamic>> items) async {
+    final res = await _dio.put<Map<String, dynamic>>('admin/holidays/$year', data: {'items': items});
+    return res.data ?? const {};
+  }
+
+  /// 員工的特休：目前與上一個期間、所有調整（`leave.policy.manage`）。
+  Future<Map<String, dynamic>> getEmployeeLeaveBalance(String employeeId) async {
+    final res = await _dio.get<Map<String, dynamic>>('admin/employees/$employeeId/leave-balance');
+    return res.data ?? const {};
+  }
+
+  /// 加一筆特休調整；[days] 非 0、0.5 的倍數，可為負。
+  Future<Map<String, dynamic>> addLeaveAdjustment(
+    String employeeId, {
+    required String periodStart,
+    required double days,
+    required String reason,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      'admin/employees/$employeeId/leave-balance/adjustments',
+      data: {'periodStart': periodStart, 'days': days, 'reason': reason},
+    );
+    return res.data ?? const {};
+  }
+
   /// 檔案庫頁面 —— 依類別 / 關鍵字 / 分頁取得檔案清單。
   /// 回傳 `{items: [...], total: N, limit, offset}`。
   Future<Map<String, dynamic>> browseWorkspaceFiles(

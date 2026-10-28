@@ -14,6 +14,7 @@ class AdminPerm {
   static const memberRoleManage = 'member.role.manage';
   static const ownerTransfer = 'owner.transfer';
   static const auditRead = 'audit.read';
+  static const leavePolicyManage = 'leave.policy.manage';
 
   /// 擁有其中任何一個，就會看到「後台」入口。
   static const anyAdmin = <String>[

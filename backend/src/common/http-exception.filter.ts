@@ -26,6 +26,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let code: string | undefined;
     // 附帶的明細（例如 owner_transfer_required 要移交的工作空間清單）；只放白名單內的欄位
     let workspaces: unknown[] | undefined;
+    // H3 leave_insufficient_balance：目前期間還剩幾天
+    let remaining: number | undefined;
     if (isHttp) {
       const res = (exception as HttpException).getResponse();
       if (typeof res === 'string') {
@@ -36,6 +38,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         errorCode = obj.error;
         if (typeof obj.code === 'string') code = obj.code;
         if (Array.isArray(obj.workspaces)) workspaces = obj.workspaces;
+        if (typeof obj.remaining === 'number') remaining = obj.remaining;
       }
     } else if (exception instanceof Error) {
       message = exception.message;
@@ -55,6 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error: errorCode,
       ...(code ? { code } : {}),
       ...(workspaces ? { workspaces } : {}),
+      ...(remaining !== undefined ? { remaining } : {}),
       message,
       path: request.url,
       timestamp: new Date().toISOString(),

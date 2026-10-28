@@ -83,6 +83,8 @@ function backendCodes(): Set<string> {
   const files = [
     ...walk(path.join(SRC, 'employees')),
     ...walk(path.join(SRC, 'audit')),
+    // H3 的請假錯誤碼也放在同一張 admin_errors.dart 對照表；H3 專屬的檢查在 attendance/h3-app-contract.spec.ts
+    ...walk(path.join(SRC, 'attendance')),
     path.join(SRC, 'company/company-permission.guard.ts'),
   ];
   const codes = new Set<string>();
