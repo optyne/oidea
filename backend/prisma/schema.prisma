@@ -68,6 +68,7 @@ model User {
   botAccount         BotAccount?          @relation("BotAccountUser")
   createdBots        BotAccount[]         @relation("BotAccountCreator")
   employeeProfile    EmployeeProfile?
+  leaveAdjustmentsMade LeaveBalanceAdjustment[] @relation("LeaveAdjustmentCreator")
 
   @@map("users")
 }
@@ -154,6 +155,8 @@ model Workspace {
   bots              BotAccount[]
   departments       Department[]
   employeeProfiles  EmployeeProfile[]
+  holidays          Holiday[]
+  leaveAdjustments  LeaveBalanceAdjustment[]
 
   @@map("workspaces")
 }
@@ -217,6 +220,7 @@ model EmployeeProfile {
   manager            EmployeeProfile?  @relation("EmployeeManager", fields: [managerProfileId], references: [id], onDelete: SetNull)
   reports            EmployeeProfile[] @relation("EmployeeManager")
   managedDepartments Department[]      @relation("DepartmentManager")
+  leaveAdjustments   LeaveBalanceAdjustment[]
 
   @@unique([workspaceId, employeeNo])
   @@unique([workspaceId, email])
@@ -1008,6 +1012,12 @@ model LeaveRequest {
   type         String // sick, annual, personal, unpaid, other
   startDate    DateTime  @db.Date
   endDate      DateTime  @db.Date
+  /// H3：起始日 full（整天）或 pm（只請下午）
+  startPart    String    @default("full")
+  /// H3：結束日 full（整天）或 am（只請上午）
+  endPart      String    @default("full")
+  /// H3：請假天數（不含週末與 Holiday，半天 0.5），建立時算好存下來
+  days         Decimal   @db.Decimal(5, 1)
   reason       String?
   status       String    @default("pending") // pending, approved, rejected, cancelled
   approverId   String?
@@ -1023,6 +1033,40 @@ model LeaveRequest {
   @@index([workspaceId, status, startDate])
   @@index([requesterId, startDate])
   @@map("leave_requests")
+}
+
+/// H3：國定假日（不算請假天數）。hr／owner 以「整年取代」的方式維護，沒有補班日。
+model Holiday {
+  id          String   @id @default(uuid())
+  workspaceId String
+  date        DateTime @db.Date
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, date])
+  @@map("holidays")
+}
+
+/// H3：特休餘額的人工調整（正負都可，不為 0），掛在某個週年期間（periodStart）上。
+model LeaveBalanceAdjustment {
+  id          String   @id @default(uuid())
+  workspaceId String
+  profileId   String
+  periodStart DateTime @db.Date
+  days        Decimal  @db.Decimal(5, 1)
+  reason      String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  profile   EmployeeProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  createdBy User            @relation("LeaveAdjustmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([profileId, periodStart])
+  @@map("leave_balance_adjustments")
 }
 
 // ============================================================
