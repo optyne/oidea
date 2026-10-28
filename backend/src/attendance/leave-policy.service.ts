@@ -80,9 +80,9 @@ export class LeavePolicyService {
     const holidays = await this.holidaySet(db, workspaceId, range.start, range.end);
     const days = leaveDaysOrThrow(range, holidays);
 
+    // 重疊不分工作空間：同一個人不能同時請兩次假。建立時的 user 鎖也不分工作空間，所以照樣排隊。
     const others = await db.leaveRequest.findMany({
       where: {
-        workspaceId,
         requesterId: userId,
         status: { in: ACTIVE_LEAVE_STATUSES },
         startDate: { lte: range.end },

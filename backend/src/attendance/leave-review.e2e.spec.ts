@@ -138,20 +138,42 @@ describe('H3 leave review (independent review probes)', () => {
     expect(h.prisma.leaveRequests).toHaveLength(0);
   });
 
-  it('probe_overlap_across_workspaces (design: own pending/approved requests, not scoped to workspace)', async () => {
+  it('probe_overlap_across_workspaces: own pending/approved requests in any workspace block the dates → 409', async () => {
     await boot(Date.UTC(2026, 9, 28, 2), (h) => {
       h.prisma.addWorkspace({ id: 'ws-side', ownerId: 'u-founder' });
       h.prisma.addMember('ws-side', 'u-mem', 'member');
     });
     expect((await apply({ startDate: '2026-11-02', endDate: '2026-11-03', type: 'sick' })).status).toBe(201);
-    const side = await h.call('POST', '/attendance/leaves', tok('u-mem'), {
-      workspaceId: 'ws-side',
-      type: 'sick',
-      startDate: '2026-11-02',
-      endDate: '2026-11-03',
+    const sideBody = { workspaceId: 'ws-side', type: 'sick', startDate: '2026-11-03', endDate: '2026-11-04' };
+    const side = await h.call('POST', '/attendance/leaves', tok('u-mem'), sideBody);
+    expect([side.status, side.body.code]).toEqual([409, 'leave_overlap']);
+    const q = `workspaceId=ws-side&type=sick&startDate=2026-11-03&endDate=2026-11-04`;
+    const preview = await h.call('GET', `/attendance/leaves/preview?${q}`, tok('u-mem'));
+    expect([preview.status, preview.body.code]).toEqual([409, 'leave_overlap']);
+    // the next day is free in either workspace
+    const free = await h.call('POST', '/attendance/leaves', tok('u-mem'), { ...sideBody, startDate: '2026-11-04' });
+    expect(free.status).toBe(201);
+    expect(h.prisma.leaveRequests).toHaveLength(2);
+  });
+
+  it('overlap across workspaces is serialized: two concurrent overlapping requests in different workspaces → one wins', async () => {
+    await boot(Date.UTC(2026, 9, 28, 2), (h) => {
+      h.prisma.addWorkspace({ id: 'ws-side', ownerId: 'u-founder' });
+      h.prisma.addMember('ws-side', 'u-mem', 'member');
     });
-    // Records current behaviour: allowed (overlap is per-workspace). Flip if the design means global.
-    expect(side.status).toBe(201);
+    h.prisma.latencyMs = 5;
+    const [x, y] = await Promise.all([
+      apply({ startDate: '2026-11-02', endDate: '2026-11-03', type: 'sick' }),
+      h.call('POST', '/attendance/leaves', tok('u-mem'), {
+        workspaceId: 'ws-side',
+        type: 'sick',
+        startDate: '2026-11-03',
+        endDate: '2026-11-04',
+      }),
+    ]);
+    expect([x.status, y.status].sort()).toEqual([201, 409]);
+    expect(h.prisma.leaveRequests).toHaveLength(1);
+    expect(h.prisma.lockLog.filter((k) => k === '7301:u-mem')).toHaveLength(2);
   });
 
   it('probe_hr_adjust_after_hire_date_change_orphans_adjustment: the adjustment follows its service period', async () => {
