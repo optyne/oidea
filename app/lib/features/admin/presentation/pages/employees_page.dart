@@ -10,6 +10,7 @@ import '../../providers/admin_providers.dart';
 import '../widgets/admin_widgets.dart';
 import '../widgets/employee_action_dialogs.dart';
 import '../widgets/employee_form_dialog.dart';
+import '../widgets/leave_balance_dialog.dart';
 
 /// 員工名冊。`employee.read_all` 可查看；有 `employee.manage` 才會出現新增、編輯、離職等按鈕。
 class EmployeesPage extends ConsumerStatefulWidget {
@@ -114,6 +115,7 @@ class _EmployeesPageState extends ConsumerState<EmployeesPage> {
   Widget build(BuildContext context) {
     final perms = ref.watch(adminPermissionsProvider);
     final canManage = perms.contains(AdminPerm.employeeManage);
+    final canLeavePolicy = perms.contains(AdminPerm.leavePolicyManage);
     final query = ref.watch(employeeQueryProvider);
     final async = ref.watch(employeesProvider);
     final departments = ref.watch(departmentsProvider(false)).valueOrNull ?? const <DepartmentDto>[];
@@ -167,6 +169,8 @@ class _EmployeesPageState extends ConsumerState<EmployeesPage> {
                 return _EmployeeTable(
                   employees: page.items,
                   canManage: canManage,
+                  canLeavePolicy: canLeavePolicy,
+                  onLeaveBalance: (e) => showEmployeeLeaveBalanceDialog(context, e),
                   onEdit: _edit,
                   onTerminate: _terminate,
                   onReinstate: _reinstate,
@@ -268,6 +272,8 @@ class _EmployeeTable extends StatelessWidget {
   const _EmployeeTable({
     required this.employees,
     required this.canManage,
+    required this.canLeavePolicy,
+    required this.onLeaveBalance,
     required this.onEdit,
     required this.onTerminate,
     required this.onReinstate,
@@ -276,6 +282,8 @@ class _EmployeeTable extends StatelessWidget {
 
   final List<EmployeeDto> employees;
   final bool canManage;
+  final bool canLeavePolicy;
+  final void Function(EmployeeDto) onLeaveBalance;
   final void Function(EmployeeDto) onEdit;
   final void Function(EmployeeDto) onTerminate;
   final void Function(EmployeeDto) onReinstate;
@@ -297,7 +305,7 @@ class _EmployeeTable extends StatelessWidget {
             const DataColumn(label: Text('狀態')),
             const DataColumn(label: Text('到職日')),
             const DataColumn(label: Text('登入帳號')),
-            if (canManage) const DataColumn(label: Text('操作')),
+            if (canManage || canLeavePolicy) const DataColumn(label: Text('操作')),
           ],
           rows: [
             for (final e in employees)
@@ -310,9 +318,12 @@ class _EmployeeTable extends StatelessWidget {
                 DataCell(_StatusChip(employee: e)),
                 DataCell(Text(e.hireDate ?? '—')),
                 DataCell(Text(e.isBound ? (e.disabled ? '已停用' : '已綁定') : '尚未登入')),
-                if (canManage)
+                if (canManage || canLeavePolicy)
                   DataCell(_RowMenu(
                     employee: e,
+                    canManage: canManage,
+                    canLeavePolicy: canLeavePolicy,
+                    onLeaveBalance: onLeaveBalance,
                     onEdit: onEdit,
                     onTerminate: onTerminate,
                     onReinstate: onReinstate,
@@ -345,11 +356,14 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-enum _RowAction { edit, terminate, reinstate, unbind }
+enum _RowAction { leaveBalance, edit, terminate, reinstate, unbind }
 
 class _RowMenu extends StatelessWidget {
   const _RowMenu({
     required this.employee,
+    required this.canManage,
+    required this.canLeavePolicy,
+    required this.onLeaveBalance,
     required this.onEdit,
     required this.onTerminate,
     required this.onReinstate,
@@ -357,6 +371,9 @@ class _RowMenu extends StatelessWidget {
   });
 
   final EmployeeDto employee;
+  final bool canManage;
+  final bool canLeavePolicy;
+  final void Function(EmployeeDto) onLeaveBalance;
   final void Function(EmployeeDto) onEdit;
   final void Function(EmployeeDto) onTerminate;
   final void Function(EmployeeDto) onReinstate;
@@ -369,6 +386,8 @@ class _RowMenu extends StatelessWidget {
       icon: const Icon(Icons.more_horiz),
       onSelected: (a) {
         switch (a) {
+          case _RowAction.leaveBalance:
+            onLeaveBalance(employee);
           case _RowAction.edit:
             onEdit(employee);
           case _RowAction.terminate:
@@ -380,10 +399,11 @@ class _RowMenu extends StatelessWidget {
         }
       },
       itemBuilder: (_) => [
-        const PopupMenuItem(value: _RowAction.edit, child: Text('編輯')),
-        if (!employee.isTerminated) const PopupMenuItem(value: _RowAction.terminate, child: Text('離職')),
-        if (employee.isTerminated) const PopupMenuItem(value: _RowAction.reinstate, child: Text('復職')),
-        if (employee.isBound) const PopupMenuItem(value: _RowAction.unbind, child: Text('解除綁定')),
+        if (canLeavePolicy) const PopupMenuItem(value: _RowAction.leaveBalance, child: Text('特休')),
+        if (canManage) const PopupMenuItem(value: _RowAction.edit, child: Text('編輯')),
+        if (canManage && !employee.isTerminated) const PopupMenuItem(value: _RowAction.terminate, child: Text('離職')),
+        if (canManage && employee.isTerminated) const PopupMenuItem(value: _RowAction.reinstate, child: Text('復職')),
+        if (canManage && employee.isBound) const PopupMenuItem(value: _RowAction.unbind, child: Text('解除綁定')),
       ],
     );
   }
