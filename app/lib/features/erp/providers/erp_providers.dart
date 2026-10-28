@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
+import '../models/leave_models.dart';
 
 // ─────────── 成員與角色 ───────────
 
@@ -74,4 +75,12 @@ final leavesProvider =
     FutureProvider.family<List<dynamic>, String>((ref, workspaceId) async {
   final api = ref.watch(apiClientProvider);
   return api.getLeaves(workspaceId);
+});
+
+/// 我目前的特休餘額；沒有（公司工作空間以外、未滿 6 個月）或抓不到時是 null。
+final myLeaveBalanceProvider =
+    FutureProvider.family<AnnualBalance?, String>((ref, workspaceId) async {
+  final api = ref.watch(apiClientProvider);
+  final json = await api.getLeaveBalance(workspaceId);
+  return json == null ? null : AnnualBalance.fromJson(json);
 });

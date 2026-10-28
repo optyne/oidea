@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../erp/models/leave_models.dart';
 import '../admin_errors.dart';
 import '../models/admin_models.dart';
 
@@ -96,6 +97,21 @@ final departmentsProvider = FutureProvider.autoDispose.family<List<DepartmentDto
   final api = ref.watch(apiClientProvider);
   final raw = await api.getAdminDepartments(includeArchived: includeArchived);
   return raw.whereType<Map<String, dynamic>>().map(DepartmentDto.fromJson).toList();
+});
+
+// ───────────────────────── 請假規則（H3） ─────────────────────────
+
+/// 某一年的國定假日。
+final holidaysProvider = FutureProvider.autoDispose.family<HolidayYear, int>((ref, year) async {
+  final api = ref.watch(apiClientProvider);
+  return HolidayYear.fromJson(await api.getAdminHolidays(year));
+});
+
+/// 某位員工的特休餘額與調整紀錄（參數是員工 id）。
+final employeeLeaveBalanceProvider =
+    FutureProvider.autoDispose.family<EmployeeLeaveBalance, String>((ref, employeeId) async {
+  final api = ref.watch(apiClientProvider);
+  return EmployeeLeaveBalance.fromJson(await api.getEmployeeLeaveBalance(employeeId));
 });
 
 // ───────────────────────── 審計日誌 ─────────────────────────

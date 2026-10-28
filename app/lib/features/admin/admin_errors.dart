@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../erp/models/leave_models.dart';
+
 /// 後端沒帶 message 時的備用文字（正常情況後端的 message 已是繁體中文）。
 const Map<String, String> _fallbackByCode = {
   'company_not_configured': '尚未設定公司工作空間',
@@ -23,9 +25,19 @@ const Map<String, String> _fallbackByCode = {
   'admin_protected': '人資不能對公司管理員解除綁定、修改 Email 或辦理離職',
   'cannot_edit_self': '不能在後台修改自己的員工資料，請由其他管理者處理',
   'identity_ambiguous': '有多個帳號的 Email 跟這位員工只差大小寫，無法判斷是哪一位，請先處理重複的帳號',
+  // H3 請假規則
+  'leave_invalid_range': '請假日期範圍不正確',
+  'leave_no_workdays': '這段期間沒有需要請假的工作日',
+  'leave_overlap': '跟你已申請的假重疊',
+  'leave_spans_period': '特休跨越了週年期間，請以週年日為界拆成兩張假單',
+  'leave_insufficient_balance': '特休餘額不足',
+  'no_employee_profile': '公司工作空間裡找不到你的員工資料，無法計算特休',
+  'holiday_invalid': '假日清單不正確',
+  'leave_adjustment_invalid': '特休調整內容不正確',
 };
-// 後端 backend/src/employees/h2-app-contract.spec.ts 會讀這個檔，確認上面的鍵（加上下面特別處理的
-// owner_transfer_required）跟後端會送的 H2 錯誤碼完全相同。新增或移除錯誤碼時兩邊要一起改。
+// 後端 backend/src/employees/h2-app-contract.spec.ts 與 backend/src/attendance/h3-app-contract.spec.ts
+// 會讀這個檔，確認上面的鍵（加上下面特別處理的 owner_transfer_required）跟後端會送的 H2、H3 錯誤碼
+// 完全相同。新增或移除錯誤碼時兩邊要一起改。
 
 /// 把 API 例外轉成給使用者看的繁體中文訊息。
 ///
@@ -53,6 +65,10 @@ String adminErrorMessage(Object error) {
       }
       final list = names.isEmpty ? '' : '：${names.join('、')}';
       return '這位員工是下列工作空間的擁有者$list。請先到「成員與角色」移交擁有者身分，再辦理離職。';
+    }
+
+    if (code == 'leave_insufficient_balance' && data['remaining'] is num) {
+      return '特休餘額不足，只剩 ${formatDays(data['remaining'] as num)}';
     }
 
     if (code is String) {
